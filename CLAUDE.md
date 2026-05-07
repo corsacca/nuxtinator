@@ -1,0 +1,202 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Repository layout
+
+```
+go-saas/                          ← repo root
+├── host/                         ← the Nuxt app (this project's shell + branding)
+│   ├── nuxt.config.ts            ← extends: layer('core'), layer('tenancy'), ... — resolved via LAYERS_PATH or LAYERS_REMOTE
+│   ├── package.json, bun.lock
+│   ├── tsconfig.json, eslint.config.mjs
+│   ├── public/
+│   ├── .env, .env.example
+│   └── node_modules/
+│
+└── layers/                       ← all reusable layers (siblings of host)
+    ├── core/                     ← always-on foundation: auth, admin, registries,
+    │                                #tenant single-mode kernel, RBAC, chrome,
+    │                                migrations runner, activity logger, etc.
+    ├── tenancy/                  ← OPTIONAL multi-tenant: orgs, memberships, RLS,
+    │                                multi-mode #tenant kernel
+    ├── email-mailgun/            ← OPTIONAL email backend (provides #email).
+    │                                Sister layers planned: email-smtp, email-ses
+    ├── oauth/                    ← OPTIONAL OAuth 2.1 server
+    ├── mcp/                      ← OPTIONAL MCP transport
+    ├── dev/                      ← OPTIONAL UI sandbox (/kitchen). Comment out for prod.
+    └── apps/                     ← per-app feature layers
+        ├── calendar/
+        └── kanban/
+```
+
+Run dev/build from `host/`:
+
+```
+cd host
+bun dev          # start dev server (runs migrations on boot via Nitro plugin)
+bun run build    # production build
+bun run preview  # preview built app
+bun run lint     # eslint
+bun run typecheck  # vue-tsc / nuxt typecheck
+```
+
+Dev server defaults to port **2080**.
+
+### Layer source resolution
+
+`host/nuxt.config.ts` builds its `extends:` array from env vars so the same config works in dev (local layers) and production (git-fetched layers via [giget](https://github.com/unjs/giget)):
+
+- `LAYERS_PATH` — set in `host/.env` to a local path (e.g. `../layers`). When set, `extends:` resolves to `${LAYERS_PATH}/<name>` for each layer.
+- `LAYERS_REMOTE` — git source baked into `nuxt.config.ts` (default `github:corsacca/go-saas/layers`). Used when `LAYERS_PATH` is unset. Override with the env var to point at a fork.
+- `LAYERS_REF` — optional git ref (branch / tag / SHA). Appended as `#<ref>` to the remote URL.
+
+The `host/` directory deploys standalone in production: no parent dir, no sibling `layers/`. With `LAYERS_PATH` unset, Nuxt fetches each layer from `${LAYERS_REMOTE}/<name>${LAYERS_REF ? '#' + LAYERS_REF : ''}` at install/build time.
+
+Downstream projects that copy this blueprint reference these same layers via `LAYERS_REMOTE` (or by editing `nuxt.config.ts` directly) without forking the layer code.
+
+## High-level architecture
+
+This repo is **a host shell + a stack of layers** wired through Nuxt's `extends:`. The host (`host/`) is project-specific (config, branding, page overrides). All reusable code lives in `layers/`. New projects copy the layers they need and write their own thin host.
+
+### Layer roles
+
+| Layer | Role | Always on? |
+|---|---|---|
+| `core` | Auth, admin, profile pages; 6 runtime registries; #tenant single-mode kernel; RBAC; activity logger; rate limiter; secret crypto; storage; slug; migrations runner; bootstrap-admin script; launcher chrome (AppRail, AppSidebar, layouts, composables). | yes |
+| `tenancy` | Multi-tenant: orgs, memberships, org_apps, org_role_overrides, RLS, BYPASSRLS adminDb, OrgSwitcher, /admin/orgs UI, multi-mode #tenant kernel that overrides core's. | optional |
+| `email-mailgun` | Mailgun (HTTP API in prod, MailHog locally). Provides `#email` alias. | optional* |
+| `email-smtp` | (planned) Plain SMTP via nodemailer. | optional* |
+| `email-ses` | (planned) AWS SES. | optional* |
+| `oauth` | OAuth 2.1 issuer (token, consent, admin endpoints). | optional |
+| `mcp` | MCP server transport (depends on oauth). | optional |
+| `dev` | UI sandboxes (e.g. `/kitchen`). | optional |
+| `apps/<id>` | Per-app feature: pages + routes + perms + migrations. | per-project choice |
+
+*If no email layer is loaded, code that imports from `#email` throws helpfully at first call.
+
+### Layer auto-discovery escape
+
+Nuxt 4 auto-discovers any direct child of `host/layers/*` (regardless of `extends:`). To keep `tenancy` truly optional, all layers live at `<repo>/layers/` (siblings of `host/`, not under `host/layers/`), so the auto-glob doesn't see them. Each layer is loaded only via an explicit `'../layers/<name>'` entry in `extends:`. Comment out a line to remove that layer.
+
+### The `#tenant` kernel
+
+App layers and host code import tenancy helpers from two aliases:
+
+- `#tenant` — client composables (`useActiveOrg`, `useMaybeActiveOrg`, `getActiveSlug`, `useTenantFetch`)
+- `#tenant/server` — server helpers (`defineTenantHandler`, `withOrgContext`, `requireOperatorAdmin`, `runInOrgTransaction`, `encodeFlowOrg`/`decodeFlowOrg`)
+
+Two implementations swap based on whether the tenancy layer is loaded:
+
+- **Single mode** (default, in [layers/core/tenant-kernel/{client,server}.ts](layers/core/tenant-kernel/)). Registered by [layers/core/modules/tenant-kernel.ts](layers/core/modules/tenant-kernel.ts) only if no other module set the alias. `defineTenantHandler` does `requireAuth` + transaction; no GUC, no app-enable check. `useActiveOrg().slug.value` is always `null`.
+- **Multi mode** (provided by `layers/tenancy/`, in `layers/tenancy/{app,server}/utils/tenant.ts`). Registered first by `layers/tenancy/modules/tenant-kernel.ts` (unconditionally); the host fallback yields. `defineTenantHandler` reads org from `event.context.orgSlug` (set by tenancy Nitro middleware), opens a transaction, runs `SET LOCAL app.current_org` inside it, runs the handler. The GUC is **only** set inside the handler's transaction.
+
+### The `#core` alias
+
+Cross-layer imports of core utilities use `#core/...` (resolved by [layers/core/nuxt.config.ts](layers/core/nuxt.config.ts)) so paths don't depend on whether the importing layer sits next to or under the host:
+
+```ts
+import { db } from '#core/server/utils/database'
+import { requireAuth } from '#core/server/utils/auth'
+import { PERMISSION_META } from '#core/app/utils/permissions'
+```
+
+### The `#email` alias
+
+Auth/notification code imports email helpers from `#email`:
+
+```ts
+import { sendTemplateEmail } from '#email'
+```
+
+Each email backend layer (`email-mailgun`, future `email-smtp`/`email-ses`) provides its own implementation and registers `#email` to point at it. Core ships a throwing fallback at [layers/core/email-fallback/email.ts](layers/core/email-fallback/email.ts) that surfaces a clear error if no email layer is loaded.
+
+### Layer wiring (host/nuxt.config.ts)
+
+[host/nuxt.config.ts](host/nuxt.config.ts) does three layer-related things worth knowing about:
+
+1. **`stripLayerTsconfigs()`** runs before modules — layers extracted from full Nuxt projects sometimes ship a `tsconfig.json` that references `./.nuxt/tsconfig.*.json` (only generated when the layer is opened standalone). Vite's tsconfig walker would crash; the cleanup deletes them.
+2. **`extends:`** lists every layer in load order. `core` first (lowest priority — gets overridden by other layers and host); `tenancy` next (multi-mode kernel overrides core's single-mode); then email backend, oauth, mcp, app layers, dev.
+3. **The host has no modules of its own** — `migrations`, `tenant-kernel`, and `email-kernel` modules all live in `layers/core/nuxt.config.ts`.
+
+### The six runtime registries (core owns)
+
+Every app layer feeds the host through six in-process registries in [layers/core/server/utils/](layers/core/server/utils/) at boot via a Nitro plugin:
+
+| Registry | File | Function |
+|---|---|---|
+| Permissions (runtime) | [permissions-registry.ts](layers/core/server/utils/permissions-registry.ts) | `registerPermissions(perms, meta?)` |
+| Default grants | [default-grants-registry.ts](layers/core/server/utils/default-grants-registry.ts) | `registerDefaultGrants(appId, { admin, member })` |
+| App static roles | [roles-registry.ts](layers/core/server/utils/roles-registry.ts) | `registerStaticRole(...)` |
+| Launcher tiles | [app-registry.ts](layers/core/server/utils/app-registry.ts) | `registerApp(...)` |
+| In-app nav items | [nav-registry.ts](layers/core/server/utils/nav-registry.ts) | `registerNavItem(...)` |
+| Admin shell sections | [admin-section-registry.ts](layers/core/server/utils/admin-section-registry.ts) | `registerAdminSection(...)` |
+
+The host bridges these to the client via auth-gated, permission-filtered endpoints (`/api/_apps`, `/api/_nav`, `/api/_admin-sections`) consumed by composables (`useApps`, `useAppNav`, `useAdminSections`). Core's own admin sections are registered the same way — see [layers/core/server/plugins/register-host-admin.ts](layers/core/server/plugins/register-host-admin.ts).
+
+### Permissions: compile-time + runtime
+
+Two parallel permission stores you must keep in sync:
+
+- **Compile-time** — the open `PermissionRegistry` interface in [layers/core/app/utils/permissions.ts](layers/core/app/utils/permissions.ts). Each app layer adds keys via `declare module '#permissions'` so `Permission` widens automatically.
+- **Runtime** — the `_layerPerms` Set in [layers/core/server/utils/permissions-registry.ts](layers/core/server/utils/permissions-registry.ts), populated when each layer's Nitro plugin calls `registerPermissions(...)`.
+
+Core itself ships **no** permissions — operator-admin authority is the `users.is_admin` boolean (no permission slug), checked via `requireOperatorAdmin(event)` from [layers/core/tenant-kernel/server.ts](layers/core/tenant-kernel/server.ts). The tenancy layer adds `org.*` permissions when loaded.
+
+Code that checks permissions calls `isRegisteredPermission()` / `getAllPermissions()` — it never reads the static `PERMISSIONS` array directly, so layer contributions are always included. The `admin` role name is special-cased in [rbac.ts](layers/core/server/utils/rbac.ts) `getRolePermissions` to union every registered permission.
+
+Use granular permissions (e.g. `mail.read`, `mail.write`) not coarse ones (`mail.manage`) — the same vocabulary is shared with OAuth scopes.
+
+### App-layer page paths — write single-tenant shape
+
+App layer pages live at `app/pages/<appId>/...` and routes mount at `server/routes/api/<appId>/...`. App authors do **not** prefix paths with `/@:orgSlug/...`.
+
+In multi-tenant mode the tenancy layer's [pages:extend](layers/tenancy/modules/tenant-pages-extend.ts) Nuxt build hook adds parallel `/@:orgSlug/<path>` route aliases pointing at the same Vue components. The router guard preserves the `@<slug>/` prefix on internal navigation. APIs always live at `/api/<app>/...`; org context travels in an `X-Active-Org` header the layer's fetch interceptor injects.
+
+Tenancy layer's own org-aware admin endpoints live at `/api/o/<slug>/...` (the `o/` prefix is mechanical — Nitro's filesystem router doesn't reliably resolve `@` literals in path segments the way Vue Router does for pages).
+
+### Tenancy layer (optional)
+
+When [layers/tenancy/](layers/tenancy/) is in `extends:`:
+
+- Schema augmentation adds `orgs`, `memberships`, `org_apps`, `org_role_overrides` tables and adds `org_id` columns to `custom_roles` + `activity_logs`.
+- Migrations: `tenancy_001_*` through `tenancy_020_*` plus per-app `*_T<NNN>_*.ts` files that retrofit each layer's tenant tables. Core's migrations Nitro plugin discovers `_T<NNN>_` files via `runtimeConfig.tenancyMigrationPaths` (set by the layer's `tenant-migrations` module). In single-tenant deploys those files exist on disk but never run.
+- Per-app tenancy migrations call `enableTenantScoping(db, '<table>')` (a helper inlined in each migration to avoid alias-resolution at migration-load time) — adds `org_id NOT NULL DEFAULT current_org_id() REFERENCES orgs(id) ON DELETE CASCADE` plus the missing-safe RLS policy. The `current_org_id()` Postgres function reads the GUC.
+- DB role split: `host_admin` (BYPASSRLS, exposed as `adminDb` from `#tenant/admin-db`, used by migrations + `/api/admin/orgs/...` endpoints) and `app_user` (RLS-enforced, the default `db` from [layers/core/server/utils/database.ts](layers/core/server/utils/database.ts)). Single deploys use only `DATABASE_URL`; multi deploys add `APP_DATABASE_URL`.
+- Nitro middleware reads `X-Active-Org` header (or path parameter for `/api/o/<slug>/...` and `/admin/orgs/:id/...` routes) and writes `event.context.{orgId,orgSlug,orgName,orgRoles}`. Does NOT set the GUC — `defineTenantHandler` does that inside its transaction.
+- Operator admin (`users.is_admin`) lives in core in both modes. The thing tenancy adds on top is BYPASSRLS for cross-org reach.
+
+### Migrations
+
+[layers/core/modules/migrations.ts](layers/core/modules/migrations.ts) (a Nuxt module) walks `nuxt.options._layers` at config time and collects every layer's `migrations/` folder. The Nitro plugin [layers/core/server/plugins/migrations.ts](layers/core/server/plugins/migrations.ts) reads those paths plus the host's own `migrations/` directory and runs Kysely's `Migrator` over the union on boot. Tenancy migrations (filename pattern `*_T<NNN>_*.ts`) are only included when the tenancy layer is loaded; they're suffixed `zzz_` internally to force them to sort after every other layer's regular migrations.
+
+Migration filenames must be globally unique across host + all layers. Convention: `<appId>_NNN_<description>.ts` for regular migrations; `<appId>_T<NNN>_<description>.ts` for per-app tenancy retrofits.
+
+Database is Postgres via Kysely + `kysely-postgres-js`. Schema composed: core tables in [layers/core/server/database/schema.ts](layers/core/server/database/schema.ts); layers extend the `Database` interface via module augmentation in their own `server/database/schema.d.ts`.
+
+### Other notable bits
+
+- **SSR is off** (`ssr: false`) — this is a SPA.
+- The default layout (in core) renders launcher rail + per-app sidebar around all authenticated pages. App-layer pages render their own content.
+- Auth is JWT-based; `requireAuth(event)`, `requireOperatorAdmin(event)`, and `defineTenantHandler` from `#tenant/server` are the gatekeepers for server routes.
+- App-id prefix everything — paths, tables, migration names, permissions, components, composables.
+
+## Conventions for cross-layer imports
+
+| Symbol | Import from |
+|---|---|
+| Tenant context (server) | `#tenant/server` |
+| Tenant composables (client) | `#tenant` |
+| Email | `#email` |
+| Core utilities (server-side) | `#core/server/utils/<name>` |
+| Core utilities (client-side) | `#core/app/utils/<name>` |
+| Core schema types | `#core/server/database/schema` |
+| Core composables/components | auto-imported (no explicit import needed) |
+| Permission interface (`#permissions`) | `#permissions` |
+
+## User instruction reminders
+
+- App-layer pages live at `app/pages/<appId>/...`. Don't write them with org-slug prefixes — the tenancy layer adds those automatically when loaded.
+- Layer code that touches the database imports `db` from `#core/server/utils/database`. Only the tenancy layer imports `adminDb` (via `#tenant/admin-db`); doing so from outside that layer is a tenancy contract violation.
+- Server route handlers that need user identity / permissions use `defineTenantHandler` from `#tenant/server`. In single mode it's just `requireAuth` + a transaction; in multi mode it adds the org context.
+- Run dev/build/test commands from `host/`, not from the repo root.

@@ -1,0 +1,52 @@
+// Core layer — the always-on foundation that every project built from this
+// stack extends. Provides:
+//
+//   - Auth flows (login, register, password reset, accept-invite, verify)
+//   - Profile + admin-shell pages and APIs
+//   - The 6 runtime registries (apps, nav, admin-sections, permissions,
+//     default-grants, static-roles)
+//   - Single-mode `#tenant` kernel (multi-mode tenancy overrides via the
+//     optional `tenancy` layer)
+//   - Migration runner module + 5 core migrations (users, password reset,
+//     activity logs, custom roles, apps catalog)
+//   - Activity logger, rate limiter, secret crypto, storage, slug validator
+//   - Launcher chrome (AppRail, AppSidebar, layouts, composables)
+//   - bootstrap-admin script
+//
+// Files in this layer can be overridden by the host (page customizations,
+// branding, etc.) — Nuxt's layer system makes the host's files higher
+// priority.
+import { fileURLToPath } from 'node:url'
+
+const layerRoot = fileURLToPath(new URL('.', import.meta.url))
+
+export default defineNuxtConfig({
+  modules: [
+    fileURLToPath(new URL('./modules/migrations.ts', import.meta.url)),
+    fileURLToPath(new URL('./modules/tenant-kernel.ts', import.meta.url)),
+    fileURLToPath(new URL('./modules/email-kernel.ts', import.meta.url))
+  ],
+
+  css: [fileURLToPath(new URL('./app/assets/css/main.css', import.meta.url))],
+
+  alias: {
+    // `#core/...` resolves to this layer's root, so cross-layer code can
+    // import e.g. `#core/server/utils/database` without depending on whether
+    // host's rootDir is the repo root or a subdir.
+    '#core': layerRoot.replace(/\/$/, ''),
+    '#permissions': fileURLToPath(new URL('./app/utils/permissions.ts', import.meta.url))
+  },
+
+  nitro: {
+    typescript: {
+      tsConfig: {
+        compilerOptions: {
+          paths: {
+            '#core/*': [`${layerRoot}*`],
+            '#permissions': [`${layerRoot}app/utils/permissions.ts`]
+          }
+        }
+      }
+    }
+  }
+})

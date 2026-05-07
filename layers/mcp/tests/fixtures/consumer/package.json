@@ -1,0 +1,10 @@
+{
+  "name": "mcp-layer-fixture-consumer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "postinstall": "nuxt prepare"
+  }
+}

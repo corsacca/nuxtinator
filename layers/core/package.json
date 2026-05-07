@@ -1,0 +1,5 @@
+{
+  "name": "layer-core",
+  "private": true,
+  "type": "module"
+}

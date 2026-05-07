@@ -1,0 +1,5 @@
+{
+  "name": "layer-email-mailgun",
+  "private": true,
+  "type": "module"
+}

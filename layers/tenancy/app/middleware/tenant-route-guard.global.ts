@@ -1,0 +1,60 @@
+// Preserves the active-org URL prefix on internal navigation. App layer code
+// writes naive `<NuxtLink to="/mail/threads/123">` links; this guard rewrites
+// them to `/@<active-slug>/mail/threads/123` when the user is currently
+// inside an org context.
+//
+// Also handles bare URL hits (`/mail` without slug) — redirects to the
+// last-active org from cookie if known, else the picker.
+import { getActiveSlug } from '#tenant'
+
+const SYSTEM_PREFIXES = [
+  '/admin',
+  '/account',
+  '/login',
+  '/register',
+  '/reset-password',
+  '/accept-invite',
+  '/orgs',
+  '/dashboard',
+  '/kitchen'
+]
+
+function isSystemPath(p: string): boolean {
+  if (p === '/') return true
+  for (const prefix of SYSTEM_PREFIXES) {
+    if (p === prefix || p.startsWith(prefix + '/')) return true
+  }
+  return false
+}
+
+export default defineNuxtRouteMiddleware((to, from) => {
+  const path = to.path
+
+  // Already in an org-prefixed route — nothing to do.
+  if (path.startsWith('/@')) return
+  // Legacy `/o/<slug>/...` shape from before the rename. Rewrite to the
+  // current `/@<slug>/...` form so bookmarks keep working AND so this guard
+  // doesn't accidentally double-prefix from the cookie.
+  const legacy = path.match(/^\/o\/([^/]+)(\/.*)?$/)
+  if (legacy) {
+    return navigateTo({ path: `/@${legacy[1]}${legacy[2] ?? '/'}`, query: to.query, hash: to.hash })
+  }
+  // System route — pass.
+  if (isSystemPath(path)) return
+
+  // The user is currently inside an org? Rewrite the destination to keep them there.
+  const fromSlug = (from.params.orgSlug as string | undefined)
+    ?? getActiveSlug()
+  if (fromSlug) {
+    return navigateTo({ path: `/@${fromSlug}${path}`, query: to.query, hash: to.hash })
+  }
+
+  // No active org but the path looks like an app page — try the active-org cookie.
+  const cookie = useCookie<string | null>('active-org-slug')
+  if (cookie.value) {
+    return navigateTo({ path: `/@${cookie.value}${path}`, query: to.query, hash: to.hash })
+  }
+
+  // No org at all — send to picker.
+  return navigateTo('/orgs')
+})

@@ -1,0 +1,5 @@
+{
+  "name": "layer-dev",
+  "private": true,
+  "type": "module"
+}
