@@ -7,6 +7,11 @@ const { user, logout, deleteAccount } = useAuth()
 const { theme, toggleTheme } = useTheme()
 const route = useRoute()
 
+// Layer-injected sections (e.g. OAuth "Connected apps"). Each layer
+// registers its own card via a Nuxt app plugin — see
+// `app/utils/account-section-registry.ts` for the contract.
+const injectedSections = getAccountSections()
+
 // Check for email change status in query params
 onMounted(() => {
   const emailChangeStatus = route.query.email_change as string
@@ -492,6 +497,13 @@ watch(() => deleteState.password, () => {
         </UButton>
       </form>
     </UCard>
+
+    <!-- Layer-injected sections (e.g. OAuth Connected apps) -->
+    <component
+      :is="section.component"
+      v-for="section in injectedSections"
+      :key="section.id"
+    />
 
     <!-- Sign Out -->
     <UCard>

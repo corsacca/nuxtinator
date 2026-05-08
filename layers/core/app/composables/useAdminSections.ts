@@ -5,6 +5,7 @@ export interface AdminSection {
   icon?: string
   requiredPermission?: string
   order?: number
+  parent?: string
 }
 
 interface AdminSectionsResponse {

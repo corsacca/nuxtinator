@@ -13,6 +13,10 @@ export interface AdminSection {
   icon?: string
   requiredPermission?: string
   order?: number
+  // When set, render this section nested under the section with this
+  // `path` as its parent. The admin layout indents children under their
+  // parent in the sidebar.
+  parent?: string
 }
 
 const _sections: AdminSection[] = []
