@@ -1,0 +1,8 @@
+{
+  "name": "app-feedback",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:widgets": "cd embeddables/feedback-web-component && bun install && bun run build"
+  }
+}

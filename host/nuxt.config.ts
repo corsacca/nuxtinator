@@ -32,7 +32,8 @@ function stripLayerTsconfigs() {
     'tenancy',
     'dev',
     'apps/calendar',
-    'apps/kanban'
+    'apps/kanban',
+    'apps/feedback'
   ]) {
     const path = `${LAYERS_PATH}/${name}/tsconfig.json`
     if (existsSync(path)) rmSync(path)
@@ -64,6 +65,7 @@ export default defineNuxtConfig({
     layer('mcp'),
     layer('apps/calendar'),
     layer('apps/kanban'),
+    layer('apps/feedback'),
     // Dev tooling — UI sandbox at /kitchen. Comment out for prod builds.
     layer('dev')
   ],
@@ -118,7 +120,8 @@ export default defineNuxtConfig({
     public: {
       appName: process.env.APP_TITLE || 'My App',
       nodeEnv: process.env.NODE_ENV || '',
-      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || ''
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || '',
+      feedbackProjectId: process.env.NUXT_PUBLIC_FEEDBACK_PROJECT_ID || process.env.FEEDBACK_PROJECT_ID || ''
     }
   },
 

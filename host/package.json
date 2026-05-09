@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "nuxt build",
+    "build": "bun run build:widgets && nuxt build",
+    "build:widgets": "cd ../layers/apps/feedback && bun run build:widgets",
     "dev": "nuxt dev",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",

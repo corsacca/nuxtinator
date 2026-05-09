@@ -1,0 +1,26 @@
+{
+  "name": "feedback-web-component",
+  "version": "0.1.0",
+  "description": "Portable <feedback-web-component> Vite IIFE web component — chat bubble UI for feedback capture.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:watch": "vite build --watch",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "html2canvas-pro": "^1.5.10",
+    "pinia": "^2.1.7",
+    "vue": "^3.5.20"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "terser": "^5.46.0",
+    "vite": "^5.4.21"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

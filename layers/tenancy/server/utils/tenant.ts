@@ -317,6 +317,40 @@ export async function runInOrgTransaction<T>(
   })
 }
 
+// Open a transaction scoped to the org that owns the given project. Used by
+// public widget endpoints (notably /api/v1/feedback*) that receive a
+// project_id from an unauthenticated cross-origin request and must operate
+// in that project's tenant context.
+//
+// Resolves `projects.org_id` via BYPASSRLS (`adminDb`) since RLS would
+// otherwise block the lookup, then opens a Kysely transaction on the regular
+// `db` and `SET LOCAL app.current_org` inside that transaction.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export async function withProjectOrgContext<T>(
+  _event: H3Event,
+  projectId: string,
+  fn: (tx: Transaction<Database>) => Promise<T>
+): Promise<T> {
+  if (!UUID_RE.test(projectId)) {
+    throw createError({ statusCode: 404, statusMessage: 'Project not found' })
+  }
+  // Raw SQL — `org_id` is added dynamically to `projects` by the feedback
+  // layer's `feedback_T010_enable_tenancy.ts` migration but isn't part of
+  // the layer's Kysely schema definition.
+  const result = await sql<{ org_id: string }>`
+    select org_id from projects where id = ${projectId}
+  `.execute(adminDb)
+  const orgId = result.rows[0]?.org_id
+  if (!orgId) {
+    throw createError({ statusCode: 404, statusMessage: 'Project not found' })
+  }
+  return await db.transaction().execute(async (tx) => {
+    await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
+    return await fn(tx)
+  })
+}
+
 // Schema-retrofit helper for app layer migrations. Per-app tenancy migrations
 // live at `<layer>/migrations/<appId>_T<NNN>_*.ts` and call this. The tenancy
 // layer's migration discovery module includes those files only when the
