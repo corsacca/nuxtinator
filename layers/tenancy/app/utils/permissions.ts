@@ -4,6 +4,7 @@
 // in default grants — only what `member` (and other future roles) get.
 
 export const ORG_PERMISSIONS = [
+  'org.settings.access',
   'org.members.read',
   'org.members.invite',
   'org.members.remove',
@@ -18,6 +19,10 @@ export const ORG_PERMISSIONS = [
 export type OrgPermission = typeof ORG_PERMISSIONS[number]
 
 export const ORG_PERMISSION_META: Record<string, { title: string, description: string }> = {
+  'org.settings.access': {
+    title: 'Access org settings',
+    description: 'Required to reach /@<slug>/settings and see the org settings shell.'
+  },
   'org.members.read': {
     title: 'View members',
     description: 'See the org member list.'
@@ -65,6 +70,7 @@ export const ORG_DEFAULT_GRANTS = {
 
 declare module '#permissions' {
   interface PermissionRegistry {
+    'org.settings.access': true
     'org.members.read': true
     'org.members.invite': true
     'org.members.remove': true

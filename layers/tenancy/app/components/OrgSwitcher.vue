@@ -6,6 +6,18 @@ const open = ref(false)
 
 const activeOrg = computed(() => orgs.value.find(o => o.slug === slug.value) ?? null)
 
+// Populated by `org-settings-access.global.ts` after the user first navigates
+// into /settings. If we haven't seen perms yet, default to showing the link —
+// the middleware will redirect non-admins on click and prime the cache for
+// next render.
+const settingsPerms = useState<Record<string, string[]>>('tenant:settings-perms', () => ({}))
+const canSeeSettings = computed(() => {
+  if (!activeOrg.value) return false
+  const perms = settingsPerms.value[activeOrg.value.slug]
+  if (!perms) return true
+  return perms.includes('org.settings.access')
+})
+
 // When the user is on `/@<current>/<section>/...`, switching to another org
 // should land on `/@<next>/<section>` so they stay in the same app/section.
 // We only preserve the first segment (the app or "settings") — anything deeper
@@ -103,7 +115,7 @@ function pathForOrg(targetSlug: string): string {
         <hr class="my-2 border-(--ui-border)">
 
         <NuxtLink
-          v-if="activeOrg"
+          v-if="activeOrg && canSeeSettings"
           :to="`/@${activeOrg.slug}/settings`"
           class="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-(--ui-bg-accented) transition-colors text-sm"
           @click="open = false"
