@@ -1,7 +1,17 @@
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { isPermission } from '#core/app/utils/permissions'
+import { isRegisteredPermission } from '#core/server/utils/permissions-registry'
 import { registerScope } from '#oauth/scopes'
 import type { McpToolDef, McpResourceDef } from './define'
+
+// A scope is acceptable if it's in the host's static PERMISSIONS array OR
+// has been registered at runtime by a layer's `registerPermissions(...)`
+// plugin. Layer-supplied permissions only show up in the runtime registry,
+// so checking just `isPermission` would reject any tool whose scope comes
+// from a layer (e.g. `messages.read`).
+function isAcceptableScope(scope: string): boolean {
+  return isPermission(scope) || isRegisteredPermission(scope)
+}
 
 export interface RegisteredTool {
   def: McpToolDef
@@ -53,7 +63,7 @@ export function createRegistry(): McpRegistry {
   const toolsByName = new Map<string, number>()
 
   function register<I, O>(tool: McpToolDef<I, O>): void {
-    if (!isPermission(tool.scope)) {
+    if (!isAcceptableScope(tool.scope)) {
       throw new Error(
         `MCP tool "${tool.name}" declares scope "${tool.scope}" which is not in the project's PERMISSIONS list. `
         + `Add it to app/utils/permissions.ts or fix the tool definition.`
@@ -85,7 +95,7 @@ export function createRegistry(): McpRegistry {
   }
 
   function registerResource(resource: McpResourceDef): void {
-    if (!isPermission(resource.scope)) {
+    if (!isAcceptableScope(resource.scope)) {
       throw new Error(
         `MCP resource "${resource.uriPattern}" declares scope "${resource.scope}" which is not in the project's PERMISSIONS list.`
       )
