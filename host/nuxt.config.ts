@@ -11,7 +11,7 @@ declare const process: { env: Record<string, string | undefined> }
 // Subdir-of-one-repo syntax: `${LAYERS_REMOTE}/<name>#<ref>`.
 const LAYERS_PATH = process.env.LAYERS_PATH
 const LAYERS_REMOTE = process.env.LAYERS_REMOTE || 'github:corsacca/go-saas/layers'
-const LAYERS_REF = process.env.LAYERS_REF ? `#${process.env.LAYERS_REF}` : ''
+const LAYERS_REF = `#${process.env.LAYERS_REF || 'master'}`
 
 function layer(name: string): string | [string, { install: true }] {
   if (LAYERS_PATH) return `${LAYERS_PATH}/${name}`
