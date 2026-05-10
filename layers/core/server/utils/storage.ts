@@ -154,6 +154,28 @@ export async function generateSignedUrl(key: string, expiresIn: number = SIGNED_
 }
 
 /**
+ * Generate a pre-signed URL for direct browser-to-S3 PUT uploads.
+ * Used by features that upload large files (e.g. videos) without proxying
+ * the bytes through the Nitro server.
+ */
+export async function presignedPutUrl(
+  key: string,
+  _contentType: string,
+  expiresIn: number = 3600
+): Promise<string> {
+  try {
+    const client = getS3Client()
+    const url = await client.getPresignedUrl('PUT', key, {
+      expirySeconds: expiresIn
+    })
+    return url
+  } catch (error: any) {
+    console.error('S3 presigned PUT URL generation error:', error)
+    throw new Error(`Failed to generate upload URL: ${error.message}`)
+  }
+}
+
+/**
  * Validate file type for image uploads
  */
 export function validateImageType(contentType: string): boolean {
