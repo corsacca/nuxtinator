@@ -10,7 +10,7 @@ For background and the full decision trail see [context/plans/multi-tenancy-laye
 
 ## Layers in this repo
 
-All layers are tracked source — no giget pulls anymore.
+All layers are tracked source under `layers/`. In dev they're consumed via local file paths (`LAYERS_PATH=../layers` in `host/.env`); in prod they're fetched from git via giget with c12's `install: true`. See [dev-setup.md](dev-setup.md#how-layers-are-wired) for the resolution mechanics.
 
 | Layer | Lives at | Purpose |
 |---|---|---|
@@ -101,9 +101,29 @@ export default defineNuxtConfig({})
 ```json
 // layers/apps/tasks/package.json
 {
-  "name": "app-tasks",
+  "name": "layer-tasks",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "peerDependencies": {
+    "nuxt": "^4.0.0",
+    "vue": "^3.0.0"
+  }
+}
+```
+
+If your layer imports a package that no other layer needs (e.g. a charting library, a parser), add it to `dependencies`. Anything shared with host or other layers — `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `@nuxt/kit`, `@nuxt/ui`, `tailwindcss` — goes in `peerDependencies` so it resolves to the host's installed copy rather than getting duplicated under `.c12/` in production. Don't add a `main` field — Nuxt generates a `/// <reference types="layer-<id>" />` and TS would resolve it through `main`, picking up nuxt.config.ts in a context that breaks the typecheck.
+
+Then add the layer to the workspace in the root [package.json](../package.json):
+
+```json
+// /package.json (workspace root)
+{
+  "workspaces": [
+    "host",
+    "layers/core",
+    ...,
+    "layers/apps/tasks"
+  ]
 }
 ```
 
@@ -243,19 +263,23 @@ The default layout (host) renders the launcher rail + per-app sidebar around you
 ```ts
 // host/nuxt.config.ts
 extends: [
-  '../layers/tenancy',     // optional — omit for single-tenant
-  '../layers/oauth',
-  '../layers/mcp',
-  '../layers/apps/calendar',
-  '../layers/apps/kanban',
-  '../layers/apps/tasks'   // new
+  layer('core'),
+  layer('tenancy'),        // optional — omit for single-tenant
+  layer('oauth'),
+  layer('mcp'),
+  layer('apps/calendar'),
+  layer('apps/kanban'),
+  layer('apps/tasks')      // new
 ]
 ```
 
-### 8. Restart
+The `layer()` helper resolves to a local path in dev (when `LAYERS_PATH` is set) and to a giget tuple `[git-url, { install: true }]` in prod.
+
+### 8. Install + restart
 
 ```
-bun dev
+bun install              # from repo root, picks up the new workspace
+cd host && bun run dev
 ```
 
 The launcher rail now shows the Tasks tile. Authenticated users with `tasks.access` see it; admins (in either mode) see everything.
@@ -431,11 +455,12 @@ Permission strings use `.` (one namespace shared with OAuth/MCP scopes). DB tabl
 ## Install / uninstall
 
 **Install:**
-1. Add `'../layers/apps/<id>'` to `extends:` in [host/nuxt.config.ts](../host/nuxt.config.ts).
-2. `bun dev` (or restart). Migrations run, the layer's plugin registers permissions/default-grants/app meta/nav/admin sections/static roles.
+1. Add `"layers/apps/<id>"` to the `workspaces` array in the root [package.json](../package.json).
+2. Add `layer('apps/<id>')` to `extends:` in [host/nuxt.config.ts](../host/nuxt.config.ts).
+3. `bun install` from root, then `bun dev` (or restart). Migrations run, the layer's plugin registers permissions/default-grants/app meta/nav/admin sections/static roles.
 
 **Uninstall:**
-1. Remove the entry from `extends:`.
+1. Remove the entry from `extends:` and from the workspace list in root `package.json`.
 2. Restart. Registrations evaporate; the app disappears from the launcher.
 3. **Migrations and tables are not auto-reverted.** Run a manual rollback if you want to fully tear down. Custom-role rows referencing the layer's permissions silently shed those strings (the runtime filters orphaned permissions through `isRegisteredPermission()`).
 

@@ -5,30 +5,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository layout
 
 ```
-go-saas/                          ← repo root
+go-saas/                          ← repo root (bun workspace)
+├── package.json                  ← workspace root, lists host + layers
+├── bun.lock                      ← single lockfile for the monorepo
+├── bunfig.toml                   ← linker = "hoisted" (layers see host's peer deps)
+├── node_modules/                 ← hoisted; layers resolve deps from here
+│
 ├── host/                         ← the Nuxt app (this project's shell + branding)
 │   ├── nuxt.config.ts            ← extends: layer('core'), layer('tenancy'), ... — resolved via LAYERS_PATH or LAYERS_REMOTE
-│   ├── package.json, bun.lock
+│   ├── package.json              ← host-only deps (nuxt, ui, kysely/postgres, tailwind, icon sets)
 │   ├── tsconfig.json, eslint.config.mjs
 │   ├── public/
-│   ├── .env, .env.example
-│   └── node_modules/
+│   └── .env, .env.example
 │
 └── layers/                       ← all reusable layers (siblings of host)
     ├── core/                     ← always-on foundation: auth, admin, registries,
-    │                                #tenant single-mode kernel, RBAC, chrome,
+    │   └── package.json             #tenant single-mode kernel, RBAC, chrome,
     │                                migrations runner, activity logger, etc.
+    │                                deps: bcrypt, jsonwebtoken, s3-lite-client
+    │                                peer: nuxt, @nuxt/kit, @nuxt/ui, kysely, postgres, h3, vue
     ├── tenancy/                  ← OPTIONAL multi-tenant: orgs, memberships, RLS,
-    │                                multi-mode #tenant kernel
+    │   └── package.json             multi-mode #tenant kernel. peer-deps only.
     ├── email-mailgun/            ← OPTIONAL email backend (provides #email).
-    │                                Sister layers planned: email-smtp, email-ses
-    ├── oauth/                    ← OPTIONAL OAuth 2.1 server
+    │   └── package.json             deps: nodemailer, nodemailer-mailgun-transport
+    ├── oauth/                    ← OPTIONAL OAuth 2.1 server (peer-deps only)
     ├── mcp/                      ← OPTIONAL MCP transport
+    │   └── package.json             deps: @modelcontextprotocol/sdk, zod, zod-to-json-schema
     ├── dev/                      ← OPTIONAL UI sandbox (/kitchen). Comment out for prod.
     └── apps/                     ← per-app feature layers
-        ├── calendar/
-        └── kanban/
+        ├── calendar/             ← peer-deps only
+        ├── kanban/               ← peer-deps only
+        ├── messages/             ← deps: dompurify, marked, emoji-mart, croner
+        └── videos/               ← deps: fix-webm-duration, mediabunny, uuid
 ```
+
+Every layer has its own `package.json` declaring exactly what it imports. Layer-private deps (no other layer needs them, no shared runtime state) go in `dependencies`. Framework/DB singletons that must resolve to a single instance (`nuxt`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `vue`, `tailwindcss`) go in `peerDependencies` so they resolve to host's installed copy in dev (via the bun workspace) and to host's `.c12/`-installed copy in prod (via giget's `install: true`). Don't add a `main` field to layer package.json files — Nuxt generates `/// <reference types="layer-<id>" />` and TS would resolve through `main`, breaking the typecheck.
 
 Run dev/build from `host/`:
 
@@ -45,13 +56,20 @@ Dev server defaults to port **2080**.
 
 ### Layer source resolution
 
-`host/nuxt.config.ts` builds its `extends:` array from env vars so the same config works in dev (local layers) and production (git-fetched layers via [giget](https://github.com/unjs/giget)):
+`host/nuxt.config.ts` builds its `extends:` array via a `layer()` helper that returns either a local path string (dev) or a c12 install-tuple (prod):
 
-- `LAYERS_PATH` — set in `host/.env` to a local path (e.g. `../layers`). When set, `extends:` resolves to `${LAYERS_PATH}/<name>` for each layer.
+```ts
+function layer(name: string): string | [string, { install: true }] {
+  if (LAYERS_PATH) return `${LAYERS_PATH}/${name}`
+  return [`${LAYERS_REMOTE}/${name}${LAYERS_REF}`, { install: true }]
+}
+```
+
+- `LAYERS_PATH` — set in `host/.env` to a local path (e.g. `../layers`). When set, `extends:` resolves to `${LAYERS_PATH}/<name>` for each layer; deps come from the bun workspace's hoisted `node_modules/`.
 - `LAYERS_REMOTE` — git source baked into `nuxt.config.ts` (default `github:corsacca/go-saas/layers`). Used when `LAYERS_PATH` is unset. Override with the env var to point at a fork.
 - `LAYERS_REF` — optional git ref (branch / tag / SHA). Appended as `#<ref>` to the remote URL.
 
-The `host/` directory deploys standalone in production: no parent dir, no sibling `layers/`. With `LAYERS_PATH` unset, Nuxt fetches each layer from `${LAYERS_REMOTE}/<name>${LAYERS_REF ? '#' + LAYERS_REF : ''}` at install/build time.
+The `host/` directory deploys standalone in production: no parent dir, no workspace root, no sibling `layers/`. With `LAYERS_PATH` unset, c12 + giget fetches each layer from `${LAYERS_REMOTE}/<name>${LAYERS_REF ? '#' + LAYERS_REF : ''}` at config-load time, and `install: true` runs the layer's package install into `node_modules/.c12/<hash>/node_modules/`.
 
 Downstream projects that copy this blueprint reference these same layers via `LAYERS_REMOTE` (or by editing `nuxt.config.ts` directly) without forking the layer code.
 
@@ -77,7 +95,7 @@ This repo is **a host shell + a stack of layers** wired through Nuxt's `extends:
 
 ### Layer auto-discovery escape
 
-Nuxt 4 auto-discovers any direct child of `host/layers/*` (regardless of `extends:`). To keep `tenancy` truly optional, all layers live at `<repo>/layers/` (siblings of `host/`, not under `host/layers/`), so the auto-glob doesn't see them. Each layer is loaded only via an explicit `'../layers/<name>'` entry in `extends:`. Comment out a line to remove that layer.
+Nuxt 4 auto-discovers any direct child of `host/layers/*` (regardless of `extends:`). To keep `tenancy` truly optional, all layers live at `<repo>/layers/` (siblings of `host/`, not under `host/layers/`), so the auto-glob doesn't see them. Each layer is loaded only via an explicit `layer('<name>')` entry in `extends:`. Comment out a line to remove that layer. Adding a layer also requires adding `"layers/<name>"` (or `"layers/apps/<name>"`) to the `workspaces` array in the root `package.json`.
 
 ### The `#tenant` kernel
 

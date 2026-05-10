@@ -25,20 +25,24 @@ Single-tenant mode is the default when [layers/tenancy/](../layers/tenancy/) is 
 
 ### host/nuxt.config.ts
 
-Just don't include `'../layers/tenancy'` in `extends:`:
+Just don't include `layer('tenancy')` in `extends:`:
 
 ```ts
 export default defineNuxtConfig({
   extends: [
-    '../layers/oauth',          // optional — only if you need OAuth/MCP
-    '../layers/mcp',            // optional
-    '../layers/apps/calendar',
-    '../layers/apps/kanban'
-    // no '../layers/tenancy'
+    layer('core'),
+    layer('email-mailgun'),       // optional — pick an email backend
+    layer('oauth'),               // optional — only if you need OAuth/MCP
+    layer('mcp'),                 // optional
+    layer('apps/calendar'),
+    layer('apps/kanban')
+    // no layer('tenancy')
   ],
   // ...
 })
 ```
+
+The `layer()` helper resolves to local file paths in dev (`LAYERS_PATH=../layers`) and to a giget tuple `[git-url, { install: true }]` in prod — see [dev-setup.md](dev-setup.md#how-layers-are-wired).
 
 ### Environment
 
@@ -123,7 +127,7 @@ If you start single and later want multi-tenant:
 
 1. Provision the `host_admin` and `app_user` Postgres roles (see [tenancy.md](tenancy.md) for the SQL).
 2. Set `APP_DATABASE_URL` and `NUXT_TENANT_FLOW_SECRET` env vars.
-3. Add `'../layers/tenancy'` to `extends:` in `host/nuxt.config.ts` (must come **first** in the list).
+3. Add `layer('tenancy')` to `extends:` in `host/nuxt.config.ts` (must come **first** in the list, right after `layer('core')`). Also add `"layers/tenancy"` to the workspaces array in the root `package.json`.
 4. Run `bun dev` once. The tenancy layer's migrations run, including retrofits that add `org_id` columns and RLS policies to existing tables. The first user becomes a member of a freshly-created default org.
 
 This is a forward-only migration. There's no automated path back from multi-tenant to single-tenant — once `org_id` columns and RLS policies are added, removing them needs manual SQL.

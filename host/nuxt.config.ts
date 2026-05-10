@@ -13,9 +13,12 @@ const LAYERS_PATH = process.env.LAYERS_PATH
 const LAYERS_REMOTE = process.env.LAYERS_REMOTE || 'github:corsacca/go-saas/layers'
 const LAYERS_REF = process.env.LAYERS_REF ? `#${process.env.LAYERS_REF}` : ''
 
-function layer(name: string) {
+function layer(name: string): string | [string, { install: true }] {
   if (LAYERS_PATH) return `${LAYERS_PATH}/${name}`
-  return `${LAYERS_REMOTE}/${name}${LAYERS_REF}`
+  return [
+    `${LAYERS_REMOTE}/${name}${LAYERS_REF}`,
+    { install: true }
+  ]
 }
 
 // Strip layer-level tsconfig.json files. Layers extracted from full Nuxt

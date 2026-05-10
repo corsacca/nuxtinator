@@ -1,5 +1,19 @@
 {
-  "name": "app-messages",
+  "name": "layer-messages",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
+    "croner": "^9.0.0",
+    "dompurify": "^3.2.0",
+    "emoji-mart": "^5.6.0",
+    "marked": "^14.1.0"
+  },
+  "peerDependencies": {
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "nuxt": "^4.0.0",
+    "vue": "^3.0.0",
+    "zod": "^3.23.0"
+  }
 }

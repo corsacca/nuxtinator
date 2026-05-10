@@ -1,8 +1,14 @@
 {
-  "name": "@base-code/oauth-layer",
+  "name": "layer-oauth",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "OAuth 2.1 server layer for MCP-compatible token issuance",
-  "main": "./nuxt.config.ts"
+  "peerDependencies": {
+    "@nuxt/ui": "^4.0.0",
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "nuxt": "^4.0.0",
+    "vue": "^3.0.0"
+  }
 }

@@ -1,5 +1,16 @@
 {
-  "name": "app-videos",
+  "name": "layer-videos",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "fix-webm-duration": "^1.0.6",
+    "mediabunny": "^1.25.1",
+    "uuid": "^12.0.0"
+  },
+  "peerDependencies": {
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "nuxt": "^4.0.0",
+    "vue": "^3.0.0"
+  }
 }

@@ -1,5 +1,14 @@
 {
-  "name": "app-tenancy",
+  "name": "layer-tenancy",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "peerDependencies": {
+    "@nuxt/kit": "^4.0.0",
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "kysely-postgres-js": "^2.0.0",
+    "nuxt": "^4.0.0",
+    "postgres": "^3.4.7",
+    "vue": "^3.0.0"
+  }
 }
