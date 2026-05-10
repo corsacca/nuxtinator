@@ -5,7 +5,7 @@
 
 import { z } from 'zod'
 import type { Transaction } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import { withOrgPermission } from '#tenant/server'
 
 const Body = z.object({

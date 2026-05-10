@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
     }
     const roles = Array.from(new Set(inputRoles as string[]))
 
-    const { valid, unknown } = await validateRoleNames(tx, roles, ctx.orgId)
+    const { valid, unknown } = await validateRoleNames(tx, roles)
     if (!valid) {
       throw createError({ statusCode: 400, statusMessage: `Unknown role(s): ${unknown.join(', ')}` })
     }

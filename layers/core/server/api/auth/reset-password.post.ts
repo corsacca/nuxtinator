@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
       .selectAll()
       .where('token', '=', sanitizedToken)
       .where('used', '=', false)
-      .where('expires', '>', new Date().toISOString())
+      .where('expires', '>', new Date())
       .executeTakeFirst()
 
     if (!resetRequest) {
@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
         .where(eb =>
           eb.or([
             eb('used', '=', true),
-            eb('expires', '<=', new Date().toISOString())
+            eb('expires', '<=', new Date())
           ])
         )
         .execute()

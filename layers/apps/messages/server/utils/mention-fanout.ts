@@ -4,7 +4,7 @@
 //   - messages_notifications rows (kind='mention', perEventEmail=true)
 
 import type { Transaction } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import type { ExtractedMention } from './markdown-mentions'
 import { createNotifications } from './notification-creator'
 

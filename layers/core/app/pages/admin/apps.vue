@@ -30,7 +30,7 @@ const STATUS_OPTIONS: { value: AppStatus, label: string, description: string, co
   { value: 'available', label: 'Available', description: 'Org admin must opt in.', color: 'neutral', icon: 'i-lucide-circle-dashed' },
   { value: 'disabled', label: 'Disabled', description: 'Hidden from every org.', color: 'error', icon: 'i-lucide-circle-x' }
 ]
-const statusMeta = (s: AppStatus) => STATUS_OPTIONS.find(o => o.value === s) ?? STATUS_OPTIONS[1]
+const statusMeta = (s: AppStatus) => STATUS_OPTIONS.find(o => o.value === s) ?? STATUS_OPTIONS[1]!
 
 const onSetStatus = async (app: AdminApp, status: AppStatus) => {
   if (status === app.status) return

@@ -42,7 +42,7 @@ export interface OrgRoleOverridesTable {
   updated_at: ColumnType<Date, string | undefined, string>
 }
 
-declare module '~/server/database/schema' {
+declare module '#core/server/database/schema' {
   interface Database {
     orgs: OrgsTable
     memberships: MembershipsTable

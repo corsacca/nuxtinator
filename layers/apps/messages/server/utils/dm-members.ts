@@ -1,7 +1,7 @@
 // Helper to load DM participant user IDs.
 
 import type { Transaction } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 
 export async function getDmMemberIds(
   tx: Transaction<Database>,

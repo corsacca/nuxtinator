@@ -5,7 +5,7 @@
 
 import type { Transaction } from 'kysely'
 import { sql } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import type { NotificationKind } from '../database/schema.d'
 
 export interface NotificationRow {

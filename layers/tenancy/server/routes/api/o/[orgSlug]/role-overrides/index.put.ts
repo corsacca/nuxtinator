@@ -20,12 +20,12 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'role required' })
     }
 
-    const grants = Array.isArray(body?.grants)
-      ? Array.from(new Set(body.grants.filter((p: unknown): p is string =>
+    const grants: string[] = Array.isArray(body?.grants)
+      ? Array.from(new Set<string>(body.grants.filter((p: unknown): p is string =>
           typeof p === 'string' && isRegisteredPermission(p))))
       : []
-    const revokes = Array.isArray(body?.revokes)
-      ? Array.from(new Set(body.revokes.filter((p: unknown): p is string =>
+    const revokes: string[] = Array.isArray(body?.revokes)
+      ? Array.from(new Set<string>(body.revokes.filter((p: unknown): p is string =>
           typeof p === 'string' && isRegisteredPermission(p))))
       : []
 

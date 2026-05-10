@@ -292,7 +292,7 @@ const handleSaveRoles = async () => {
   } catch (err: unknown) {
     toast.add({
       title: 'Update failed',
-      description: err?.data?.statusMessage || err?.message || 'Failed to update roles',
+      description: (err as { data?: { statusMessage?: string }, message?: string })?.data?.statusMessage || (err as { message?: string })?.message || 'Failed to update roles',
       color: 'error'
     })
   } finally {
@@ -323,7 +323,7 @@ const handleResendInvite = async () => {
   } catch (err: unknown) {
     toast.add({
       title: 'Resend failed',
-      description: err?.data?.statusMessage || err?.message || 'Failed to resend invite',
+      description: (err as { data?: { statusMessage?: string }, message?: string })?.data?.statusMessage || (err as { message?: string })?.message || 'Failed to resend invite',
       color: 'error'
     })
   } finally {
@@ -378,7 +378,7 @@ const handleInvite = async () => {
     inviteModalOpen.value = false
     await refresh()
   } catch (err: unknown) {
-    inviteError.value = err?.data?.statusMessage || err?.message || 'Failed to send invite'
+    inviteError.value = (err as { data?: { statusMessage?: string }, message?: string })?.data?.statusMessage || (err as { message?: string })?.message || 'Failed to send invite'
   } finally {
     inviting.value = false
   }
@@ -412,7 +412,7 @@ const handleRemove = async () => {
   } catch (err: unknown) {
     toast.add({
       title: 'Remove failed',
-      description: err?.data?.statusMessage || err?.message || 'Failed to remove member',
+      description: (err as { data?: { statusMessage?: string }, message?: string })?.data?.statusMessage || (err as { message?: string })?.message || 'Failed to remove member',
       color: 'error'
     })
   } finally {

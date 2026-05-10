@@ -39,7 +39,7 @@ const fetchPage = async (reset = false) => {
   } catch (err: unknown) {
     toast.add({
       title: 'Failed to load logs',
-      description: err?.data?.statusMessage,
+      description: (err as { data?: { statusMessage?: string } })?.data?.statusMessage,
       color: 'error'
     })
   } finally {

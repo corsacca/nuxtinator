@@ -4,7 +4,7 @@
 // only visible to their participants.
 
 import type { Transaction } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import type { ConversationKind } from '../database/schema.d'
 
 export interface ConversationLite {

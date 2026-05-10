@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
       .limit(limit + 1)
 
     if (cursor) {
-      qb = qb.where('i.created_at', '<', cursor)
+      qb = qb.where('i.created_at', '<', new Date(cursor))
     }
 
     const rows = await qb.execute()

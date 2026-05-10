@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     qb = qb.where('activity_logs.org_id', 'is', null)
   }
   if (before) {
-    qb = qb.where('activity_logs.timestamp', '<', before)
+    qb = qb.where('activity_logs.timestamp', '<', new Date(before))
   }
 
   const rows = await qb.execute()

@@ -68,7 +68,7 @@ const onSave = async () => {
   } catch (err: unknown) {
     toast.add({
       title: 'Save failed',
-      description: err?.data?.statusMessage,
+      description: (err as { data?: { statusMessage?: string } })?.data?.statusMessage,
       color: 'error'
     })
   } finally {
@@ -86,7 +86,7 @@ const onDelete = async () => {
   } catch (err: unknown) {
     toast.add({
       title: 'Delete failed',
-      description: err?.data?.statusMessage,
+      description: (err as { data?: { statusMessage?: string } })?.data?.statusMessage,
       color: 'error'
     })
   }

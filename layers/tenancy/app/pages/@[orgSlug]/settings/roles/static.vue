@@ -67,7 +67,7 @@ const fetchOverrides = async (key: string) => {
   } catch (err: unknown) {
     toast.add({
       title: 'Failed to load overrides',
-      description: err?.data?.statusMessage,
+      description: (err as { data?: { statusMessage?: string } })?.data?.statusMessage,
       color: 'error'
     })
   } finally {
@@ -127,7 +127,7 @@ const onSave = async () => {
   } catch (err: unknown) {
     toast.add({
       title: 'Save failed',
-      description: err?.data?.statusMessage,
+      description: (err as { data?: { statusMessage?: string } })?.data?.statusMessage,
       color: 'error'
     })
   } finally {
@@ -148,7 +148,7 @@ const onReset = async () => {
   } catch (err: unknown) {
     toast.add({
       title: 'Reset failed',
-      description: err?.data?.statusMessage,
+      description: (err as { data?: { statusMessage?: string } })?.data?.statusMessage,
       color: 'error'
     })
   }

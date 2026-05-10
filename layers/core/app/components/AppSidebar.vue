@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AppEntry } from '~~/app/composables/useApps'
+import type { AppEntry } from '#core/app/composables/useApps'
 
 const props = defineProps<{
   app: AppEntry

@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
         .where('id', '=', ctx.orgId)
         .execute()
     } catch (err: unknown) {
-      if (err?.code === '23505') {
+      if ((err as { code?: string })?.code === '23505') {
         throw createError({ statusCode: 409, statusMessage: 'That slug is already in use' })
       }
       throw err

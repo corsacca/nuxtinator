@@ -19,7 +19,7 @@ import type { Transaction } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions } from '#core/server/utils/rbac'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import type { Permission } from '#core/app/utils/permissions'
 
 export interface TenantContext {

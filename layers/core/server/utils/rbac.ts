@@ -1,6 +1,6 @@
 import type { H3Event } from 'h3'
 import type { Kysely, Transaction } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import { db } from './database'
 import { requireAuth } from './auth'
 import {

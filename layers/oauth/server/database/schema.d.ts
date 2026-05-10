@@ -99,7 +99,7 @@ export interface OauthConsentsTable {
   revoked: Generated<boolean>
 }
 
-declare module '~~/server/database/schema' {
+declare module '#core/server/database/schema' {
   interface Database {
     oauth_clients: OauthClientsTable
     oauth_token_families: OauthTokenFamiliesTable

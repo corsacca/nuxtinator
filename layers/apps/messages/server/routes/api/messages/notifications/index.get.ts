@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
       .orderBy('n.created_at', 'desc')
       .limit(limit + 1)
 
-    if (cursor) qb = qb.where('n.created_at', '<', cursor)
+    if (cursor) qb = qb.where('n.created_at', '<', new Date(cursor))
     if (unreadOnly) qb = qb.where('n.read_at', 'is', null)
 
     const rows = await qb.execute()

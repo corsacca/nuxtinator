@@ -43,7 +43,7 @@ const onDeleteCustom = async (r: CustomRole) => {
   } catch (err: unknown) {
     toast.add({
       title: 'Delete failed',
-      description: err?.data?.statusMessage,
+      description: (err as { data?: { statusMessage?: string } })?.data?.statusMessage,
       color: 'error'
     })
   }

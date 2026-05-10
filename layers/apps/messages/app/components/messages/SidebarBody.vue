@@ -34,7 +34,7 @@ interface DmMeta { unread: number }
 const channelItems = computed<SidebarNavItem[]>(() =>
   data.value.channels.map(ch => ({
     to: pathFor(ch.id),
-    label: ch.name,
+    label: ch.name ?? 'Untitled',
     icon: 'i-lucide-hash',
     exact: true,
     meta: { unread: ch.unread_count, subscribed: ch.subscribed } satisfies ChannelMeta

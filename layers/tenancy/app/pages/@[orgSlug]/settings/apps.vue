@@ -34,7 +34,7 @@ const onToggle = async (app: OrgApp) => {
   } catch (err: unknown) {
     toast.add({
       title: 'Update failed',
-      description: err?.data?.statusMessage,
+      description: (err as { data?: { statusMessage?: string } })?.data?.statusMessage,
       color: 'error'
     })
   }

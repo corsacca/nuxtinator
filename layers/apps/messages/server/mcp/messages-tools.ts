@@ -171,7 +171,7 @@ export const listItemsTool = defineMcpTool({
         .where('i.deleted_at', 'is', null)
         .orderBy('i.created_at', 'desc')
         .limit(limit + 1)
-      if (input.cursor) qb = qb.where('i.created_at', '<', input.cursor)
+      if (input.cursor) qb = qb.where('i.created_at', '<', new Date(input.cursor))
 
       const rows = await qb.execute()
       const hasMore = rows.length > limit
@@ -604,7 +604,7 @@ export const postCommentTool = defineMcpTool({
             author_id: ctx.auth.userId,
             parent_comment_id: parentId,
             body_md: bodyMd,
-            anchor: anchor as Record<string, unknown> | null
+            anchor
           })
           .returning(['id', 'created_at'])
           .executeTakeFirstOrThrow()

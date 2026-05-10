@@ -13,7 +13,7 @@
 //     as UI-generated; oversized docs rejected).
 
 import type { Transaction } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import { extractMentions } from './markdown-mentions'
 
 export const MAX_ITEM_BODY_BYTES = 64 * 1024

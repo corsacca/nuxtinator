@@ -10,54 +10,60 @@
 // error. See [documentation/layers.md](../documentation/layers.md) for the
 // full reference.
 
+interface CoreHookMap {
+  'org.created': (p: {
+    orgId: string
+    slug: string
+    createdByUserId: string | null
+  }) => void | Promise<void>
+  'org.deleted': (p: {
+    orgId: string
+    slug: string
+  }) => void | Promise<void>
+  'user.created': (p: {
+    userId: string
+    email: string
+    viaInvite: boolean
+  }) => void | Promise<void>
+  'user.verified': (p: {
+    userId: string
+    email: string
+  }) => void | Promise<void>
+  'membership.created': (p: {
+    membershipId: string
+    userId: string
+    orgId: string
+    roles: string[]
+    createdByUserId: string | null
+  }) => void | Promise<void>
+  'membership.updated': (p: {
+    membershipId: string
+    userId: string
+    orgId: string
+    oldRoles: string[]
+    newRoles: string[]
+  }) => void | Promise<void>
+  'membership.deleted': (p: {
+    membershipId: string
+    userId: string
+    orgId: string
+  }) => void | Promise<void>
+  'app.enabled': (p: {
+    orgId: string
+    appId: string
+  }) => void | Promise<void>
+  'app.disabled': (p: {
+    orgId: string
+    appId: string
+  }) => void | Promise<void>
+}
+
 declare module 'nitropack/types' {
-  interface NitroRuntimeHooks {
-    'org.created': (p: {
-      orgId: string
-      slug: string
-      createdByUserId: string | null
-    }) => unknown | Promise<unknown>
-    'org.deleted': (p: {
-      orgId: string
-      slug: string
-    }) => unknown | Promise<unknown>
-    'user.created': (p: {
-      userId: string
-      email: string
-      viaInvite: boolean
-    }) => unknown | Promise<unknown>
-    'user.verified': (p: {
-      userId: string
-      email: string
-    }) => unknown | Promise<unknown>
-    'membership.created': (p: {
-      membershipId: string
-      userId: string
-      orgId: string
-      roles: string[]
-      createdByUserId: string | null
-    }) => unknown | Promise<unknown>
-    'membership.updated': (p: {
-      membershipId: string
-      userId: string
-      orgId: string
-      oldRoles: string[]
-      newRoles: string[]
-    }) => unknown | Promise<unknown>
-    'membership.deleted': (p: {
-      membershipId: string
-      userId: string
-      orgId: string
-    }) => unknown | Promise<unknown>
-    'app.enabled': (p: {
-      orgId: string
-      appId: string
-    }) => unknown | Promise<unknown>
-    'app.disabled': (p: {
-      orgId: string
-      appId: string
-    }) => unknown | Promise<unknown>
-  }
+  interface NitroRuntimeHooks extends CoreHookMap {}
+}
+
+declare module 'nitropack' {
+  interface NitroRuntimeHooks extends CoreHookMap {}
 }
 
 export {}

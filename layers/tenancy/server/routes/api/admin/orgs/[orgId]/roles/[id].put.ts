@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
     if (!updated) throw createError({ statusCode: 404, statusMessage: 'Role not found' })
     return updated
   } catch (err: unknown) {
-    if (err?.code === '23505') {
+    if ((err as { code?: string })?.code === '23505') {
       throw createError({ statusCode: 409, statusMessage: 'A role with that name already exists in this org' })
     }
     throw err

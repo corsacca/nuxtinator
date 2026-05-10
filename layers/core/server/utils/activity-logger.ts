@@ -2,7 +2,7 @@ import { db } from './database'
 import crypto from 'crypto'
 import type { H3Event } from 'h3'
 import type { Kysely, Transaction } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import { getAuthUser } from './auth'
 
 type Executor = Kysely<Database> | Transaction<Database>
@@ -30,10 +30,11 @@ interface LogEventOptions {
 // — the right semantics for security auditing.
 export async function logEvent(
   options: LogEventOptions,
-  _executor: Executor = db
+  executor: Executor = db,
+  opts: { throwOnError?: boolean } = {}
 ): Promise<void> {
   try {
-    await db
+    await executor
       .insertInto('activity_logs')
       .values({
         id: crypto.randomUUID(),
@@ -47,6 +48,7 @@ export async function logEvent(
       })
       .execute()
   } catch (error) {
+    if (opts.throwOnError) throw error
     console.error('Failed to log activity:', error)
   }
 }

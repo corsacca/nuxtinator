@@ -499,7 +499,7 @@ const handleRemoveMembership = async (m: Membership) => {
 }
 
 // Add to org (typeahead). Filters out orgs the user is already in.
-const addOrgSelected = ref<AdminOrg | null>(null)
+const addOrgSelected = ref<AdminOrg | undefined>(undefined)
 const addOrgRole = ref<string>('admin')
 const addingMembership = ref(false)
 
@@ -530,7 +530,7 @@ const handleAddMembership = async () => {
       { id: target.id, slug: target.slug, name: target.name, roles }
     ].sort((a, b) => a.name.localeCompare(b.name)))
     toast.add({ title: 'Attached to org', description: target.name, color: 'success' })
-    addOrgSelected.value = null
+    addOrgSelected.value = undefined
     addOrgRole.value = 'admin'
   } catch (err: unknown) {
     toast.add({
@@ -546,7 +546,7 @@ const handleAddMembership = async () => {
 watch(selectedUser, (next, prev) => {
   if (next?.id !== prev?.id) {
     cancelEditMembership()
-    addOrgSelected.value = null
+    addOrgSelected.value = undefined
     addOrgRole.value = 'admin'
   }
 })

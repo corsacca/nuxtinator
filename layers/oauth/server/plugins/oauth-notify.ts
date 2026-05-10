@@ -16,32 +16,7 @@ import { db } from '#core/server/utils/database'
 import { sendEmail } from '#email'
 import { PERMISSION_META } from '#core/app/utils/permissions'
 import { tryGetOauthConfig } from '../utils/oauth-config'
-
-interface ConsentGrantedPayload {
-  userId: string
-  clientId: string
-  clientName: string
-  dynamic: boolean
-  scope: string
-  resource: string
-}
-
-// Hook-map augmentation so other layer files / consumer plugins
-// referencing `oauth:consent-granted` typecheck. Mirrors the
-// declaration in server/types.d.ts (kept here too because Nuxt's
-// tsconfig glob doesn't always pick up bare `.d.ts` files inside
-// layers — declaring it next to the live subscriber is the
-// reliable path).
-declare module 'nitropack/types' {
-  interface NitroRuntimeHooks {
-    'oauth:consent-granted': (payload: ConsentGrantedPayload) => void | Promise<void>
-  }
-}
-declare module 'nitropack' {
-  interface NitroRuntimeHooks {
-    'oauth:consent-granted': (payload: ConsentGrantedPayload) => void | Promise<void>
-  }
-}
+import type { OauthConsentGrantedPayload } from '../types'
 
 function describeScope(scope: string): string {
   const meta = (PERMISSION_META as Record<string, { title: string, description: string }>)[scope]
@@ -58,7 +33,7 @@ function escapeHtml(s: string): string {
 }
 
 function buildEmail(
-  payload: ConsentGrantedPayload,
+  payload: OauthConsentGrantedPayload,
   displayName: string,
   profileUrl: string
 ): { subject: string, html: string, text: string } {
@@ -119,7 +94,7 @@ export default defineNitroPlugin((nitroApp) => {
   // (e.g. branded HTML, localized copy, different transport).
   if (cfg.oauthDisableConsentGrantedEmail) return
 
-  nitroApp.hooks.hook('oauth:consent-granted', async (payload: ConsentGrantedPayload) => {
+  nitroApp.hooks.hook('oauth:consent-granted', async (payload: OauthConsentGrantedPayload) => {
     try {
       const user = await db
         .selectFrom('users')

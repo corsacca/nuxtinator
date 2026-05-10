@@ -124,7 +124,7 @@ export interface MessagesNotificationsTable {
   emailed_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
 }
 
-declare module '~/server/database/schema' {
+declare module '#core/server/database/schema' {
   interface Database {
     messages_conversations: MessagesConversationsTable
     messages_conversation_members: MessagesConversationMembersTable

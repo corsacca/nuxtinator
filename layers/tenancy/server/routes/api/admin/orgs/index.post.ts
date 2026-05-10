@@ -79,7 +79,7 @@ export default defineEventHandler(async (event) => {
       }
     })
   } catch (err: unknown) {
-    if (err?.code === '23505') {
+    if ((err as { code?: string })?.code === '23505') {
       throw createError({ statusCode: 409, statusMessage: 'An organization with that slug already exists' })
     }
     throw err

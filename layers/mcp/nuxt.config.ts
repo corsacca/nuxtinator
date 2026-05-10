@@ -25,6 +25,19 @@ export default defineNuxtConfig({
     '#mcp-layer': fileURLToPath(new URL('./server/mcp-layer/index.ts', import.meta.url))
   },
 
+  // Exclude layer-private tests from the host typecheck. The layer's own
+  // `bun test` runs them with the layer's vitest devDependency in scope —
+  // the host project doesn't ship vitest and shouldn't try to type-check
+  // these files.
+  typescript: {
+    tsConfig: {
+      exclude: [
+        `${layerRoot}tests`,
+        `${layerRoot}vitest.config.ts`
+      ]
+    }
+  },
+
   nitro: {
     typescript: {
       tsConfig: {
@@ -32,7 +45,11 @@ export default defineNuxtConfig({
           paths: {
             '#mcp-layer': [`${layerRoot}server/mcp-layer/index.ts`]
           }
-        }
+        },
+        exclude: [
+          `${layerRoot}tests`,
+          `${layerRoot}vitest.config.ts`
+        ]
       }
     }
   },

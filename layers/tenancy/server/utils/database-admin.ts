@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely'
 import { PostgresJSDialect } from 'kysely-postgres-js'
 import postgres from 'postgres'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 
 // `adminDb` — BYPASSRLS Kysely client for cross-org operations. Connects as
 // the `host_admin` Postgres role. Only the tenancy layer's own `/admin/orgs`

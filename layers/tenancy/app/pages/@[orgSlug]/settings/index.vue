@@ -48,7 +48,7 @@ async function save() {
       await navigateTo(`/@${updated.slug}/settings`)
     }
   } catch (err: unknown) {
-    saveErr.value = err?.data?.statusMessage || 'Failed to save'
+    saveErr.value = (err as { data?: { statusMessage?: string } })?.data?.statusMessage || 'Failed to save'
   } finally {
     saving.value = false
   }

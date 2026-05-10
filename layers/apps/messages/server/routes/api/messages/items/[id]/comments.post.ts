@@ -75,7 +75,7 @@ export default defineEventHandler(async (event) => {
         author_id: ctx.userId,
         parent_comment_id: parentId,
         body_md: bodyMd,
-        anchor: anchor as Record<string, unknown> | null
+        anchor
       })
       .returning(['id', 'created_at'])
       .executeTakeFirstOrThrow()

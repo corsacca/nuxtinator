@@ -19,11 +19,12 @@ interface AppsResponse {
 
 export async function useApps() {
   const { slug } = useActiveOrg()
-  const url = computed(() => slug.value ? `/api/o/${slug.value}/_apps` : null)
+  const url = computed(() => slug.value ? `/api/o/${slug.value}/_apps` : '')
 
   const { data, refresh, pending, error } = await useFetch<AppsResponse>(url, {
-    default: () => ({ apps: [] }),
+    default: () => ({ apps: [] as AppEntry[] }),
     watch: [slug],
+    immediate: !!slug.value,
     key: 'org-apps'
   })
 

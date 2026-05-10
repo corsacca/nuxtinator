@@ -59,7 +59,7 @@ export default defineEventHandler(async (event) => {
     if (!org) {
       throw createError({ statusCode: 400, statusMessage: `Org ${att.orgId} does not exist` })
     }
-    const { valid, unknown } = await validateRoleNames(db, att.roles, att.orgId)
+    const { valid, unknown } = await validateRoleNames(db, att.roles)
     if (!valid) {
       throw createError({
         statusCode: 400,

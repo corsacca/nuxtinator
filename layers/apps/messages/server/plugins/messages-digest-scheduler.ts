@@ -17,7 +17,7 @@
 import { Cron } from 'croner'
 import { sql, type Transaction } from 'kysely'
 import { db } from '#core/server/utils/database'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import { sendDigestEmail, type DigestChannelEntry, type DigestThreadEntry } from '../utils/messages-email'
 
 interface PerUserAccumulator {

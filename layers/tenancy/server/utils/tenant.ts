@@ -14,16 +14,15 @@
 //   5. If `opts.appId` was passed, 410 if that app is disabled for the org.
 //   6. Refresh the `active-org-slug` cookie (30d) so bare-URL hits redirect.
 //   7. Run the handler with `(tx, ctx)` where ctx has full org context.
-import type { H3Event, EventHandler } from 'h3'
+import type { H3Event, EventHandler, EventHandlerRequest } from 'h3'
 import type { Transaction, Kysely } from 'kysely'
 import { sql } from 'kysely'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { db } from '#core/server/utils/database'
 import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions } from '#core/server/utils/rbac'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import type { Permission } from '#core/app/utils/permissions'
-import type { Database } from '~/server/database/schema'
 import type { Kysely as KyselyType } from 'kysely'
 
 // App-enable resolution: two-tier (global `apps.status` + per-org `org_apps`).
@@ -151,15 +150,15 @@ async function runWithOrgContext<T>(
   })
 }
 
-export function defineTenantHandler<T>(fn: TenantHandler<T>): EventHandler<unknown, Promise<T>>
-export function defineTenantHandler<T>(opts: DefineTenantHandlerOpts, fn: TenantHandler<T>): EventHandler<unknown, Promise<T>>
+export function defineTenantHandler<T>(fn: TenantHandler<T>): EventHandler<EventHandlerRequest, Promise<T>>
+export function defineTenantHandler<T>(opts: DefineTenantHandlerOpts, fn: TenantHandler<T>): EventHandler<EventHandlerRequest, Promise<T>>
 export function defineTenantHandler<T>(
   optsOrFn: DefineTenantHandlerOpts | TenantHandler<T>,
   maybeFn?: TenantHandler<T>
-): EventHandler<unknown, Promise<T>> {
+): EventHandler<EventHandlerRequest, Promise<T>> {
   const opts: DefineTenantHandlerOpts = typeof optsOrFn === 'function' ? {} : optsOrFn
   const fn = (typeof optsOrFn === 'function' ? optsOrFn : maybeFn) as TenantHandler<T>
-  return defineEventHandler<unknown, Promise<T>>(event => runWithOrgContext(event, opts, fn))
+  return defineEventHandler<EventHandlerRequest, Promise<T>>(event => runWithOrgContext(event, opts, fn))
 }
 
 // Function-call style — for handlers already wrapped in `defineEventHandler`.

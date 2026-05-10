@@ -243,7 +243,7 @@ watch([() => props.item?.body_md, editing], () => {
           </div>
         </header>
 
-        <div class="flex-1 min-h-0 overflow-y-auto" @scroll="onScroll">
+        <div class="flex-1 min-h-0 overflow-y-auto">
           <div class="max-w-7xl mx-auto px-6 py-6 flex gap-6 items-start">
             <div ref="docContentRef" class="flex-1 min-w-0 max-w-3xl relative">
               <p v-if="saveError" class="text-xs text-(--ui-error) mb-2">

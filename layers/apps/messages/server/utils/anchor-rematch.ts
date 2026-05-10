@@ -4,7 +4,7 @@
 // when no acceptable match exists.
 
 import type { Transaction } from 'kysely'
-import type { Database } from '~/server/database/schema'
+import type { Database } from '#core/server/database/schema'
 import type { AnchorPayload } from '../database/schema.d'
 
 const CONTEXT_LEN = 32
@@ -31,7 +31,7 @@ export async function rematchAnchors(
     await tx
       .updateTable('messages_comments')
       .set({
-        anchor: result.anchor as unknown as Record<string, unknown>,
+        anchor: result.anchor,
         anchor_orphaned: result.orphaned
       })
       .where('id', '=', row.id)

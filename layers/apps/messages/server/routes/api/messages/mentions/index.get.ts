@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
       .orderBy('m.created_at', 'desc')
       .limit(limit + 1)
 
-    if (cursor) qb = qb.where('m.created_at', '<', cursor)
+    if (cursor) qb = qb.where('m.created_at', '<', new Date(cursor))
 
     const rows = await qb.execute()
     const hasMore = rows.length > limit

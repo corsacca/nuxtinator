@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'permissions array required' })
   }
 
-  const perms = Array.from(new Set(inputPerms.filter((p: unknown): p is string =>
+  const perms: string[] = Array.from(new Set<string>(inputPerms.filter((p: unknown): p is string =>
     typeof p === 'string' && isRegisteredPermission(p)
   )))
 
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
       })
       .execute()
   } catch (err: unknown) {
-    if (err?.code === '23505') {
+    if ((err as { code?: string })?.code === '23505') {
       throw createError({ statusCode: 409, statusMessage: 'A role with that name already exists in this org' })
     }
     throw err
@@ -55,8 +55,7 @@ export default defineEventHandler(async (event) => {
   logEvent({
     eventType: 'custom_role_created',
     userId,
-    metadata: { orgId, name, permissions: perms, via: 'host_admin' },
-    orgId
+    metadata: { orgId, name, permissions: perms, via: 'host_admin' }
   }).catch(() => {})
 
   return { id, name, description, permissions: perms }
