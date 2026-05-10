@@ -60,7 +60,6 @@ const formatWhen = (ts: string) => {
 
 <template>
   <div class="max-w-5xl mx-auto">
-    <OrgSettingsNav />
     <div class="space-y-4">
       <h1 class="text-3xl font-bold">
         Activity log

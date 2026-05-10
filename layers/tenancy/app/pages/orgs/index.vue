@@ -65,29 +65,36 @@ const statusLabel = (org: { suspended: boolean }) => org.suspended ? 'Suspended'
       <li
         v-for="org in orgs"
         :key="org.id"
+        class="flex items-center gap-2 rounded-md border border-(--ui-border) p-2 pr-3 hover:bg-(--ui-bg-elevated) transition-colors"
       >
         <NuxtLink
           :to="`/@${org.slug}/`"
-          class="block rounded-md border border-(--ui-border) p-4 hover:bg-(--ui-bg-elevated) transition-colors"
+          class="flex-1 min-w-0 flex items-center justify-between gap-3 p-2 rounded-md"
         >
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <div class="font-semibold truncate">
-                {{ org.name }}
-              </div>
-              <div class="text-xs text-(--ui-text-muted) truncate">
-                /@{{ org.slug }} · roles: {{ org.roles.join(', ') || 'none' }}
-              </div>
+          <div class="min-w-0">
+            <div class="font-semibold truncate">
+              {{ org.name }}
             </div>
-            <UBadge
-              :color="org.suspended ? 'error' : 'neutral'"
-              variant="subtle"
-              size="sm"
-            >
-              {{ statusLabel(org) }}
-            </UBadge>
+            <div class="text-xs text-(--ui-text-muted) truncate">
+              /@{{ org.slug }} · roles: {{ org.roles.join(', ') || 'none' }}
+            </div>
           </div>
+          <UBadge
+            :color="org.suspended ? 'error' : 'neutral'"
+            variant="subtle"
+            size="sm"
+          >
+            {{ statusLabel(org) }}
+          </UBadge>
         </NuxtLink>
+        <UButton
+          :to="`/@${org.slug}/settings`"
+          icon="i-lucide-settings"
+          variant="ghost"
+          color="neutral"
+          size="sm"
+          aria-label="Org settings"
+        />
       </li>
     </ul>
 

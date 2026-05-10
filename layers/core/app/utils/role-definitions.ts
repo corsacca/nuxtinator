@@ -7,12 +7,21 @@ export interface RoleDefinition {
 }
 
 // Host static roles. `users.is_admin` is the operator gate (no permission
-// slug); `admin` is special-cased in `getRolePermissions` to mean "every
-// registered permission" so it's not listed here. `member` is the universal
-// "basic authenticated access" role used as the default for invited users in
-// both single and multi-tenant deploys. Layers add additional static roles
-// via `registerStaticRole(...)`.
+// slug). `admin` is declared here so role-pickers and admin UIs see it
+// like any other role; its `permissions` array is intentionally empty
+// because the actual permission set is materialized at runtime by
+// `getRolePermissions` in `rbac.ts`, which special-cases the name `admin`
+// to mean "every registered permission" (open registry — the full set
+// isn't known at compile time). `member` is the universal "basic
+// authenticated access" role used as the default for invited users in
+// both single and multi-tenant deploys. Layers add additional static
+// roles via `registerStaticRole(...)`.
 export const ROLES = {
+  admin: {
+    name: 'Admin',
+    description: 'Full administrative access. Grants every registered permission.',
+    permissions: []
+  },
   member: {
     name: 'Member',
     description: 'Basic authenticated access.',

@@ -57,8 +57,11 @@ async function save() {
 
 <template>
   <div class="max-w-4xl mx-auto">
-    <OrgSettingsNav />
-    <div class="space-y-6">
+    <div class="space-y-4">
+      <h1 class="text-3xl font-bold">
+        General
+      </h1>
+
       <div
         v-if="pending && !org"
         class="text-sm text-(--ui-text-muted)"
@@ -80,7 +83,7 @@ async function save() {
         </UFormField>
         <UFormField
           label="Slug"
-          hint="Hard cutover — old paths break immediately when you change this."
+          help="Hard cutover — old paths break immediately when you change this."
         >
           <UInput
             v-model="formSlug"

@@ -48,5 +48,15 @@ export default defineNuxtConfig({
         }
       }
     }
+  },
+
+  // Feature flag: whether the tenancy layer is loaded. Default off; the
+  // tenancy layer's nuxt.config flips it to true. Code in core that touches
+  // tenancy-only tables (orgs, memberships) or endpoints (/api/admin/orgs/*)
+  // must check `useRuntimeConfig().public.tenancy` and degrade gracefully.
+  runtimeConfig: {
+    public: {
+      tenancy: false
+    }
   }
 })

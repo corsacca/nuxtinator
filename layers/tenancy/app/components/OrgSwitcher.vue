@@ -103,6 +103,19 @@ function pathForOrg(targetSlug: string): string {
         <hr class="my-2 border-(--ui-border)">
 
         <NuxtLink
+          v-if="activeOrg"
+          :to="`/@${activeOrg.slug}/settings`"
+          class="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-(--ui-bg-accented) transition-colors text-sm"
+          @click="open = false"
+        >
+          <UIcon
+            name="i-lucide-settings"
+            class="size-4"
+          />
+          Settings
+        </NuxtLink>
+
+        <NuxtLink
           to="/orgs"
           class="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-(--ui-bg-accented) transition-colors text-sm"
           @click="open = false"

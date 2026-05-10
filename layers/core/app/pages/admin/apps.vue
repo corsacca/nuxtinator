@@ -4,12 +4,14 @@ definePageMeta({
   middleware: ['auth', 'admin']
 })
 
+type AppStatus = 'disabled' | 'available' | 'default'
+
 interface AdminApp {
   id: string
   title: string
   description?: string
   icon?: string
-  status: 'disabled' | 'available' | 'default'
+  status: AppStatus
   installed: boolean
   created_at: string
   updated_at: string
@@ -23,7 +25,15 @@ const { data, pending, refresh } = await useFetch<{ apps: AdminApp[] }>(
 )
 const apps = computed(() => data.value?.apps ?? [])
 
-const onSetStatus = async (app: AdminApp, status: AdminApp['status']) => {
+const STATUS_OPTIONS: { value: AppStatus, label: string, description: string, color: 'success' | 'neutral' | 'error', icon: string }[] = [
+  { value: 'default', label: 'Default', description: 'Auto-enabled for every new org.', color: 'success', icon: 'i-lucide-circle-check' },
+  { value: 'available', label: 'Available', description: 'Org admin must opt in.', color: 'neutral', icon: 'i-lucide-circle-dashed' },
+  { value: 'disabled', label: 'Disabled', description: 'Hidden from every org.', color: 'error', icon: 'i-lucide-circle-x' }
+]
+const statusMeta = (s: AppStatus) => STATUS_OPTIONS.find(o => o.value === s) ?? STATUS_OPTIONS[1]
+
+const onSetStatus = async (app: AdminApp, status: AppStatus) => {
+  if (status === app.status) return
   try {
     await $fetch(`/api/admin/apps/${app.id}`, {
       method: 'PATCH',
@@ -48,10 +58,7 @@ const onSetStatus = async (app: AdminApp, status: AdminApp['status']) => {
         Apps
       </h1>
       <p class="text-sm text-(--ui-text-muted)">
-        Set the global status for each installed app.
-        <strong>default</strong> auto-enables for every new org;
-        <strong>available</strong> requires org-admin opt-in;
-        <strong>disabled</strong> hides the app from every org.
+        Set the global availability for each app. Each option is described in the dropdown.
       </p>
     </header>
 
@@ -96,18 +103,41 @@ const onSetStatus = async (app: AdminApp, status: AdminApp['status']) => {
             </div>
           </div>
         </div>
-        <div class="flex gap-1">
-          <UButton
-            v-for="s in (['default', 'available', 'disabled'] as const)"
-            :key="s"
-            size="xs"
-            :variant="app.status === s ? 'solid' : 'outline'"
-            :color="s === 'disabled' ? 'error' : s === 'default' ? 'success' : 'neutral'"
-            @click="onSetStatus(app, s)"
-          >
-            {{ s }}
-          </UButton>
-        </div>
+        <USelectMenu
+          :model-value="app.status"
+          :items="STATUS_OPTIONS"
+          value-key="value"
+          label-key="label"
+          :search="false"
+          :color="statusMeta(app.status).color"
+          variant="outline"
+          size="sm"
+          class="w-44 shrink-0"
+          @update:model-value="(v: AppStatus) => onSetStatus(app, v)"
+        >
+          <template #leading>
+            <UIcon
+              :name="statusMeta(app.status).icon"
+              class="size-4"
+            />
+          </template>
+          <template #item="{ item }">
+            <div class="flex items-start gap-2 py-0.5">
+              <UIcon
+                :name="(item as typeof STATUS_OPTIONS[number]).icon"
+                class="size-4 mt-0.5 shrink-0"
+              />
+              <div>
+                <div class="font-medium leading-tight">
+                  {{ (item as typeof STATUS_OPTIONS[number]).label }}
+                </div>
+                <div class="text-xs text-(--ui-text-muted) leading-tight mt-0.5">
+                  {{ (item as typeof STATUS_OPTIONS[number]).description }}
+                </div>
+              </div>
+            </div>
+          </template>
+        </USelectMenu>
       </li>
     </ul>
   </div>

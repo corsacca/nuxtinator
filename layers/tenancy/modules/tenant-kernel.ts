@@ -14,6 +14,14 @@ export default defineNuxtModule({
     nuxt.options.alias['#tenant'] = clientPath
     nuxt.options.alias['#tenant/server'] = serverPath
 
+    // Feature flag for code in core that conditionally exposes tenancy-only
+    // data/endpoints (org-membership joins on /admin/users, /api/admin/orgs/*,
+    // etc.). Set programmatically here so callers don't have to maintain it
+    // in nuxt.config and can't override it via env vars — its value is fixed
+    // by whether this layer is in `extends:`.
+    nuxt.options.runtimeConfig.public = nuxt.options.runtimeConfig.public || {}
+    ;(nuxt.options.runtimeConfig.public as Record<string, unknown>).tenancy = true
+
     nuxt.options.nitro = nuxt.options.nitro || {}
     const ts = nuxt.options.nitro.typescript = nuxt.options.nitro.typescript || {}
     const tsConfig = ts.tsConfig = ts.tsConfig || {}

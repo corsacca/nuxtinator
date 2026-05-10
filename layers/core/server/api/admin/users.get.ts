@@ -84,21 +84,33 @@ export default defineEventHandler(async (event) => {
     .offset((page - 1) * pageSize)
     .execute()
 
+  // Membership join is tenancy-only — the orgs/memberships tables only exist
+  // when the tenancy layer is loaded. Skip cleanly in single-tenant deploys.
+  // The `as any` cast keeps this file compiling without tenancy's schema
+  // augmentation; the runtime guard above ensures the query never fires when
+  // the tables don't exist.
+  const tenancyEnabled = useRuntimeConfig(event).public.tenancy === true
   const userIds = rows.map(r => r.id)
-  const memberships = userIds.length > 0
-    ? await db
-        .selectFrom('memberships')
-        .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
-        .select(['memberships.user_id as user_id', 'orgs.slug as slug', 'orgs.name as name'])
-        .where('memberships.user_id', 'in', userIds)
-        .orderBy('orgs.name', 'asc')
-        .execute()
-    : []
-  const orgsByUser = new Map<string, { slug: string, name: string }[]>()
-  for (const m of memberships) {
-    const list = orgsByUser.get(m.user_id) ?? []
-    list.push({ slug: m.slug, name: m.name })
-    orgsByUser.set(m.user_id, list)
+  const orgsByUser = new Map<string, { id: string, slug: string, name: string, roles: string[] }[]>()
+  if (tenancyEnabled && userIds.length > 0) {
+    const memberships = await (db as any)
+      .selectFrom('memberships')
+      .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
+      .select([
+        'memberships.user_id as user_id',
+        'memberships.roles as roles',
+        'orgs.id as id',
+        'orgs.slug as slug',
+        'orgs.name as name'
+      ])
+      .where('memberships.user_id', 'in', userIds)
+      .orderBy('orgs.name', 'asc')
+      .execute() as Array<{ user_id: string, roles: string[], id: string, slug: string, name: string }>
+    for (const m of memberships) {
+      const list = orgsByUser.get(m.user_id) ?? []
+      list.push({ id: m.id, slug: m.slug, name: m.name, roles: m.roles })
+      orgsByUser.set(m.user_id, list)
+    }
   }
 
   const now = Date.now()

@@ -52,7 +52,6 @@ const onDeleteCustom = async (r: CustomRole) => {
 
 <template>
   <div class="max-w-4xl mx-auto">
-    <OrgSettingsNav />
     <div class="space-y-8">
       <header class="flex items-center justify-between gap-3 flex-wrap">
         <div>

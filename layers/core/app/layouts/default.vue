@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { user } = useAuth()
+const { isHostAdmin } = usePermissions()
 const config = useRuntimeConfig()
 
 const { apps } = await useApps()
@@ -40,6 +41,16 @@ watch(() => route.path, () => {
         <div class="flex items-center gap-1 shrink-0">
           <AppSwitcher />
           <UButton
+            v-if="isHostAdmin"
+            to="/admin"
+            icon="i-lucide-shield-check"
+            variant="ghost"
+            color="neutral"
+            size="sm"
+            aria-label="Admin"
+            title="Admin"
+          />
+          <UButton
             to="/account"
             icon="i-lucide-user"
             variant="ghost"
@@ -67,6 +78,16 @@ watch(() => route.path, () => {
         <div class="flex items-center gap-3">
           <AppSwitcher />
           <UButton
+            v-if="isHostAdmin"
+            to="/admin"
+            icon="i-lucide-shield-check"
+            variant="ghost"
+            color="neutral"
+            size="sm"
+            aria-label="Admin"
+            title="Admin"
+          />
+          <UButton
             to="/account"
             icon="i-lucide-user"
             variant="ghost"
@@ -85,12 +106,7 @@ watch(() => route.path, () => {
           v-if="activeApp"
           class="hidden lg:flex w-64 shrink-0 border-r border-(--ui-border) sticky top-[57px] h-[calc(100vh-57px)]"
         >
-          <MailSidebar
-            v-if="activeApp.id === 'mail'"
-            class="w-full"
-          />
           <AppSidebar
-            v-else
             :key="activeApp.id"
             :app="activeApp"
             class="w-full"
@@ -110,11 +126,7 @@ watch(() => route.path, () => {
         :ui="{ content: 'max-w-xs' }"
       >
         <template #content>
-          <MailSidebar
-            v-if="activeApp.id === 'mail'"
-          />
           <AppSidebar
-            v-else
             :key="activeApp.id"
             :app="activeApp"
           />

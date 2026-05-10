@@ -1,49 +1,86 @@
 <script setup lang="ts">
+import type { SidebarNavItem } from '#core/app/utils/sidebar-nav'
+
 definePageMeta({
   middleware: 'auth'
 })
 
 const route = useRoute()
 const orgSlug = computed(() => route.params.orgSlug as string)
+const mobileOpen = ref(false)
 
-const tabs = [
-  { title: 'General', path: '', icon: 'i-lucide-settings' },
-  { title: 'Members', path: 'members', icon: 'i-lucide-users' },
-  { title: 'Roles', path: 'roles', icon: 'i-lucide-shield' },
-  { title: 'Apps', path: 'apps', icon: 'i-lucide-grid-2x2' }
-]
-
-function isActive(path: string) {
+const navItems = computed<SidebarNavItem[]>(() => {
   const base = `/@${orgSlug.value}/settings`
-  if (!path) return route.path === base || route.path === `${base}/`
-  return route.path === `${base}/${path}` || route.path.startsWith(`${base}/${path}/`)
-}
+  return [
+    { to: base, label: 'General', icon: 'i-lucide-settings', exact: true },
+    { to: `${base}/members`, label: 'Members', icon: 'i-lucide-users' },
+    { to: `${base}/roles`, label: 'Roles', icon: 'i-lucide-shield' },
+    { to: `${base}/apps`, label: 'Apps', icon: 'i-lucide-grid-2x2' },
+    { to: `${base}/audit`, label: 'Activity', icon: 'i-lucide-history' }
+  ]
+})
+
+watch(() => route.path, () => {
+  mobileOpen.value = false
+})
 </script>
 
 <template>
-  <div>
-    <div class="max-w-4xl mx-auto mb-6">
-      <h1 class="text-3xl font-bold mb-4">
-        Settings
-      </h1>
-      <nav class="flex flex-wrap gap-2 border-b border-(--ui-border) pb-2">
-        <NuxtLink
-          v-for="t in tabs"
-          :key="t.path"
-          :to="`/@${orgSlug}/settings${t.path ? '/' + t.path : ''}`"
-          :class="[
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm hover:bg-(--ui-bg-elevated)',
-            isActive(t.path) && 'bg-(--ui-bg-elevated) text-(--ui-text-highlighted) font-medium'
-          ]"
-        >
-          <UIcon
-            :name="t.icon"
-            class="size-4"
-          />
-          {{ t.title }}
-        </NuxtLink>
-      </nav>
-    </div>
-    <NuxtPage />
+  <div class="lg:flex lg:gap-8 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
+    <!-- Mobile header -->
+    <header class="lg:hidden flex items-center justify-between border-b border-(--ui-border) px-4 py-3">
+      <div class="flex items-center gap-2">
+        <UButton
+          icon="i-lucide-menu"
+          variant="ghost"
+          color="neutral"
+          size="sm"
+          aria-label="Open settings menu"
+          @click="mobileOpen = true"
+        />
+        <h1 class="text-lg font-semibold">
+          Settings
+        </h1>
+      </div>
+    </header>
+
+    <!-- Desktop sidebar -->
+    <SidebarPanel
+      title="Settings"
+      class="hidden lg:flex w-64 shrink-0 sticky top-[57px] !h-[calc(100vh-57px)]"
+    >
+      <SidebarNav :items="navItems" />
+    </SidebarPanel>
+
+    <!-- Mobile drawer -->
+    <USlideover
+      v-model:open="mobileOpen"
+      side="left"
+      :ui="{ content: 'max-w-xs' }"
+    >
+      <template #content>
+        <SidebarPanel class="border-r-0">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <h1 class="text-xl font-semibold">
+                Settings
+              </h1>
+              <UButton
+                icon="i-lucide-x"
+                variant="ghost"
+                color="neutral"
+                aria-label="Close menu"
+                @click="mobileOpen = false"
+              />
+            </div>
+          </template>
+          <SidebarNav :items="navItems" />
+        </SidebarPanel>
+      </template>
+    </USlideover>
+
+    <main class="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+      <NuxtPage />
+    </main>
   </div>
 </template>

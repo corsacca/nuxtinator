@@ -1,39 +1,368 @@
 <script setup lang="ts">
+import { h, resolveComponent } from 'vue'
+import type { TableColumn } from '@nuxt/ui'
+import type { AssignableRole } from '../../../composables/useOrgAssignableRoles'
+
 definePageMeta({
   middleware: 'auth'
 })
 
-const route = useRoute()
-const orgSlug = computed(() => route.params.orgSlug as string)
-const toast = useToast()
+type MemberStatus = 'active' | 'not_verified' | 'pending_invite' | 'expired_invite'
 
-interface Member {
+interface MemberRow {
   membership_id: string
   user_id: string
   email: string
   display_name: string
   roles: string[]
-  status: 'active' | 'not_verified' | 'pending_invite' | 'expired_invite'
+  status: MemberStatus
   joined_at: string
 }
 
-const { data, pending, refresh } = await useFetch<{ members: Member[] }>(
+interface MembersResponse {
+  rows: MemberRow[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+interface OrgInfo {
+  id: string
+  slug: string
+  name: string
+  perms: string[]
+}
+
+const STATUS_META: Record<MemberStatus, { label: string, color: 'success' | 'warning' | 'info' | 'error', icon: string }> = {
+  active: { label: 'Active', color: 'success', icon: 'i-lucide-badge-check' },
+  not_verified: { label: 'Not verified', color: 'warning', icon: 'i-lucide-mail-warning' },
+  pending_invite: { label: 'Pending invite', color: 'info', icon: 'i-lucide-mail' },
+  expired_invite: { label: 'Expired invite', color: 'error', icon: 'i-lucide-mail-x' }
+}
+
+const route = useRoute()
+const orgSlug = computed(() => route.params.orgSlug as string)
+const toast = useToast()
+const { user: currentUser } = useAuth()
+
+const { data: org } = await useFetch<OrgInfo>(() => `/api/o/${orgSlug.value}`, {
+  watch: [orgSlug],
+  key: () => `org-detail-members-${orgSlug.value}`
+})
+
+const myPerms = computed(() => new Set(org.value?.perms ?? []))
+const has = (p: string) => myPerms.value.has(p)
+const canInvite = computed(() => has('org.members.invite'))
+const canRemove = computed(() => has('org.members.remove'))
+const canManageRoles = computed(() => has('org.members.manage_roles'))
+const canOpenMember = computed(() => canRemove.value || canManageRoles.value || canInvite.value)
+
+const { roles: assignableRoles, refresh: refreshRoles } = await useOrgAssignableRoles(orgSlug)
+
+const roleLabel = (key: string) =>
+  assignableRoles.value.find(r => r.key === key)?.name ?? key
+
+const canAssignRole = (role: AssignableRole) =>
+  role.permissions.every(p => myPerms.value.has(p))
+
+const missingPermsForRole = (role: AssignableRole) =>
+  role.permissions.filter(p => !myPerms.value.has(p))
+
+const UIcon = resolveComponent('UIcon')
+const UButton = resolveComponent('UButton')
+const UBadge = resolveComponent('UBadge')
+
+const page = ref(1)
+const pageSize = ref(50)
+const search = ref('')
+const sortField = ref<'display_name' | 'email' | 'status' | 'joined_at'>('joined_at')
+const sortDir = ref<'asc' | 'desc'>('desc')
+
+const searchDebounced = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(search, (val) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    searchDebounced.value = val
+    page.value = 1
+  }, 250)
+})
+
+const queryKey = computed(() => ({
+  page: page.value,
+  pageSize: pageSize.value,
+  q: searchDebounced.value,
+  sort: sortField.value,
+  dir: sortDir.value
+}))
+
+const { data, pending, error, refresh } = await useFetch<MembersResponse>(
   () => `/api/o/${orgSlug.value}/members`,
-  { watch: [orgSlug], default: () => ({ members: [] }) }
+  {
+    query: queryKey,
+    watch: [queryKey, orgSlug],
+    default: () => ({ rows: [], total: 0, page: 1, pageSize: 50 })
+  }
 )
 
-const members = computed(() => data.value?.members ?? [])
+const toggleSort = (field: typeof sortField.value) => {
+  if (sortField.value === field) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortField.value = field
+    sortDir.value = 'asc'
+  }
+  page.value = 1
+}
 
-const inviteOpen = ref(false)
+const sortIcon = (field: typeof sortField.value) => {
+  if (sortField.value !== field) return 'i-lucide-chevrons-up-down'
+  return sortDir.value === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'
+}
+
+const formatDate = (value: string | Date | null | undefined) => {
+  if (!value) return '—'
+  const d = typeof value === 'string' ? new Date(value) : value
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString()
+}
+
+const relativeTime = (input: string | number | Date | null | undefined) => {
+  if (!input) return null
+  const d = input instanceof Date
+    ? input
+    : new Date(typeof input === 'string' ? input : Number(input))
+  if (Number.isNaN(d.getTime())) return null
+  const diffMs = Date.now() - d.getTime()
+  const abs = Math.abs(diffMs)
+  const minute = 60_000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const week = 7 * day
+  const month = 30 * day
+  const year = 365 * day
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const sign = diffMs >= 0 ? -1 : 1
+  if (abs < minute) return rtf.format(sign * Math.round(abs / 1000), 'second')
+  if (abs < hour) return rtf.format(sign * Math.round(abs / minute), 'minute')
+  if (abs < day) return rtf.format(sign * Math.round(abs / hour), 'hour')
+  if (abs < week) return rtf.format(sign * Math.round(abs / day), 'day')
+  if (abs < month) return rtf.format(sign * Math.round(abs / week), 'week')
+  if (abs < year) return rtf.format(sign * Math.round(abs / month), 'month')
+  return rtf.format(sign * Math.round(abs / year), 'year')
+}
+
+const initialsOf = (name: string | undefined | null, email: string | undefined | null) => {
+  const source = (name || email || '').trim()
+  if (!source) return '?'
+  const parts = source.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase()
+  }
+  return source.slice(0, 2).toUpperCase()
+}
+
+const sortableHeader = (label: string, field: typeof sortField.value) => {
+  return () => h(UButton, {
+    variant: 'ghost',
+    color: 'neutral',
+    size: 'xs',
+    class: '-mx-2',
+    trailingIcon: sortIcon(field),
+    onClick: (e: MouseEvent) => {
+      e.stopPropagation()
+      toggleSort(field)
+    }
+  }, () => label)
+}
+
+const columns: TableColumn<MemberRow>[] = [
+  {
+    accessorKey: 'display_name',
+    header: sortableHeader('Name', 'display_name'),
+    cell: ({ row }) => row.original.display_name || '—'
+  },
+  {
+    accessorKey: 'email',
+    header: sortableHeader('Email', 'email')
+  },
+  {
+    accessorKey: 'status',
+    header: sortableHeader('Status', 'status'),
+    cell: ({ row }) => {
+      const meta = STATUS_META[row.original.status] ?? STATUS_META.active
+      return h(UBadge, { color: meta.color, variant: 'subtle', size: 'sm' }, () => [
+        h(UIcon, { name: meta.icon, class: 'size-3 mr-1' }),
+        meta.label
+      ])
+    }
+  },
+  {
+    accessorKey: 'roles',
+    header: 'Roles',
+    cell: ({ row }) => {
+      const roles = row.original.roles ?? []
+      if (roles.length === 0) {
+        return h('span', { class: 'text-(--ui-text-muted) text-sm' }, '—')
+      }
+      return h('div', { class: 'flex flex-wrap gap-1' },
+        roles.map(r => h(UBadge, {
+          key: r,
+          color: r === 'admin' ? 'warning' : 'neutral',
+          variant: 'subtle',
+          size: 'sm'
+        }, () => roleLabel(r)))
+      )
+    }
+  },
+  {
+    accessorKey: 'joined_at',
+    header: sortableHeader('Joined', 'joined_at'),
+    cell: ({ row }) => formatDate(row.original.joined_at)
+  }
+]
+
+const total = computed(() => data.value?.total ?? 0)
+const rows = computed(() => data.value?.rows ?? [])
+
+// ---------- slideover ----------
+const selectedMember = ref<MemberRow | null>(null)
+const editRoles = ref<string[]>([])
+const savingRoles = ref(false)
+
+const slideoverOpen = computed({
+  get: () => selectedMember.value !== null,
+  set: (val: boolean) => { if (!val) selectedMember.value = null }
+})
+
+const isSelf = computed(() =>
+  !!(selectedMember.value && currentUser.value && selectedMember.value.user_id === currentUser.value.id)
+)
+
+const openRow = (row: MemberRow) => {
+  selectedMember.value = row
+  editRoles.value = [...(row.roles ?? [])]
+}
+
+const handleRowSelect = (_event: Event, row: { original: MemberRow }) => {
+  if (!canOpenMember.value) return
+  openRow(row.original)
+}
+
+const tableMeta = computed(() => ({
+  class: {
+    tr: (row: { original: MemberRow }) =>
+      selectedMember.value?.user_id === row.original.user_id ? 'bg-(--ui-bg-accented)' : ''
+  }
+}))
+
+const toggleRole = (key: string) => {
+  const idx = editRoles.value.indexOf(key)
+  if (idx === -1) editRoles.value = [...editRoles.value, key]
+  else editRoles.value = editRoles.value.filter(r => r !== key)
+}
+
+const rolesChanged = computed(() => {
+  if (!selectedMember.value) return false
+  const a = [...(selectedMember.value.roles ?? [])].sort()
+  const b = [...editRoles.value].sort()
+  return a.length !== b.length || a.some((r, i) => r !== b[i])
+})
+
+const handleSaveRoles = async () => {
+  if (!selectedMember.value || !rolesChanged.value) return
+  savingRoles.value = true
+  try {
+    const response = await $fetch<{ user_id: string, roles: string[] }>(
+      `/api/o/${orgSlug.value}/members/${selectedMember.value.user_id}/roles`,
+      { method: 'PATCH', body: { roles: editRoles.value } }
+    )
+    if (data.value) {
+      data.value = {
+        ...data.value,
+        rows: data.value.rows.map(r =>
+          r.user_id === response.user_id ? { ...r, roles: response.roles } : r
+        )
+      }
+    }
+    if (selectedMember.value) {
+      selectedMember.value = { ...selectedMember.value, roles: response.roles }
+    }
+    toast.add({ title: 'Roles updated', color: 'success' })
+  } catch (err: unknown) {
+    toast.add({
+      title: 'Update failed',
+      description: err?.data?.statusMessage || err?.message || 'Failed to update roles',
+      color: 'error'
+    })
+  } finally {
+    savingRoles.value = false
+  }
+}
+
+// ---------- resend invite ----------
+const resendingInvite = ref(false)
+
+const handleResendInvite = async () => {
+  if (!selectedMember.value) return
+  resendingInvite.value = true
+  try {
+    const userId = selectedMember.value.user_id
+    await $fetch(`/api/o/${orgSlug.value}/members/${userId}/resend-invite`, { method: 'POST' })
+    toast.add({ title: 'Invite resent', color: 'success' })
+    if (selectedMember.value.status === 'expired_invite') {
+      const updated = { ...selectedMember.value, status: 'pending_invite' as MemberStatus }
+      selectedMember.value = updated
+      if (data.value) {
+        data.value = {
+          ...data.value,
+          rows: data.value.rows.map(r => r.user_id === updated.user_id ? updated : r)
+        }
+      }
+    }
+  } catch (err: unknown) {
+    toast.add({
+      title: 'Resend failed',
+      description: err?.data?.statusMessage || err?.message || 'Failed to resend invite',
+      color: 'error'
+    })
+  } finally {
+    resendingInvite.value = false
+  }
+}
+
+// ---------- invite modal ----------
+const inviteModalOpen = ref(false)
+const inviting = ref(false)
 const inviteForm = reactive({
   email: '',
   display_name: '',
   roles: ['member'] as string[]
 })
-const inviting = ref(false)
 const inviteError = ref('')
 
-const onInvite = async () => {
+const openInviteModal = () => {
+  inviteForm.email = ''
+  inviteForm.display_name = ''
+  inviteForm.roles = ['member']
+  inviteError.value = ''
+  refreshRoles()
+  inviteModalOpen.value = true
+}
+
+const toggleInviteRole = (key: string) => {
+  const idx = inviteForm.roles.indexOf(key)
+  if (idx === -1) inviteForm.roles = [...inviteForm.roles, key]
+  else inviteForm.roles = inviteForm.roles.filter(r => r !== key)
+}
+
+const inviteValid = computed(() =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteForm.email.trim())
+  && inviteForm.display_name.trim().length >= 2
+)
+
+const handleInvite = async () => {
+  if (!inviteValid.value || inviting.value) return
   inviteError.value = ''
   inviting.value = true
   try {
@@ -45,153 +374,490 @@ const onInvite = async () => {
         roles: inviteForm.roles
       }
     })
-    inviteOpen.value = false
-    inviteForm.email = ''
-    inviteForm.display_name = ''
-    inviteForm.roles = ['member']
-    toast.add({ title: 'Invitation sent', color: 'success' })
+    toast.add({ title: 'Invite sent', description: inviteForm.email.trim().toLowerCase(), color: 'success' })
+    inviteModalOpen.value = false
     await refresh()
   } catch (err: unknown) {
-    inviteError.value = err?.data?.statusMessage || 'Failed to invite'
+    inviteError.value = err?.data?.statusMessage || err?.message || 'Failed to send invite'
   } finally {
     inviting.value = false
   }
 }
 
-const onRemove = async (m: Member) => {
-  if (!confirm(`Remove ${m.display_name || m.email} from this org?`)) return
+// ---------- remove member ----------
+const removeModalOpen = ref(false)
+const removing = ref(false)
+
+const requestRemove = () => {
+  if (!selectedMember.value || isSelf.value) return
+  removeModalOpen.value = true
+}
+
+const handleRemove = async () => {
+  if (!selectedMember.value || isSelf.value) return
+  removing.value = true
   try {
-    await $fetch(`/api/o/${orgSlug.value}/members/${m.user_id}`, { method: 'DELETE' })
+    const userId = selectedMember.value.user_id
+    await $fetch(`/api/o/${orgSlug.value}/members/${userId}`, { method: 'DELETE' })
+    if (data.value) {
+      data.value = {
+        ...data.value,
+        rows: data.value.rows.filter(r => r.user_id !== userId),
+        total: Math.max(0, data.value.total - 1)
+      }
+    }
     toast.add({ title: 'Member removed', color: 'success' })
-    await refresh()
+    removeModalOpen.value = false
+    selectedMember.value = null
   } catch (err: unknown) {
     toast.add({
       title: 'Remove failed',
-      description: err?.data?.statusMessage || 'Failed to remove member',
+      description: err?.data?.statusMessage || err?.message || 'Failed to remove member',
       color: 'error'
     })
+  } finally {
+    removing.value = false
   }
 }
-
-const statusLabel = (s: Member['status']) => ({
-  active: 'Active',
-  not_verified: 'Unverified',
-  pending_invite: 'Pending',
-  expired_invite: 'Expired invite'
-}[s])
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto">
-    <OrgSettingsNav />
-    <div class="space-y-4">
-      <header class="flex items-center justify-between gap-4">
-        <h1 class="text-3xl font-bold">
-          Members
-        </h1>
+  <div>
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <h1 class="text-3xl font-bold">
+        Members
+      </h1>
+      <div class="flex items-center gap-3 w-full sm:w-auto">
+        <UInput
+          v-model="search"
+          placeholder="Search name or email..."
+          icon="i-lucide-search"
+          class="flex-1 sm:w-80"
+        />
         <UButton
+          v-if="canInvite"
           icon="i-lucide-user-plus"
-          @click="inviteOpen = true"
+          color="primary"
+          @click="openInviteModal"
         >
           Invite member
         </UButton>
-      </header>
-
-      <div
-        v-if="pending && members.length === 0"
-        class="text-sm text-(--ui-text-muted)"
-      >
-        Loading...
       </div>
+    </div>
 
-      <ul
-        v-else
-        class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-md"
-      >
-        <li
-          v-for="m in members"
-          :key="m.membership_id"
-          class="flex items-center justify-between gap-3 p-3"
+    <UAlert
+      v-if="error"
+      color="error"
+      :title="error.statusMessage || 'Failed to load members'"
+      class="mb-4"
+    />
+
+    <div class="border border-(--ui-border) rounded-lg overflow-hidden bg-(--ui-bg-elevated)">
+      <UTable
+        :data="rows"
+        :columns="columns"
+        :loading="pending"
+        :empty-state="{ icon: 'i-lucide-users', label: 'No members found' }"
+        :on-select="handleRowSelect"
+        :meta="tableMeta"
+        :ui="{ tr: canOpenMember ? 'transition-colors cursor-pointer' : 'transition-colors' }"
+      />
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-4 mt-4">
+      <p class="text-sm text-(--ui-text-muted)">
+        {{ total }} {{ total === 1 ? 'member' : 'members' }}
+      </p>
+      <UPagination
+        v-model:page="page"
+        :total="total"
+        :items-per-page="pageSize"
+      />
+    </div>
+
+    <USlideover
+      v-model:open="slideoverOpen"
+      side="right"
+      :title="selectedMember?.display_name || ''"
+      :ui="{ content: 'w-screen max-w-full sm:max-w-none sm:w-[50vw]' }"
+    >
+      <template #actions>
+        <UTooltip
+          v-if="canRemove"
+          :text="isSelf ? 'You cannot remove yourself' : 'Remove from org'"
         >
-          <div class="min-w-0">
-            <div class="font-medium truncate">
-              {{ m.display_name }}
+          <UButton
+            icon="i-lucide-user-minus"
+            color="error"
+            variant="ghost"
+            size="sm"
+            :disabled="isSelf"
+            aria-label="Remove from org"
+            @click="requestRemove"
+          />
+        </UTooltip>
+      </template>
+      <template #body>
+        <div
+          v-if="selectedMember"
+          class="space-y-8"
+        >
+          <!-- Identity hero -->
+          <section class="flex items-start gap-4">
+            <div class="shrink-0 size-16 rounded-full bg-gradient-to-br from-(--ui-primary) to-(--ui-primary)/60 text-white flex items-center justify-center text-xl font-semibold ring-1 ring-(--ui-border) shadow-sm">
+              {{ initialsOf(selectedMember.display_name, selectedMember.email) }}
             </div>
-            <div class="text-xs text-(--ui-text-muted) truncate">
-              {{ m.email }} · {{ m.roles.join(', ') }} · {{ statusLabel(m.status) }}
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h2 class="text-xl font-semibold truncate">
+                  {{ selectedMember.display_name }}
+                </h2>
+                <UBadge
+                  v-for="role in selectedMember.roles ?? []"
+                  :key="role"
+                  :color="role === 'admin' ? 'warning' : 'neutral'"
+                  variant="subtle"
+                  size="sm"
+                >
+                  <UIcon
+                    v-if="role === 'admin'"
+                    name="i-lucide-shield"
+                    class="size-3 mr-1"
+                  />
+                  {{ roleLabel(role) }}
+                </UBadge>
+              </div>
+              <a
+                :href="`mailto:${selectedMember.email}`"
+                class="text-sm text-(--ui-text-muted) hover:text-(--ui-text) transition-colors inline-flex items-center gap-1.5 mt-0.5 truncate"
+              >
+                <UIcon
+                  name="i-lucide-mail"
+                  class="size-3.5 shrink-0"
+                />
+                <span class="truncate">{{ selectedMember.email }}</span>
+              </a>
+              <div class="mt-2.5 flex items-center gap-2 flex-wrap">
+                <UBadge
+                  :color="STATUS_META[selectedMember.status].color"
+                  variant="subtle"
+                  size="sm"
+                >
+                  <UIcon
+                    :name="STATUS_META[selectedMember.status].icon"
+                    class="size-3 mr-1"
+                  />
+                  {{ STATUS_META[selectedMember.status].label }}
+                </UBadge>
+                <template v-if="(selectedMember.status === 'pending_invite' || selectedMember.status === 'expired_invite') && canInvite">
+                  <UButton
+                    size="xs"
+                    variant="soft"
+                    color="primary"
+                    icon="i-lucide-mail"
+                    :loading="resendingInvite"
+                    @click="handleResendInvite"
+                  >
+                    Resend invite
+                  </UButton>
+                </template>
+              </div>
+            </div>
+          </section>
+
+          <!-- Stat card -->
+          <section class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="rounded-lg border border-(--ui-border) bg-(--ui-bg-elevated) p-4">
+              <div class="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-(--ui-text-muted)">
+                <UIcon
+                  name="i-lucide-calendar-plus"
+                  class="size-3.5"
+                />
+                <span>Joined</span>
+              </div>
+              <p class="mt-1.5 text-sm font-medium">
+                {{ formatDate(selectedMember.joined_at) }}
+              </p>
+              <p class="text-xs text-(--ui-text-muted) mt-0.5">
+                {{ relativeTime(selectedMember.joined_at) || '—' }}
+              </p>
+            </div>
+          </section>
+
+          <!-- Roles editor -->
+          <section v-if="canManageRoles">
+            <div class="flex items-center gap-2 mb-4">
+              <UIcon
+                name="i-lucide-shield"
+                class="size-4 text-(--ui-text-muted)"
+              />
+              <h3 class="text-sm font-semibold uppercase tracking-wide text-(--ui-text-muted)">
+                Roles
+              </h3>
+              <div class="flex-1 h-px bg-(--ui-border)" />
+            </div>
+
+            <div class="space-y-2">
+              <label
+                v-for="role in assignableRoles"
+                :key="role.key"
+                class="flex items-start gap-3 p-3 rounded-lg border border-(--ui-border) transition-colors"
+                :class="canAssignRole(role)
+                  ? 'hover:bg-(--ui-bg-accented) cursor-pointer'
+                  : 'opacity-60 cursor-not-allowed'"
+              >
+                <UTooltip
+                  :text="!canAssignRole(role)
+                    ? `You lack: ${missingPermsForRole(role).join(', ')}`
+                    : ''"
+                  :disabled="canAssignRole(role)"
+                >
+                  <UCheckbox
+                    :model-value="editRoles.includes(role.key)"
+                    :disabled="savingRoles || !canAssignRole(role)"
+                    @update:model-value="toggleRole(role.key)"
+                  />
+                </UTooltip>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-medium">{{ role.name }}</span>
+                    <UBadge
+                      v-if="role.source === 'custom'"
+                      color="neutral"
+                      variant="subtle"
+                      size="sm"
+                    >
+                      Custom
+                    </UBadge>
+                    <UBadge
+                      v-if="!canAssignRole(role)"
+                      color="warning"
+                      variant="subtle"
+                      size="sm"
+                    >
+                      Cannot assign
+                    </UBadge>
+                  </div>
+                  <div
+                    v-if="role.description"
+                    class="text-sm text-(--ui-text-muted) mt-0.5"
+                  >
+                    {{ role.description }}
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div class="flex items-center gap-3 pt-4">
+              <UButton
+                size="lg"
+                icon="i-lucide-save"
+                :loading="savingRoles"
+                :disabled="!rolesChanged || savingRoles"
+                @click="handleSaveRoles"
+              >
+                Save roles
+              </UButton>
+              <p
+                v-if="rolesChanged"
+                class="text-sm text-(--ui-text-muted)"
+              >
+                {{ editRoles.length }} {{ editRoles.length === 1 ? 'role' : 'roles' }} selected
+              </p>
+            </div>
+          </section>
+        </div>
+      </template>
+    </USlideover>
+
+    <UModal
+      v-model:open="inviteModalOpen"
+      :dismissible="!inviting"
+    >
+      <template #content>
+        <form
+          class="p-6 space-y-5"
+          @submit.prevent="handleInvite"
+        >
+          <div class="flex items-start gap-3">
+            <div class="shrink-0 size-10 rounded-full bg-(--ui-primary)/10 flex items-center justify-center">
+              <UIcon
+                name="i-lucide-user-plus"
+                class="size-5 text-(--ui-primary)"
+              />
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-lg font-semibold">
+                Invite member
+              </h3>
+              <p class="text-sm text-(--ui-text-muted) mt-1">
+                If this email is already a user, they're attached to this org silently. Otherwise they'll get an invite email with a 7-day link to set a password.
+              </p>
             </div>
           </div>
-          <UButton
-            variant="ghost"
-            color="error"
-            icon="i-lucide-user-minus"
-            size="sm"
-            @click="onRemove(m)"
-          />
-        </li>
-      </ul>
 
-      <UModal v-model:open="inviteOpen">
-        <template #content>
-          <form
-            class="p-6 space-y-4"
-            @submit.prevent="onInvite"
+          <UAlert
+            v-if="inviteError"
+            color="error"
+            variant="soft"
+            :title="inviteError"
+            :close-button="{ icon: 'i-lucide-x', color: 'gray', variant: 'ghost' }"
+            @close="inviteError = ''"
+          />
+
+          <UFormField
+            label="Email"
+            required
           >
-            <h2 class="text-lg font-semibold">
-              Invite a member
-            </h2>
-            <UFormField label="Email">
-              <UInput
-                v-model="inviteForm.email"
-                type="email"
-                autofocus
-                :disabled="inviting"
-              />
-            </UFormField>
-            <UFormField
-              label="Display name"
-              hint="Used only when this email isn't already a user."
-            >
-              <UInput
-                v-model="inviteForm.display_name"
-                :disabled="inviting"
-              />
-            </UFormField>
-            <UFormField
-              label="Roles (comma-separated)"
-              hint="Default: member"
-            >
-              <UInput
-                :model-value="inviteForm.roles.join(',')"
-                :disabled="inviting"
-                @update:model-value="(v: string | number) =>
-                  inviteForm.roles = String(v).split(',').map(s => s.trim()).filter(Boolean)"
-              />
-            </UFormField>
-            <UAlert
-              v-if="inviteError"
-              color="error"
-              :title="inviteError"
+            <UInput
+              v-model="inviteForm.email"
+              type="email"
+              placeholder="user@example.com"
+              size="lg"
+              :disabled="inviting"
+              autocomplete="off"
+              class="w-full"
             />
-            <div class="flex gap-2 justify-end">
-              <UButton
-                variant="ghost"
-                :disabled="inviting"
-                @click="inviteOpen = false"
+          </UFormField>
+
+          <UFormField
+            label="Display name"
+            help="Used only for new users; ignored if the email is already a user."
+            required
+          >
+            <UInput
+              v-model="inviteForm.display_name"
+              type="text"
+              placeholder="Their name"
+              size="lg"
+              :disabled="inviting"
+              autocomplete="off"
+              class="w-full"
+            />
+          </UFormField>
+
+          <div>
+            <label class="block text-sm font-medium mb-2">Roles</label>
+            <div class="space-y-2">
+              <label
+                v-for="role in assignableRoles"
+                :key="role.key"
+                class="flex items-start gap-3 p-3 rounded-lg border border-(--ui-border) transition-colors"
+                :class="canAssignRole(role)
+                  ? 'hover:bg-(--ui-bg-accented) cursor-pointer'
+                  : 'opacity-60 cursor-not-allowed'"
               >
-                Cancel
-              </UButton>
-              <UButton
-                type="submit"
-                :loading="inviting"
-                :disabled="!inviteForm.email"
-              >
-                Send invite
-              </UButton>
+                <UTooltip
+                  :text="!canAssignRole(role)
+                    ? `You lack: ${missingPermsForRole(role).join(', ')}`
+                    : ''"
+                  :disabled="canAssignRole(role)"
+                >
+                  <UCheckbox
+                    :model-value="inviteForm.roles.includes(role.key)"
+                    :disabled="inviting || !canAssignRole(role)"
+                    @update:model-value="toggleInviteRole(role.key)"
+                  />
+                </UTooltip>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-medium">{{ role.name }}</span>
+                    <UBadge
+                      v-if="role.source === 'custom'"
+                      color="neutral"
+                      variant="subtle"
+                      size="sm"
+                    >
+                      Custom
+                    </UBadge>
+                    <UBadge
+                      v-if="!canAssignRole(role)"
+                      color="warning"
+                      variant="subtle"
+                      size="sm"
+                    >
+                      Cannot assign
+                    </UBadge>
+                  </div>
+                  <div
+                    v-if="role.description"
+                    class="text-sm text-(--ui-text-muted) mt-0.5"
+                  >
+                    {{ role.description }}
+                  </div>
+                </div>
+              </label>
             </div>
-          </form>
-        </template>
-      </UModal>
-    </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-3 pt-2">
+            <UButton
+              type="button"
+              variant="ghost"
+              color="neutral"
+              :disabled="inviting"
+              @click="inviteModalOpen = false"
+            >
+              Cancel
+            </UButton>
+            <UButton
+              type="submit"
+              icon="i-lucide-send"
+              :loading="inviting"
+              :disabled="!inviteValid || inviting"
+            >
+              Send invite
+            </UButton>
+          </div>
+        </form>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="removeModalOpen"
+      :dismissible="!removing"
+    >
+      <template #content>
+        <div class="p-6 space-y-5">
+          <div class="flex items-start gap-3">
+            <div class="shrink-0 size-10 rounded-full bg-(--ui-error)/10 flex items-center justify-center">
+              <UIcon
+                name="i-lucide-triangle-alert"
+                class="size-5 text-(--ui-error)"
+              />
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-lg font-semibold">
+                Remove from org?
+              </h3>
+              <p class="text-sm text-(--ui-text-muted) mt-1">
+                This will remove
+                <span class="font-medium text-(--ui-text)">{{ selectedMember?.display_name }}</span>
+                ({{ selectedMember?.email }}) from <span class="font-medium text-(--ui-text)">{{ org?.name }}</span>.
+                Their global account is unaffected. They can be re-invited later.
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-3 pt-2">
+            <UButton
+              variant="ghost"
+              color="neutral"
+              :disabled="removing"
+              @click="removeModalOpen = false"
+            >
+              Cancel
+            </UButton>
+            <UButton
+              color="error"
+              icon="i-lucide-user-minus"
+              :loading="removing"
+              @click="handleRemove"
+            >
+              Remove
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

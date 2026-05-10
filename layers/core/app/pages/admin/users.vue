@@ -18,7 +18,7 @@ interface AdminUserRow {
   status: UserStatus
   created: string
   last_login: string | null
-  orgs: { slug: string, name: string }[]
+  orgs: { id: string, slug: string, name: string, roles: string[] }[]
 }
 
 const STATUS_META: Record<UserStatus, { label: string, color: 'success' | 'warning' | 'info' | 'error', icon: string }> = {
@@ -72,16 +72,38 @@ const { data, pending, error, refresh } = await useFetch<UsersResponse>('/api/ad
   default: () => ({ rows: [], total: 0, page: 1, pageSize: 50 })
 })
 
+// Tenancy-only data. The org-membership UI (table column, slideover section,
+// invite-modal attachments) only renders when this is true; the orgs list
+// fetch is also skipped in single-tenant deploys where the endpoint doesn't
+// exist.
+const tenancyEnabled = computed(() => useRuntimeConfig().public.tenancy === true)
+
 interface AdminOrg {
   id: string
   slug: string
   name: string
 }
-const { data: orgsData } = await useFetch<{ orgs: AdminOrg[] }>(
-  '/api/admin/orgs',
-  { default: () => ({ orgs: [] }) }
-)
+const { data: orgsData } = tenancyEnabled.value
+  ? await useFetch<{ orgs: AdminOrg[] }>(
+    '/api/admin/orgs',
+    { default: () => ({ orgs: [] }) }
+  )
+  : { data: ref<{ orgs: AdminOrg[] }>({ orgs: [] }) }
 const allOrgs = computed(() => orgsData.value?.orgs ?? [])
+
+interface StaticRole {
+  key: string
+  name: string
+  description: string
+  source: string
+}
+const { data: staticRolesData } = tenancyEnabled.value
+  ? await useFetch<{ roles: StaticRole[] }>(
+    '/api/admin/static-roles',
+    { default: () => ({ roles: [] }) }
+  )
+  : { data: ref<{ roles: StaticRole[] }>({ roles: [] }) }
+const staticRoles = computed(() => staticRolesData.value?.roles ?? [])
 
 interface AttachmentDraft {
   orgId: string
@@ -119,11 +141,14 @@ const setRolesFor = (orgId: string, val: string) => {
 const rolesFor = (orgId: string) =>
   inviteAttachments.value.find(a => a.orgId === orgId)?.roles ?? ''
 
-const canSubmitInvite = computed(() =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.value.trim())
-  && inviteAttachments.value.length > 0
-  && inviteAttachments.value.every(a => a.roles.split(',').map(s => s.trim()).filter(Boolean).length > 0)
-)
+const canSubmitInvite = computed(() => {
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.value.trim())
+  if (!emailOk) return false
+  // Org attachments only required when tenancy is loaded.
+  if (!tenancyEnabled.value) return true
+  return inviteAttachments.value.length > 0
+    && inviteAttachments.value.every(a => a.roles.split(',').map(s => s.trim()).filter(Boolean).length > 0)
+})
 
 const submitInvite = async () => {
   inviteError.value = ''
@@ -213,19 +238,21 @@ const columns: TableColumn<AdminUserRow>[] = [
       ])
     }
   },
-  {
-    accessorKey: 'orgs',
-    header: 'Organizations',
-    cell: ({ row }) => {
-      const orgs = row.original.orgs
-      if (orgs.length === 0) {
-        return h('span', { class: 'text-(--ui-text-muted) text-sm' }, '—')
-      }
-      return h('div', { class: 'flex flex-wrap gap-1' }, orgs.map(o =>
-        h(UBadge, { color: 'neutral', variant: 'subtle', size: 'sm' }, () => o.name)
-      ))
-    }
-  },
+  ...(tenancyEnabled.value
+    ? [{
+        accessorKey: 'orgs',
+        header: 'Organizations',
+        cell: ({ row }: { row: { original: AdminUserRow } }) => {
+          const orgs = row.original.orgs
+          if (orgs.length === 0) {
+            return h('span', { class: 'text-(--ui-text-muted) text-sm' }, '—')
+          }
+          return h('div', { class: 'flex flex-wrap gap-1' }, orgs.map(o =>
+            h(UBadge, { color: 'neutral', variant: 'subtle', size: 'sm' }, () => o.name)
+          ))
+        }
+      } as TableColumn<AdminUserRow>]
+    : []),
   {
     accessorKey: 'created',
     header: sortableHeader('Created', 'created'),
@@ -385,6 +412,144 @@ const handleResendInvite = async () => {
     resendingInvite.value = false
   }
 }
+
+// ---------- org memberships (slideover) ----------
+type Membership = AdminUserRow['orgs'][number]
+
+const editingOrgId = ref<string | null>(null)
+const orgRoleDraft = ref<string>('admin')
+const savingMembership = ref(false)
+const removingOrgId = ref<string | null>(null)
+
+const beginEditMembership = (m: Membership) => {
+  editingOrgId.value = m.id
+  // Single-select editor — if the membership has multiple roles today, show
+  // the first; saving will replace the array with the picked role.
+  orgRoleDraft.value = m.roles[0] ?? 'admin'
+}
+const cancelEditMembership = () => {
+  editingOrgId.value = null
+  orgRoleDraft.value = 'admin'
+}
+
+const patchMembershipLocal = (userId: string, orgId: string, mutator: (orgs: Membership[]) => Membership[]) => {
+  if (data.value) {
+    data.value = {
+      ...data.value,
+      rows: data.value.rows.map(r =>
+        r.id === userId ? { ...r, orgs: mutator(r.orgs) } : r
+      )
+    }
+  }
+  if (selectedUser.value?.id === userId) {
+    selectedUser.value = { ...selectedUser.value, orgs: mutator(selectedUser.value.orgs) }
+  }
+  void orgId
+}
+
+const handleSaveMembershipRoles = async (m: Membership) => {
+  if (!selectedUser.value) return
+  const role = orgRoleDraft.value
+  if (!role) {
+    toast.add({ title: 'Role required', description: 'Pick a role.', color: 'error' })
+    return
+  }
+  const roles = [role]
+  savingMembership.value = true
+  try {
+    const userId = selectedUser.value.id
+    const response = await $fetch<{ user_id: string, roles: string[] }>(
+      `/api/admin/orgs/${m.id}/members/${userId}/roles`,
+      { method: 'PATCH', body: { roles } }
+    )
+    patchMembershipLocal(userId, m.id, orgs =>
+      orgs.map(o => o.id === m.id ? { ...o, roles: response.roles } : o)
+    )
+    toast.add({ title: 'Roles updated', color: 'success' })
+    cancelEditMembership()
+  } catch (err: unknown) {
+    toast.add({
+      title: 'Update failed',
+      description: (err as { data?: { statusMessage?: string }, message?: string } | null)?.data?.statusMessage || (err as { message?: string } | null)?.message || 'Failed to update roles',
+      color: 'error'
+    })
+  } finally {
+    savingMembership.value = false
+  }
+}
+
+const handleRemoveMembership = async (m: Membership) => {
+  if (!selectedUser.value) return
+  if (!confirm(`Remove ${selectedUser.value.display_name || selectedUser.value.email} from ${m.name}?`)) return
+  removingOrgId.value = m.id
+  try {
+    const userId = selectedUser.value.id
+    await $fetch(`/api/admin/orgs/${m.id}/members/${userId}`, { method: 'DELETE' })
+    patchMembershipLocal(userId, m.id, orgs => orgs.filter(o => o.id !== m.id))
+    toast.add({ title: 'Removed from org', description: m.name, color: 'success' })
+  } catch (err: unknown) {
+    toast.add({
+      title: 'Remove failed',
+      description: (err as { data?: { statusMessage?: string }, message?: string } | null)?.data?.statusMessage || (err as { message?: string } | null)?.message || 'Failed to remove from org',
+      color: 'error'
+    })
+  } finally {
+    removingOrgId.value = null
+  }
+}
+
+// Add to org (typeahead). Filters out orgs the user is already in.
+const addOrgSelected = ref<AdminOrg | null>(null)
+const addOrgRole = ref<string>('admin')
+const addingMembership = ref(false)
+
+const availableOrgsToAdd = computed(() => {
+  if (!selectedUser.value) return []
+  const currentIds = new Set(selectedUser.value.orgs.map(o => o.id))
+  return allOrgs.value.filter(o => !currentIds.has(o.id))
+})
+
+const handleAddMembership = async () => {
+  if (!selectedUser.value || !addOrgSelected.value) return
+  const role = addOrgRole.value
+  if (!role) {
+    toast.add({ title: 'Role required', description: 'Pick a role.', color: 'error' })
+    return
+  }
+  const roles = [role]
+  addingMembership.value = true
+  try {
+    const userId = selectedUser.value.id
+    const target = addOrgSelected.value
+    await $fetch(`/api/admin/orgs/${target.id}/members`, {
+      method: 'POST',
+      body: { userId, roles }
+    })
+    patchMembershipLocal(userId, target.id, orgs => [
+      ...orgs,
+      { id: target.id, slug: target.slug, name: target.name, roles }
+    ].sort((a, b) => a.name.localeCompare(b.name)))
+    toast.add({ title: 'Attached to org', description: target.name, color: 'success' })
+    addOrgSelected.value = null
+    addOrgRole.value = 'admin'
+  } catch (err: unknown) {
+    toast.add({
+      title: 'Attach failed',
+      description: (err as { data?: { statusMessage?: string }, message?: string } | null)?.data?.statusMessage || (err as { message?: string } | null)?.message || 'Failed to attach',
+      color: 'error'
+    })
+  } finally {
+    addingMembership.value = false
+  }
+}
+
+watch(selectedUser, (next, prev) => {
+  if (next?.id !== prev?.id) {
+    cancelEditMembership()
+    addOrgSelected.value = null
+    addOrgRole.value = 'admin'
+  }
+})
 
 const deleteModalOpen = ref(false)
 const deleting = ref(false)
@@ -548,6 +713,159 @@ const handleDelete = async () => {
             </div>
           </section>
 
+          <template v-if="tenancyEnabled">
+            <hr class="border-(--ui-border)">
+
+            <section class="space-y-3">
+              <h3 class="font-medium">
+                Organizations
+              </h3>
+
+            <ul
+              v-if="selectedUser.orgs.length > 0"
+              class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-md"
+            >
+              <li
+                v-for="m in selectedUser.orgs"
+                :key="m.id"
+                class="p-3 space-y-2"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="min-w-0">
+                    <div class="font-medium truncate">
+                      {{ m.name }}
+                    </div>
+                    <div class="text-xs text-(--ui-text-muted) truncate">
+                      /@{{ m.slug }}
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-1 shrink-0">
+                    <UButton
+                      variant="ghost"
+                      color="neutral"
+                      size="xs"
+                      icon="i-lucide-pencil"
+                      :disabled="editingOrgId === m.id"
+                      aria-label="Edit roles"
+                      @click="beginEditMembership(m)"
+                    />
+                    <UButton
+                      variant="ghost"
+                      color="error"
+                      size="xs"
+                      icon="i-lucide-user-minus"
+                      :loading="removingOrgId === m.id"
+                      aria-label="Remove from org"
+                      @click="handleRemoveMembership(m)"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  v-if="editingOrgId !== m.id"
+                  class="flex flex-wrap gap-1"
+                >
+                  <UBadge
+                    v-for="r in m.roles"
+                    :key="r"
+                    :color="r === 'admin' ? 'warning' : 'neutral'"
+                    variant="subtle"
+                    size="sm"
+                  >
+                    {{ r }}
+                  </UBadge>
+                  <span
+                    v-if="m.roles.length === 0"
+                    class="text-xs text-(--ui-text-muted)"
+                  >
+                    No roles
+                  </span>
+                </div>
+
+                <div
+                  v-else
+                  class="flex items-center gap-2"
+                >
+                  <USelectMenu
+                    v-model="orgRoleDraft"
+                    :items="staticRoles"
+                    value-key="key"
+                    label-key="name"
+                    placeholder="Pick a role..."
+                    class="flex-1"
+                    :disabled="savingMembership"
+                  />
+                  <UButton
+                    size="xs"
+                    :loading="savingMembership"
+                    @click="handleSaveMembershipRoles(m)"
+                  >
+                    Save
+                  </UButton>
+                  <UButton
+                    size="xs"
+                    variant="ghost"
+                    :disabled="savingMembership"
+                    @click="cancelEditMembership"
+                  >
+                    Cancel
+                  </UButton>
+                </div>
+              </li>
+            </ul>
+            <p
+              v-else
+              class="text-sm text-(--ui-text-muted)"
+            >
+              Not a member of any organization yet.
+            </p>
+
+            <div class="space-y-2 pt-2">
+              <p class="text-xs font-medium uppercase tracking-wide text-(--ui-text-muted)">
+                Add to org
+              </p>
+              <div
+                v-if="availableOrgsToAdd.length === 0"
+                class="text-sm text-(--ui-text-muted)"
+              >
+                Already a member of every org.
+              </div>
+              <div
+                v-else
+                class="flex flex-col sm:flex-row gap-2"
+              >
+                <USelectMenu
+                  v-model="addOrgSelected"
+                  :items="availableOrgsToAdd"
+                  :search-input="{ placeholder: 'Search orgs...' }"
+                  by="id"
+                  label-key="name"
+                  placeholder="Select an org..."
+                  class="flex-1"
+                  :disabled="addingMembership"
+                />
+                <USelectMenu
+                  v-model="addOrgRole"
+                  :items="staticRoles"
+                  value-key="key"
+                  label-key="name"
+                  placeholder="Pick a role..."
+                  class="sm:w-56"
+                  :disabled="addingMembership"
+                />
+                <UButton
+                  icon="i-lucide-plus"
+                  :loading="addingMembership"
+                  :disabled="!addOrgSelected || addingMembership"
+                  @click="handleAddMembership"
+                >
+                  Add
+                </UButton>
+              </div>
+            </div>
+            </section>
+          </template>
+
           <hr class="border-(--ui-border)">
 
           <section class="space-y-2">
@@ -606,7 +924,10 @@ const handleDelete = async () => {
             />
           </UFormField>
 
-          <div class="space-y-2">
+          <div
+            v-if="tenancyEnabled"
+            class="space-y-2"
+          >
             <h3 class="font-medium">
               Attach to organizations
             </h3>
