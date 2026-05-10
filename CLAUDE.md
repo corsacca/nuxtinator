@@ -66,7 +66,7 @@ function layer(name: string): string | [string, { install: true }] {
 ```
 
 - `LAYERS_PATH` — set in `host/.env` to a local path (e.g. `../layers`). When set, `extends:` resolves to `${LAYERS_PATH}/<name>` for each layer; deps come from the bun workspace's hoisted `node_modules/`.
-- `LAYERS_REMOTE` — git source baked into `nuxt.config.ts` (default `github:corsacca/go-saas/layers`). Used when `LAYERS_PATH` is unset. Override with the env var to point at a fork.
+- `LAYERS_REMOTE` — git source baked into `nuxt.config.ts` (default `github:corsacca/nuxtinator/layers`). Used when `LAYERS_PATH` is unset. Override with the env var to point at a fork.
 - `LAYERS_REF` — optional git ref (branch / tag / SHA). Appended as `#<ref>` to the remote URL.
 
 The `host/` directory deploys standalone in production: no parent dir, no workspace root, no sibling `layers/`. With `LAYERS_PATH` unset, c12 + giget fetches each layer from `${LAYERS_REMOTE}/<name>${LAYERS_REF ? '#' + LAYERS_REF : ''}` at config-load time, and `install: true` runs the layer's package install into `node_modules/.c12/<hash>/node_modules/`.

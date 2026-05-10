@@ -6,11 +6,9 @@ declare const process: { env: Record<string, string | undefined> }
 // in `.env` to point at a local working copy. When unset (production / cloned
 // downstream projects), `extends:` uses git URLs so Nuxt fetches via giget.
 //
-// Fill in `LAYERS_REMOTE` once layers are pushed to GitHub, e.g.:
-//   const LAYERS_REMOTE = 'github:corsacca/go-saas/layers'
 // Subdir-of-one-repo syntax: `${LAYERS_REMOTE}/<name>#<ref>`.
 const LAYERS_PATH = process.env.LAYERS_PATH
-const LAYERS_REMOTE = process.env.LAYERS_REMOTE || 'github:corsacca/go-saas/layers'
+const LAYERS_REMOTE = process.env.LAYERS_REMOTE || 'github:corsacca/nuxtinator/layers'
 const LAYERS_REF = `#${process.env.LAYERS_REF || 'master'}`
 
 function layer(name: string): string | [string, { install: true }] {
