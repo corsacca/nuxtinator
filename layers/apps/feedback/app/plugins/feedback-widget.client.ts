@@ -1,0 +1,41 @@
+// Mounts the feedback web component on every client-side page render.
+// No-op when `runtimeConfig.public.feedbackProjectId` is empty — set the
+// FEEDBACK_PROJECT_ID env var (or NUXT_PUBLIC_FEEDBACK_PROJECT_ID) in
+// host/.env to a project UUID from /feedback to enable the widget.
+
+export default defineNuxtPlugin(() => {
+  const config = useRuntimeConfig()
+  const projectId = (config.public.feedbackProjectId as string | undefined) ?? ''
+  if (!projectId) return
+  if (typeof window === 'undefined') return
+
+  // Idempotent: rerun-safe across HMR / route changes.
+  if (!document.querySelector('script[data-feedback-widget]')) {
+    const s = document.createElement('script')
+    s.src = '/js/feedback-web-component.iife.js'
+    s.async = true
+    s.dataset.feedbackWidget = '1'
+    document.head.appendChild(s)
+  }
+
+  if (document.querySelector('feedback-web-component')) return
+
+  const slot = document.createElement('div')
+  slot.className = 'feedback-widget-slot'
+  Object.assign(slot.style, {
+    position: 'fixed',
+    bottom: '20px',
+    right: '20px',
+    zIndex: '9999'
+  } as Partial<CSSStyleDeclaration>)
+
+  const el = document.createElement('feedback-web-component')
+  el.setAttribute('profile-config', JSON.stringify({
+    profile: 'chat-bubble',
+    projectId,
+    apiBase: window.location.origin,
+    enabled: true
+  }))
+  slot.appendChild(el)
+  document.body.appendChild(slot)
+})

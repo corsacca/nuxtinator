@@ -5,6 +5,7 @@
   "packageManager": "bun@1.3.6",
   "scripts": {
     "build": "nuxt build",
+    "build:widgets": "cd ../layers/apps/feedback && bun run build:widgets",
     "dev": "nuxt dev",
     "start": "bun .output/server/index.mjs",
     "preview": "nuxt preview",

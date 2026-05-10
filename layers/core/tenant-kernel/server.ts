@@ -168,6 +168,22 @@ export async function runInOrgTransaction<T>(
   return await db.transaction().execute(fn)
 }
 
+// Open a transaction scoped to the org that owns the given project. In single
+// mode this is just `db.transaction()` — there is no org concept. In multi
+// mode (overridden by the tenancy layer) the project's `org_id` is resolved
+// via BYPASSRLS and `SET LOCAL app.current_org` is run before yielding.
+//
+// Used by the public feedback widget endpoints which receive a project_id
+// from an unauthenticated cross-origin request and must operate in that
+// project's tenant context.
+export async function withProjectOrgContext<T>(
+  _event: H3Event,
+  _projectId: string,
+  fn: (tx: Transaction<Database>) => Promise<T>
+): Promise<T> {
+  return await db.transaction().execute(fn)
+}
+
 // Migration helper. In single mode this is a no-op — single deploys don't
 // have an `orgs` table to reference and don't need RLS. Per-app tenancy
 // migrations call this from inside `*_T<NNN>_*.ts` files; those files are

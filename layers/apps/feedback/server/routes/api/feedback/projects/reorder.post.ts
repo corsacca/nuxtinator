@@ -1,0 +1,39 @@
+import { readBody } from 'h3'
+import { sql } from 'kysely'
+import { withOrgPermission } from '#tenant/server'
+
+export default defineEventHandler(async (event) => {
+  const body = await readBody(event) ?? {}
+  const orderedIds = Array.isArray(body.orderedIds) ? body.orderedIds : []
+
+  if (orderedIds.length === 0) {
+    throw createError({ statusCode: 400, statusMessage: 'orderedIds array is required' })
+  }
+  if (orderedIds.some((id: unknown) => typeof id !== 'string')) {
+    throw createError({ statusCode: 400, statusMessage: 'orderedIds must be strings' })
+  }
+
+  return await withOrgPermission(event, 'feedback.write', async (tx) => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      const projectId = orderedIds[i] as string
+      await tx
+        .updateTable('projects')
+        .set({
+          post_meta: sql`coalesce(post_meta, '{}'::jsonb) || ${JSON.stringify({ sort_order: i })}::jsonb`,
+          updated_at: sql`now()`
+        })
+        .where('id', '=', projectId)
+        .execute()
+    }
+
+    const rows = await tx
+      .selectFrom('projects')
+      .selectAll()
+      .where('id', 'in', orderedIds as string[])
+      .orderBy(sql`coalesce((post_meta->>'sort_order')::int, 9999)`)
+      .orderBy('created_at')
+      .execute()
+
+    return rows
+  })
+})

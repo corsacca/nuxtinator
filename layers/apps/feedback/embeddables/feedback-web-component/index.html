@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>feedback-web-component — tester</title>
+
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+
+    <!--
+      Single tester. Loads the IIFE bundle dynamically from whatever URL
+      the "web component url base" input points at (typically a Nuxt-hosted CDN
+      like http://localhost:3000/js) and
+      renders <feedback-web-component> via the profile-config attribute —
+      exactly like a real host site would.
+    -->
+
+    <style>
+      :root {
+        --bg:            #fafafa;
+        --bg-elev:       #ffffff;
+        --border:        #ececf0;
+        --border-strong: #d4d4d8;
+        --text:          #09090b;
+        --text-muted:    #52525b;
+        --text-subtle:   #a1a1aa;
+        --accent:        #6366f1;
+        --accent-hover:  #4f46e5;
+        --accent-fade:   rgba(99, 102, 241, 0.10);
+        --accent-ring:   rgba(99, 102, 241, 0.18);
+        --code-bg:       #f4f4f5;
+        --pre-bg:        #09090b;
+        --pre-text:      #e4e4e7;
+        --pre-border:    #18181b;
+        --danger-bg:     #fef2f2;
+        --danger-border: #fecaca;
+        --danger-text:   #991b1b;
+        --radius:        14px;
+        --radius-sm:     8px;
+        --radius-xs:     6px;
+        --font-sans:     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-mono:     'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      @supports (font-variation-settings: normal) {
+        :root { --font-sans: 'Inter var', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg:            #09090b;
+          --bg-elev:       #101012;
+          --border:        #1f1f23;
+          --border-strong: #2a2a2f;
+          --text:          #fafafa;
+          --text-muted:    #a1a1aa;
+          --text-subtle:   #71717a;
+          --accent-fade:   rgba(129, 140, 248, 0.14);
+          --accent-ring:   rgba(129, 140, 248, 0.28);
+          --accent:        #818cf8;
+          --accent-hover:  #a5b4fc;
+          --code-bg:       #18181b;
+          --pre-bg:        #050507;
+          --pre-border:    #1f1f23;
+          --danger-bg:     rgba(239, 68, 68, 0.08);
+          --danger-border: rgba(239, 68, 68, 0.3);
+          --danger-text:   #fca5a5;
+        }
+      }
+
+      *, *::before, *::after { box-sizing: border-box; }
+
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.6;
+        letter-spacing: -0.011em;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        font-feature-settings: 'cv11', 'ss01', 'ss03';
+      }
+
+      /* ── Hero ─────────────────────────────────────────────────────── */
+      header.hero {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+        padding: clamp(3rem, 9vw, 5.5rem) clamp(1.25rem, 4vw, 2rem) clamp(4rem, 10vw, 6rem);
+        border-bottom: 1px solid var(--border);
+        background:
+          radial-gradient(900px 380px at 18% -10%, var(--accent-fade), transparent 60%),
+          radial-gradient(700px 300px at 95% 110%, var(--accent-fade), transparent 60%),
+          var(--bg);
+      }
+      /* subtle dot grid overlay */
+      header.hero::before {
+        content: '';
+        position: absolute; inset: 0;
+        background-image: radial-gradient(circle at 1px 1px, var(--border-strong) 1px, transparent 0);
+        background-size: 24px 24px;
+        opacity: 0.35;
+        mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent 80%);
+        -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent 80%);
+        z-index: -1;
+      }
+      .hero-inner {
+        max-width: 880px;
+        margin: 0 auto;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0.7rem 0.3rem 0.55rem;
+        background: var(--accent-fade);
+        color: var(--accent);
+        border: 1px solid var(--accent-ring);
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 500;
+        letter-spacing: 0.03em;
+        margin-bottom: 1.25rem;
+        font-feature-settings: 'tnum';
+      }
+      .pill-dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 0 var(--accent);
+        animation: pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      @keyframes pulse {
+        0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--accent) 50%, transparent); }
+        70%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent)  0%, transparent); }
+        100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--accent)  0%, transparent); }
+      }
+      header.hero h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.9rem, 5vw, 2.75rem);
+        font-weight: 700;
+        letter-spacing: -0.035em;
+        line-height: 1.08;
+        background: linear-gradient(180deg, var(--text) 0%, color-mix(in srgb, var(--text) 70%, var(--bg)) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      header.hero p {
+        margin: 0;
+        color: var(--text-muted);
+        max-width: 640px;
+        font-size: clamp(0.95rem, 1.7vw, 1.05rem);
+      }
+
+      /* ── Main content ─────────────────────────────────────────────── */
+      main {
+        max-width: 880px;
+        margin: clamp(-3rem, -5vw, -4rem) auto 0;
+        padding: 0 clamp(1rem, 4vw, 2rem) clamp(3rem, 8vw, 5rem);
+        position: relative;
+        z-index: 1;
+      }
+
+      section {
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: clamp(1.25rem, 3vw, 1.75rem);
+        margin-bottom: 1rem;
+        transition: border-color 0.2s ease;
+        animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+      }
+      section:hover { border-color: var(--border-strong); }
+      section:nth-of-type(1) { animation-delay: 0.05s; }
+      section:nth-of-type(2) { animation-delay: 0.12s; }
+      section:nth-of-type(3) { animation-delay: 0.19s; }
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      h2 {
+        margin: 0 0 0.35rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        letter-spacing: -0.005em;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+      }
+      h2::before {
+        content: '';
+        width: 6px; height: 6px;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+      section > p {
+        margin: 0 0 1rem;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+      }
+
+      /* ── Code & pre ───────────────────────────────────────────────── */
+      code {
+        background: var(--code-bg);
+        color: var(--text);
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        font-size: 0.82em;
+        font-weight: 500;
+      }
+      pre {
+        background: var(--pre-bg);
+        color: var(--pre-text);
+        padding: 1.15rem 1.25rem;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--pre-border);
+        overflow-x: auto;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        line-height: 1.65;
+        margin: 0;
+      }
+      pre code { background: none; color: inherit; padding: 0; font-size: inherit; font-weight: inherit; }
+
+      /* ── Config form ──────────────────────────────────────────────── */
+      .config {
+        display: grid;
+        grid-template-columns: 120px 1fr auto;
+        gap: 0.6rem 0.75rem;
+        align-items: center;
+      }
+      .config label {
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        letter-spacing: -0.01em;
+      }
+
+      input[type="text"] {
+        width: 100%;
+        min-width: 0;
+        padding: 0.55rem 0.75rem;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xs);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.875rem;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+      }
+      input[type="text"]::placeholder { color: var(--text-subtle); }
+      input[type="text"]:hover { border-color: var(--border-strong); }
+      input[type="text"]:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-ring);
+        background: var(--bg-elev);
+      }
+
+      button {
+        padding: 0.55rem 1rem;
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xs);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.825rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: transform 0.08s ease, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+        touch-action: manipulation;
+        white-space: nowrap;
+      }
+      button:hover {
+        border-color: var(--border-strong);
+        background: var(--code-bg);
+      }
+      button:active { transform: translateY(1px); }
+      button:focus-visible {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-ring);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.15);
+      }
+      button.primary:hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+      }
+
+      /* Stack the config grid on narrow viewports. */
+      @media (max-width: 640px) {
+        .config { grid-template-columns: 1fr; gap: 0.35rem; }
+        .config label { margin-top: 0.4rem; }
+        button { width: 100%; }
+      }
+
+      /* ── Error banner ─────────────────────────────────────────────── */
+      #fw-error-banner {
+        display: none;
+        background: var(--danger-bg);
+        border: 1px solid var(--danger-border);
+        color: var(--danger-text);
+        padding: 1rem 1.25rem;
+        border-radius: var(--radius-sm);
+        margin-bottom: 1rem;
+        font-size: 0.875rem;
+        line-height: 1.55;
+      }
+      #fw-error-banner strong {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+      #fw-error-banner code {
+        background: color-mix(in srgb, var(--danger-text) 10%, transparent);
+        color: var(--danger-text);
+      }
+
+      /* ── Footer ───────────────────────────────────────────────────── */
+      footer {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 2rem clamp(1rem, 4vw, 2rem) 4rem;
+        color: var(--text-subtle);
+        font-size: 0.8rem;
+        display: flex;
+        gap: 1rem;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        border-top: 1px solid var(--border);
+      }
+      footer a { color: var(--text-muted); text-decoration: none; }
+      footer a:hover { color: var(--text); }
+
+      /* Motion-sensitive users get no animation. */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero-inner">
+        <span class="pill"><span class="pill-dot"></span> web component tester · live</span>
+        <h1>Pretend Customer Site</h1>
+        <p>
+          Standalone harness that loads the built <code>&lt;feedback-web-component&gt;</code>
+          bundle from any <em>web component URL base</em> (typically a Nuxt-hosted
+          CDN) and renders it via the <code>profile-config</code> attribute —
+          exactly the way a real customer site embeds it.
+        </p>
+      </div>
+    </header>
+
+    <main>
+      <div id="fw-error-banner" role="alert">
+        <strong>⚠ &lt;feedback-web-component&gt; did not register</strong>
+        <span id="fw-error-detail">The bundle failed to load from the configured web component URL base. Check the URL, confirm the MFE host is serving <code>feedback-web-component.iife.js</code>, and reload.</span>
+      </div>
+
+      <section>
+        <h2>Runtime config</h2>
+        <p>Paste the base URL of your Kanban instance — the web component bundle is served from its <code>/js/</code> folder automatically. Changing <code>baseUrl</code> after first load requires a page reload to pick up a new bundle version.</p>
+        <div class="config">
+          <label for="base-url">baseUrl</label>
+          <input id="base-url" type="text" value="" placeholder="https://kanban.example.com" />
+          <span></span>
+
+          <label for="project-id">projectId</label>
+          <input id="project-id" type="text" value="" placeholder="paste a real Kanban project UUID" />
+          <span></span>
+
+          <span></span>
+          <span style="font-size:0.78rem;color:var(--text-subtle);font-family:var(--font-mono)">web component loaded from <em>baseUrl</em>/js/feedback-web-component.iife.js</span>
+          <span></span>
+
+          <span></span>
+          <span></span>
+          <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+            <button id="reset-token">Clear stored token</button>
+            <button id="apply" class="primary">Apply</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Embed pattern</h2>
+        <p>Point a single <code>&lt;script&gt;</code> tag at the Nuxt-hosted MFE bundle — slot CSS is injected by the bundle itself, no separate stylesheet needed:</p>
+        <pre><code>&lt;script src="https://kanban.example.com/js/feedback-web-component.iife.js"&gt;&lt;/script&gt;
+
+&lt;div class="feedback-widget-slot"&gt;
+  &lt;feedback-web-component profile-config='{
+    "profile": "chat-bubble",
+    "instanceId": "fb-1",
+    "projectId": "uuid-here",
+    "apiBase": "https://kanban.example.com",
+    "enabled": true
+  }'&gt;&lt;/feedback-web-component&gt;
+&lt;/div&gt;</code></pre>
+      </section>
+    </main>
+
+    <footer>
+      <span>feedback-web-component · portable MFE</span>
+      <span>built with Vue 3 · Vite · Pinia · Shadow DOM</span>
+    </footer>
+
+    <!-- Slot wrapper -->
+    <div class="feedback-widget-slot">
+      <feedback-web-component id="fw-demo"></feedback-web-component>
+    </div>
+
+    <script>
+      const el = document.getElementById('fw-demo')
+      const projectInput = document.getElementById('project-id')
+      const baseUrlInput = document.getElementById('base-url')
+      const errorBanner = document.getElementById('fw-error-banner')
+      const errorDetail = document.getElementById('fw-error-detail')
+
+      const saved = JSON.parse(localStorage.getItem('fw-demo-config') || '{}')
+      if (saved.projectId) projectInput.value = saved.projectId
+      if (saved.baseUrl) baseUrlInput.value = saved.baseUrl
+
+      // Load the MFE bundle once. The bundle is always served from {baseUrl}/js/.
+      // Subsequent Apply clicks reuse the already-registered custom element;
+      // changing baseUrl needs a page reload to pick up a new bundle version.
+      let loadPromise = null
+      function loadWidget(baseUrl) {
+        if (loadPromise) return loadPromise
+        loadPromise = new Promise((resolve, reject) => {
+          if (customElements.get('feedback-web-component')) return resolve()
+          const src = baseUrl.replace(/\/+$/, '') + '/js/feedback-web-component.iife.js'
+          const s = document.createElement('script')
+          s.src = src
+          s.async = true
+          s.onload = () => resolve()
+          s.onerror = () => reject(new Error('Could not load ' + src))
+          document.head.appendChild(s)
+        })
+        return loadPromise
+      }
+
+      async function apply() {
+        let baseUrl = baseUrlInput.value.trim()
+        const projectId = projectInput.value.trim()
+
+        // Normalise: add http:// if no protocol given
+        if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
+          baseUrl = 'http://' + baseUrl
+          baseUrlInput.value = baseUrl
+        }
+
+        errorBanner.style.display = 'none'
+
+        localStorage.setItem('fw-demo-config', JSON.stringify({ projectId, baseUrl }))
+
+        // Always reload so the bundle is freshly loaded from the saved URL.
+        location.reload()
+      }
+
+      document.getElementById('apply').addEventListener('click', apply)
+      document.getElementById('reset-token').addEventListener('click', () => {
+        localStorage.removeItem('fw-token')
+        alert('Stored token cleared. Log in again in the web component.')
+      })
+
+      // On page load, mount the web component from saved config without reloading.
+      async function mount() {
+        const baseUrl = baseUrlInput.value.trim()
+        const projectId = projectInput.value.trim()
+        if (!baseUrl) return
+        errorBanner.style.display = 'none'
+        try {
+          await loadWidget(baseUrl)
+        } catch (err) {
+          errorDetail.textContent = err.message + '. Confirm the MFE host is serving feedback-web-component.iife.js and that CORS allows this origin.'
+          errorBanner.style.display = 'block'
+          return
+        }
+        el.setAttribute('profile-config', JSON.stringify({
+          profile: 'chat-bubble',
+          instanceId: 'fb-demo',
+          projectId,
+          apiBase: baseUrl,
+          enabled: true
+        }))
+      }
+
+      mount()
+    </script>
+  </body>
+</html>
