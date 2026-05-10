@@ -32,7 +32,8 @@ function stripLayerTsconfigs() {
     'tenancy',
     'dev',
     'apps/calendar',
-    'apps/kanban'
+    'apps/kanban',
+    'apps/messages'
   ]) {
     const path = `${LAYERS_PATH}/${name}/tsconfig.json`
     if (existsSync(path)) rmSync(path)
@@ -64,6 +65,7 @@ export default defineNuxtConfig({
     layer('mcp'),
     layer('apps/calendar'),
     layer('apps/kanban'),
+    layer('apps/messages'),
     // Dev tooling — UI sandbox at /kitchen. Comment out for prod builds.
     layer('dev')
   ],
