@@ -6,11 +6,19 @@ export interface RoleDefinition {
   permissions: readonly Permission[]
 }
 
-// Host static roles. The host itself ships none — `users.is_admin` is the
-// only operator gate, with no permission slug. Layers add their own static
-// roles via `registerStaticRole(...)`. The tenancy layer adds org-scoped
-// `admin` and `member` roles.
-export const ROLES = {} as const satisfies Record<string, RoleDefinition>
+// Host static roles. `users.is_admin` is the operator gate (no permission
+// slug); `admin` is special-cased in `getRolePermissions` to mean "every
+// registered permission" so it's not listed here. `member` is the universal
+// "basic authenticated access" role used as the default for invited users in
+// both single and multi-tenant deploys. Layers add additional static roles
+// via `registerStaticRole(...)`.
+export const ROLES = {
+  member: {
+    name: 'Member',
+    description: 'Basic authenticated access.',
+    permissions: []
+  }
+} as const satisfies Record<string, RoleDefinition>
 
 export type StaticRoleName = keyof typeof ROLES
 
