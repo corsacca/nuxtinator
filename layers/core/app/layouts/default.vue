@@ -113,7 +113,7 @@ watch(() => route.path, () => {
           />
         </aside>
 
-        <main class="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6 lg:py-8 pb-20 lg:pb-8">
+        <main class="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <slot />
         </main>
       </div>
@@ -132,8 +132,6 @@ watch(() => route.path, () => {
           />
         </template>
       </USlideover>
-
-      <MobileTabBar />
     </template>
 
     <!-- Unauthenticated -->
