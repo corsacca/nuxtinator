@@ -106,6 +106,40 @@ function wrapSelection(prefix: string, suffix: string = prefix) {
   })
 }
 
+// Link-insert modal state. Opened from the Cmd/Ctrl+K shortcut so we don't
+// fall back to a native window.prompt (project rule: toasts + modals only).
+// `linkSelection` captures the textarea selection at trigger time so we can
+// re-apply it after the modal closes (the textarea loses selection while the
+// modal is focused).
+const linkOpen = ref(false)
+const linkUrl = ref('')
+const linkSelection = ref<{ start: number, end: number } | null>(null)
+const linkInputRef = ref<HTMLInputElement | null>(null)
+
+function openLinkModal() {
+  const ta = taRef.value
+  if (!ta) return
+  linkSelection.value = { start: ta.selectionStart, end: ta.selectionEnd }
+  linkUrl.value = ''
+  linkOpen.value = true
+  nextTick(() => linkInputRef.value?.focus())
+}
+
+function applyLink() {
+  const ta = taRef.value
+  const sel = linkSelection.value
+  const url = linkUrl.value.trim()
+  if (!ta || !sel || !url) {
+    linkOpen.value = false
+    return
+  }
+  ta.setSelectionRange(sel.start, sel.end)
+  wrapSelection('[', `](${url})`)
+  linkOpen.value = false
+  linkUrl.value = ''
+  linkSelection.value = null
+}
+
 // Mention autocomplete state
 const mentionOpen = ref(false)
 const mentionResults = ref<OrgUser[]>([])
@@ -230,8 +264,7 @@ function onKeydown(event: KeyboardEvent) {
     }
     if (event.key === 'k' || event.key === 'K') {
       event.preventDefault()
-      const url = window.prompt('URL:')
-      if (url) wrapSelection('[', `](${url})`)
+      openLinkModal()
       return
     }
   }
@@ -277,6 +310,42 @@ function onKeydown(event: KeyboardEvent) {
         {{ submitLabel }}
       </UButton>
     </div>
+
+    <UModal v-model:open="linkOpen">
+      <template #content>
+        <form
+          class="p-6 space-y-4"
+          @submit.prevent="applyLink"
+        >
+          <h2 class="text-lg font-semibold">
+            Insert link
+          </h2>
+          <input
+            ref="linkInputRef"
+            v-model="linkUrl"
+            type="url"
+            placeholder="https://example.com"
+            class="w-full px-3 py-2 rounded-md border border-(--ui-border) bg-(--ui-bg) text-sm"
+            @keydown.escape="linkOpen = false"
+          >
+          <div class="flex gap-2 justify-end">
+            <UButton
+              type="button"
+              variant="ghost"
+              @click="linkOpen = false"
+            >
+              Cancel
+            </UButton>
+            <UButton
+              type="submit"
+              :disabled="!linkUrl.trim()"
+            >
+              Insert
+            </UButton>
+          </div>
+        </form>
+      </template>
+    </UModal>
   </div>
 </template>
 

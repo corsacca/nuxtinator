@@ -50,31 +50,43 @@ export default defineEventHandler(async (event) => {
     // Re-anchor comments against new body_md.
     await rematchAnchors(tx, itemId, bodyMd)
 
-    // Fire mention notifications for IDs not previously mentioned in this item.
+    // Reconcile mention rows against the new body. Remove rows for users
+    // de-mentioned by this edit so their mentions feed reflects the current
+    // text; insert + notify only the genuinely-new mentions. (Existing
+    // mentions stay put — we don't want to re-notify on every edit.)
     const newMentions = extractMentions(bodyMd)
-    if (newMentions.length > 0) {
-      const existing = await tx
-        .selectFrom('messages_mentions')
-        .select('mentioned_user_id')
+    const existing = await tx
+      .selectFrom('messages_mentions')
+      .select('mentioned_user_id')
+      .where('item_id', '=', itemId)
+      .execute()
+    const already = new Set(existing.map(r => r.mentioned_user_id))
+    const newIds = new Set(newMentions.map(m => m.id))
+
+    const removed = [...already].filter(id => !newIds.has(id))
+    if (removed.length > 0) {
+      await tx
+        .deleteFrom('messages_mentions')
         .where('item_id', '=', itemId)
+        .where('mentioned_user_id', 'in', removed)
         .execute()
-      const already = new Set(existing.map(r => r.mentioned_user_id))
-      const fresh = newMentions.filter(m => !already.has(m.id))
-      if (fresh.length > 0) {
-        const conv = await tx
-          .selectFrom('messages_conversations')
-          .select('kind')
-          .where('id', '=', item.conversation_id)
-          .executeTakeFirstOrThrow()
-        const dmMemberIds = conv.kind === 'dm' ? await getDmMemberIds(tx, item.conversation_id) : null
-        await fanoutMentions(tx, fresh, {
-          orgId: ctx.orgId,
-          authorId: ctx.userId,
-          conversationId: item.conversation_id,
-          itemId,
-          dmMemberIds
-        })
-      }
+    }
+
+    const fresh = newMentions.filter(m => !already.has(m.id))
+    if (fresh.length > 0) {
+      const conv = await tx
+        .selectFrom('messages_conversations')
+        .select('kind')
+        .where('id', '=', item.conversation_id)
+        .executeTakeFirstOrThrow()
+      const dmMemberIds = conv.kind === 'dm' ? await getDmMemberIds(tx, item.conversation_id) : null
+      await fanoutMentions(tx, fresh, {
+        orgId: ctx.orgId,
+        authorId: ctx.userId,
+        conversationId: item.conversation_id,
+        itemId,
+        dmMemberIds
+      })
     }
 
     return { ok: true }

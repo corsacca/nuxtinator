@@ -6,6 +6,34 @@ import { withOrgContext } from '#tenant/server'
 
 const MAX_LIMIT = 50
 
+// HTML-escape the source body BEFORE handing it to ts_headline. ts_headline
+// doesn't escape its input — it only wraps matches in <b>...</b> — so a body
+// containing `<script>` would otherwise round-trip as live markup into the
+// client's v-html. Escaping ampersand-first then angle/quote chars keeps the
+// `<b>` markers it injects as the only HTML in the output.
+const ESCAPED_BODY_ITEM = sql<string>`
+  replace(
+    replace(
+      replace(
+        replace(
+          replace(coalesce(i.body_md, ''), '&', '&amp;'),
+          '<', '&lt;'),
+        '>', '&gt;'),
+      '"', '&quot;'),
+    '''', '&#39;')
+`
+const ESCAPED_BODY_COMMENT = sql<string>`
+  replace(
+    replace(
+      replace(
+        replace(
+          replace(coalesce(c.body_md, ''), '&', '&amp;'),
+          '<', '&lt;'),
+        '>', '&gt;'),
+      '"', '&quot;'),
+    '''', '&#39;')
+`
+
 export default defineEventHandler(async (event) => {
   return await withOrgContext(event, { appId: 'messages' }, async (tx, _ctx) => {
     const q = getQuery(event)
@@ -26,7 +54,7 @@ export default defineEventHandler(async (event) => {
         'i.created_at',
         'i.author_id',
         'u.display_name as author_name',
-        sql<string>`ts_headline('english', coalesce(i.body_md, ''), ${tsQuery}, 'MaxWords=30,MinWords=10')`.as('headline')
+        sql<string>`ts_headline('english', ${ESCAPED_BODY_ITEM}, ${tsQuery}, 'MaxWords=30,MinWords=10')`.as('headline')
       ])
       .where('i.deleted_at', 'is', null)
       .where(sql<boolean>`i.body_tsv @@ ${tsQuery}`)
@@ -46,7 +74,7 @@ export default defineEventHandler(async (event) => {
         'c.created_at',
         'c.author_id',
         'u.display_name as author_name',
-        sql<string>`ts_headline('english', c.body_md, ${tsQuery}, 'MaxWords=30,MinWords=10')`.as('headline')
+        sql<string>`ts_headline('english', ${ESCAPED_BODY_COMMENT}, ${tsQuery}, 'MaxWords=30,MinWords=10')`.as('headline')
       ])
       .where('c.deleted_at', 'is', null)
       .where('i.deleted_at', 'is', null)

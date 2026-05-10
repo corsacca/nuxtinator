@@ -97,7 +97,6 @@ function dismiss() {
 }
 
 function commit() {
-  console.log('[messages] anchor-comment commit', { hasPending: !!pendingAnchor, pendingAnchor })
   if (!pendingAnchor) return
   emit('selectAnchor', pendingAnchor)
   dismiss()

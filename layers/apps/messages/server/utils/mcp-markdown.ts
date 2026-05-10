@@ -52,6 +52,10 @@ export async function validateMcpMarkdown(
       .execute()
     resolved = new Set(rows.map(r => r.user_id))
   } else {
+    // Single-tenant fallback: the deployment is one logical org, so ANY real
+    // user is a valid mention target. Don't call this with `orgId: null` from
+    // a multi-tenant code path — it would let an MCP tool mention users from
+    // other orgs.
     const rows = await tx
       .selectFrom('users')
       .select('id')

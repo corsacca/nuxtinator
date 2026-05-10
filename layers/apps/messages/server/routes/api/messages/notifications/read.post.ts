@@ -6,8 +6,12 @@ import { z } from 'zod'
 import { sql } from 'kysely'
 import { withOrgContext } from '#tenant/server'
 
+// `ids` must contain at least one UUID when present. An empty `ids` array
+// from the client must NOT silently fall through to a mark-everything
+// update, so we require min(1) and only allow "mark all" via the explicit
+// `all: true` flag.
 const Body = z.object({
-  ids: z.array(z.string().uuid()).optional(),
+  ids: z.array(z.string().uuid()).min(1).optional(),
   all: z.boolean().optional()
 })
 
@@ -15,7 +19,7 @@ export default defineEventHandler(async (event) => {
   return await withOrgContext(event, { appId: 'messages' }, async (tx, ctx) => {
     const parsed = Body.safeParse(await readBody(event))
     if (!parsed.success || (!parsed.data.ids && !parsed.data.all)) {
-      throw createError({ statusCode: 400, statusMessage: 'Provide ids or all=true.' })
+      throw createError({ statusCode: 400, statusMessage: 'Provide ids (non-empty) or all=true.' })
     }
 
     let qb = tx
@@ -24,7 +28,7 @@ export default defineEventHandler(async (event) => {
       .where('user_id', '=', ctx.userId)
       .where('read_at', 'is', null)
 
-    if (parsed.data.ids && parsed.data.ids.length > 0) {
+    if (parsed.data.ids) {
       qb = qb.where('id', 'in', parsed.data.ids)
     }
 

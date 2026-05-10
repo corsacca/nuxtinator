@@ -23,7 +23,11 @@ import { sendDigestEmail, type DigestChannelEntry, type DigestThreadEntry } from
 interface PerUserAccumulator {
   channels: DigestChannelEntry[]
   threads: DigestThreadEntry[]
-  notificationIds: string[]
+  // Notification IDs grouped by the org GUC needed to UPDATE them under RLS.
+  // In single-tenant mode (no tenancy layer) the key is `null` and no GUC is
+  // set; in multi-tenant mode each org's IDs go under its own key so the
+  // post-send markEmailed step can re-open a tx with the right GUC.
+  notificationIdsByOrg: Map<string | null, string[]>
 }
 
 function isTenancyMode(): boolean {
@@ -39,6 +43,7 @@ function isTenancyMode(): boolean {
 async function scanForUser(
   tx: Transaction<Database>,
   userId: string,
+  orgId: string | null,
   acc: PerUserAccumulator
 ): Promise<void> {
   // Subscribed channels with items posted since the user's last_read_at.
@@ -96,10 +101,11 @@ async function scanForUser(
 
   // Group by item — one digest entry per thread, count comments per item.
   const threadMap = new Map<string, DigestThreadEntry>()
+  const idsForOrg = acc.notificationIdsByOrg.get(orgId) ?? []
   for (const r of threadRows) {
     const key = r.item_id ?? ''
     if (!key) continue
-    acc.notificationIds.push(r.notification_id)
+    idsForOrg.push(r.notification_id)
     const existing = threadMap.get(key)
     if (existing) {
       existing.count++
@@ -113,21 +119,55 @@ async function scanForUser(
       count: 1
     })
   }
+  if (idsForOrg.length > 0) acc.notificationIdsByOrg.set(orgId, idsForOrg)
   for (const t of threadMap.values()) acc.threads.push(t)
 }
 
-async function markEmailed(notificationIds: string[]): Promise<void> {
-  if (notificationIds.length === 0) return
-  // Mark in a fresh autocommit query — the per-user txn has already closed
-  // and we only want to record that the email was queued.
-  await db
-    .updateTable('messages_notifications')
-    .set({ emailed_at: sql<Date>`now()` })
-    .where('id', 'in', notificationIds)
-    .execute()
+// Mark notification rows as emailed. In multi-tenant mode the rows live
+// behind an RLS policy keyed on `app.current_org`, so the UPDATE must run
+// inside a transaction with the GUC set to the same org the rows belong to —
+// otherwise the policy resolves `org_id = NULL` and matches zero rows.
+async function markEmailed(idsByOrg: Map<string | null, string[]>): Promise<void> {
+  for (const [orgId, ids] of idsByOrg.entries()) {
+    if (ids.length === 0) continue
+    await db.transaction().execute(async (tx) => {
+      if (orgId) {
+        await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
+      }
+      await tx
+        .updateTable('messages_notifications')
+        .set({ emailed_at: sql<Date>`now()` })
+        .where('id', 'in', ids)
+        .execute()
+    })
+  }
 }
 
+// Stable 64-bit key for `pg_try_advisory_lock`. Picked once and committed —
+// don't change without coordinating across deployments, since two different
+// keys means two different locks and the no-duplicate-digests guarantee
+// breaks during a rolling deploy.
+const DIGEST_LOCK_KEY = '7242319037128942711'
+
 async function runOnce(): Promise<void> {
+  // Cross-replica gate: only one process per cluster runs the digest. Other
+  // replicas see `false` and bail. The lock is session-scoped, so any process
+  // crash releases it automatically — no stuck-lock recovery needed.
+  const lockRow = await sql<{ got: boolean }>`
+    select pg_try_advisory_lock(${sql.raw(DIGEST_LOCK_KEY)}::bigint) as got
+  `.execute(db)
+  if (!lockRow.rows[0]?.got) {
+    console.log('[messages-digest] another replica holds the digest lock — skipping')
+    return
+  }
+  try {
+    await runOnceLocked()
+  } finally {
+    await sql`select pg_advisory_unlock(${sql.raw(DIGEST_LOCK_KEY)}::bigint)`.execute(db)
+  }
+}
+
+async function runOnceLocked(): Promise<void> {
   console.log('[messages-digest] scan starting')
   const perUser = new Map<string, PerUserAccumulator>()
 
@@ -145,10 +185,10 @@ async function runOnce(): Promise<void> {
           await sql`select set_config('app.current_org', ${m.org_id}, true)`.execute(tx)
           let acc = perUser.get(m.user_id)
           if (!acc) {
-            acc = { channels: [], threads: [], notificationIds: [] }
+            acc = { channels: [], threads: [], notificationIdsByOrg: new Map() }
             perUser.set(m.user_id, acc)
           }
-          await scanForUser(tx, m.user_id, acc)
+          await scanForUser(tx, m.user_id, m.org_id, acc)
         })
       } catch (err) {
         console.error('[messages-digest] scan failed for user', m.user_id, 'org', m.org_id, err)
@@ -173,8 +213,8 @@ async function runOnce(): Promise<void> {
     for (const uid of userIds) {
       try {
         await db.transaction().execute(async (tx) => {
-          const acc: PerUserAccumulator = { channels: [], threads: [], notificationIds: [] }
-          await scanForUser(tx, uid, acc)
+          const acc: PerUserAccumulator = { channels: [], threads: [], notificationIdsByOrg: new Map() }
+          await scanForUser(tx, uid, null, acc)
           if (acc.channels.length > 0 || acc.threads.length > 0) {
             perUser.set(uid, acc)
           }
@@ -190,7 +230,7 @@ async function runOnce(): Promise<void> {
   for (const [userId, acc] of perUser.entries()) {
     if (acc.channels.length === 0 && acc.threads.length === 0) continue
     await sendDigestEmail({ recipientId: userId, channels: acc.channels, threads: acc.threads })
-    await markEmailed(acc.notificationIds)
+    await markEmailed(acc.notificationIdsByOrg)
     sent++
   }
   console.log(`[messages-digest] scan complete — sent ${sent} digest(s) to ${perUser.size} candidate user(s)`)

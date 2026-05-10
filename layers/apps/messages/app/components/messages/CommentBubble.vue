@@ -33,6 +33,8 @@ const editing = ref(false)
 const editDraft = ref('')
 const saving = ref(false)
 const errMsg = ref<string | null>(null)
+const deleteOpen = ref(false)
+const deleting = ref(false)
 
 async function postReply(bodyMd: string) {
   await $fetch(`/api/messages/items/${props.itemId}/comments`, {
@@ -84,13 +86,21 @@ async function toggleResolved() {
   }
 }
 
-async function remove() {
-  if (!confirm('Delete this comment?')) return
+function askDelete() {
+  errMsg.value = null
+  deleteOpen.value = true
+}
+
+async function confirmDelete() {
+  deleting.value = true
   try {
     await $fetch(`/api/messages/comments/${props.comment.id}`, { method: 'DELETE' })
+    deleteOpen.value = false
     emit('refresh')
   } catch (e) {
     errMsg.value = (e as { statusMessage?: string }).statusMessage ?? 'Failed to delete.'
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -157,7 +167,7 @@ function timeLabel(iso: string): string {
             <button v-if="isAuthor" class="action-btn" @click="startEdit">
               Edit
             </button>
-            <button v-if="isAuthor" class="action-btn action-danger" @click="remove">
+            <button v-if="isAuthor" class="action-btn action-danger" @click="askDelete">
               Delete
             </button>
           </div>
@@ -188,6 +198,35 @@ function timeLabel(iso: string): string {
         @submit="postReply"
       />
     </div>
+
+    <UModal v-model:open="deleteOpen">
+      <template #content>
+        <div class="p-6 space-y-4">
+          <h2 class="text-lg font-semibold">
+            Delete comment?
+          </h2>
+          <p class="text-sm">
+            This is permanent.
+          </p>
+          <div class="flex gap-2 justify-end">
+            <UButton
+              variant="ghost"
+              :disabled="deleting"
+              @click="deleteOpen = false"
+            >
+              Cancel
+            </UButton>
+            <UButton
+              color="error"
+              :loading="deleting"
+              @click="confirmDelete"
+            >
+              Delete
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </article>
 </template>
 

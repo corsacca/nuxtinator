@@ -44,6 +44,10 @@ export default defineEventHandler(async (event) => {
 
     if (allMemberIds.length === 2) {
       // 1:1 DM — find-or-create via the sorted-pair partial unique index.
+      // Two concurrent callers can both miss the initial SELECT and race
+      // into INSERT, so we ON CONFLICT DO NOTHING and re-SELECT when the
+      // INSERT no-ops. The partial unique index lives on
+      // (dm_pair_lo, dm_pair_hi) WHERE kind='dm' AND dm_pair_lo IS NOT NULL.
       const [a, b] = allMemberIds.sort() as [string, string]
 
       const existing = await tx
@@ -68,8 +72,21 @@ export default defineEventHandler(async (event) => {
           dm_pair_lo: a,
           dm_pair_hi: b
         })
+        .onConflict(oc => oc.columns(['dm_pair_lo', 'dm_pair_hi']).doNothing())
         .returning('id')
-        .executeTakeFirstOrThrow()
+        .executeTakeFirst()
+
+      if (!created) {
+        // Lost the race — another tx already inserted the row. Re-SELECT.
+        const winner = await tx
+          .selectFrom('messages_conversations')
+          .select(['id'])
+          .where('kind', '=', 'dm')
+          .where('dm_pair_lo', '=', a)
+          .where('dm_pair_hi', '=', b)
+          .executeTakeFirstOrThrow()
+        return await loadDm(tx, winner.id)
+      }
 
       await tx
         .insertInto('messages_conversation_members')

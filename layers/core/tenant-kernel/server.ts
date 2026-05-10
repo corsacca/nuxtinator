@@ -39,6 +39,33 @@ export type TenantHandler<T> = (
   ctx: TenantContext
 ) => Promise<T> | T
 
+async function runWithSingleContext<T>(
+  event: H3Event,
+  fn: TenantHandler<T>
+): Promise<T> {
+  const authUser = requireAuth(event)
+  return await db.transaction().execute(async (tx) => {
+    const userRow = await tx
+      .selectFrom('users')
+      .select(['is_admin', 'roles'])
+      .where('id', '=', authUser.userId)
+      .executeTakeFirst()
+
+    const roles = [...(userRow?.roles ?? [])]
+    if (userRow?.is_admin) roles.push('admin')
+
+    const perms = await getRolePermissions(tx, roles, null)
+
+    return await fn(tx, {
+      userId: authUser.userId,
+      orgId: null,
+      orgSlug: null,
+      role: null,
+      perms
+    })
+  })
+}
+
 export function defineTenantHandler<T>(fn: TenantHandler<T>): EventHandler<unknown, Promise<T>>
 export function defineTenantHandler<T>(opts: DefineTenantHandlerOpts, fn: TenantHandler<T>): EventHandler<unknown, Promise<T>>
 export function defineTenantHandler<T>(
@@ -46,29 +73,56 @@ export function defineTenantHandler<T>(
   maybeFn?: TenantHandler<T>
 ): EventHandler<unknown, Promise<T>> {
   const fn = (typeof optsOrFn === 'function' ? optsOrFn : maybeFn) as TenantHandler<T>
+  return defineEventHandler<unknown, Promise<T>>(event => runWithSingleContext(event, fn))
+}
 
-  return defineEventHandler<unknown, Promise<T>>(async (event: H3Event) => {
-    const authUser = requireAuth(event)
-    return await db.transaction().execute(async (tx) => {
-      const userRow = await tx
-        .selectFrom('users')
-        .select(['is_admin', 'roles'])
-        .where('id', '=', authUser.userId)
-        .executeTakeFirst()
+// Function-call style — for handlers already wrapped in `defineEventHandler`.
+// Same semantics as `defineTenantHandler`. Single-mode ignores `opts.appId`
+// (no app-enable check exists in single deploys).
+export function withOrgContext<T>(
+  event: H3Event,
+  fn: TenantHandler<T>
+): Promise<T>
+export function withOrgContext<T>(
+  event: H3Event,
+  opts: DefineTenantHandlerOpts,
+  fn: TenantHandler<T>
+): Promise<T>
+export function withOrgContext<T>(
+  event: H3Event,
+  optsOrFn: DefineTenantHandlerOpts | TenantHandler<T>,
+  maybeFn?: TenantHandler<T>
+): Promise<T> {
+  const fn = (typeof optsOrFn === 'function' ? optsOrFn : maybeFn) as TenantHandler<T>
+  return runWithSingleContext(event, fn)
+}
 
-      const roles = [...(userRow?.roles ?? [])]
-      if (userRow?.is_admin) roles.push('admin')
-
-      const perms = await getRolePermissions(tx, roles, null)
-
-      return await fn(tx, {
-        userId: authUser.userId,
-        orgId: null,
-        orgSlug: null,
-        role: null,
-        perms
-      })
-    })
+// Same as `withOrgContext` plus a permission gate on `ctx.perms`.
+export function withOrgPermission<T>(
+  event: H3Event,
+  perm: Permission,
+  fn: TenantHandler<T>
+): Promise<T>
+export function withOrgPermission<T>(
+  event: H3Event,
+  opts: DefineTenantHandlerOpts,
+  perm: Permission,
+  fn: TenantHandler<T>
+): Promise<T>
+export function withOrgPermission<T>(
+  event: H3Event,
+  a: Permission | DefineTenantHandlerOpts,
+  b: Permission | TenantHandler<T>,
+  c?: TenantHandler<T>
+): Promise<T> {
+  const hasOpts = typeof a === 'object'
+  const perm = (hasOpts ? b : a) as Permission
+  const fn = (hasOpts ? c : b) as TenantHandler<T>
+  return runWithSingleContext(event, async (tx, ctx) => {
+    if (!ctx.perms.has(perm)) {
+      throw createError({ statusCode: 403, statusMessage: `Permission required: ${perm}` })
+    }
+    return await fn(tx, ctx)
   })
 }
 
