@@ -72,7 +72,11 @@ export default defineEventHandler(async (event) => {
           dm_pair_lo: a,
           dm_pair_hi: b
         })
-        .onConflict(oc => oc.columns(['dm_pair_lo', 'dm_pair_hi']).doNothing())
+        .onConflict(oc => oc
+          .columns(['dm_pair_lo', 'dm_pair_hi'])
+          .where('kind', '=', 'dm')
+          .where('dm_pair_lo', 'is not', null)
+          .doNothing())
         .returning('id')
         .executeTakeFirst()
 
