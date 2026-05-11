@@ -165,6 +165,32 @@ Code that checks permissions calls `isRegisteredPermission()` / `getAllPermissio
 
 Use granular permissions (e.g. `mail.read`, `mail.write`) not coarse ones (`mail.manage`) — the same vocabulary is shared with OAuth scopes.
 
+### Settings pattern: `defineSettings`
+
+Every setting that combines code-declared defaults with DB-stored overrides goes through [layers/core/server/utils/settings.ts](layers/core/server/utils/settings.ts) → `defineSettings({...})`. Don't hand-roll the merge — one pattern, one read shape, one fallback rule across the whole app. Inspired by Disciple.Tools' `get_post_field_settings` (registry/template defaults → `apply_filters` → DB customizations → merged result).
+
+The merge is always registry-first: code is the source of truth for *what exists*, the DB is the source of truth for *what was overridden*. An entry that exists in code but has no DB row still appears (with declared defaults). An entry that exists in the DB but not in code is an orphan — surfaced only if the caller opts in via `includeOrphans` (host-admin pages do; per-org filters don't).
+
+A spec has five fields:
+
+```ts
+defineSettings<TDefault, TOverride, TResult>({
+  loadDefaults: (tx, ctx) => TDefault[]            // usually wraps a registry
+  loadOverrides: (tx, ctx) => Map<string, TOverride>  // DB read keyed by id
+  keyOf: (d: TDefault) => string                   // join key — `id` for apps, `key` for roles
+  merge: (default, override) => TResult            // both optional; called once per default + once per orphan
+  includeOrphans?: boolean                         // default false
+})
+```
+
+Returns `(tx, ctx?) => Promise<TResult[]>`. Compose for multi-tier merges (catalog overlay + per-org overlay): `loadDefaults` of the outer spec calls the inner reader. See [layers/tenancy/server/utils/app-settings.ts](layers/tenancy/server/utils/app-settings.ts) for the canonical example — `getOrgApps` stacks on top of `getApps`.
+
+Live examples:
+- Apps catalog (host view): [layers/core/server/utils/app-settings.ts](layers/core/server/utils/app-settings.ts) — `getApps`
+- Apps catalog (per-org view): [layers/tenancy/server/utils/app-settings.ts](layers/tenancy/server/utils/app-settings.ts) — `getOrgApps`
+
+When adding a new settings surface (e.g. custom roles, per-org branding, host-level feature flags): write a `<thing>-settings.ts` file with one `defineSettings` call, export the reader, and have endpoints call it. Don't put the DB read in the endpoint; don't do the merge inline.
+
 ### App-layer page paths — write single-tenant shape
 
 App layer pages live at `app/pages/<appId>/...` and routes mount at `server/routes/api/<appId>/...`. App authors do **not** prefix paths with `/@:orgSlug/...`.

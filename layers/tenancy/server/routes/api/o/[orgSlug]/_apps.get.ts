@@ -1,5 +1,6 @@
-import { withOrgContext, getOrgEnabledApps } from '#tenant/server'
+import { withOrgContext } from '#tenant/server'
 import { getRegisteredApps } from '#core/server/utils/app-registry'
+import { getOrgEnabledApps } from '../../../../utils/app-settings'
 
 // Per-org app launcher feed. Filtered by:
 //   - the user's effective perms in this org (`requiredPermission` gate); AND

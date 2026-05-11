@@ -10,8 +10,11 @@ import { getRegisteredApps } from '../utils/app-registry'
 // host-admin state — the seeder owns row existence, the host admin owns
 // row contents.
 //
-// New apps land with `status='available'` (the safe default — host admin
-// must opt in to `default` for it to auto-enable for all orgs).
+// New apps land with the registry's declared `defaultStatus` (or
+// `'available'` if the layer didn't declare one — the safe fallback,
+// since host admin must opt in to `default` for it to auto-enable for
+// all orgs). The seeder only ever INSERTs; the declared default is
+// dormant once a row exists.
 //
 // Apps removed from the registry (layer uninstalled): the plugin does NOT
 // delete the row. It stays around so re-installing the layer restores
@@ -37,7 +40,7 @@ export default defineNitroPlugin((nitroApp) => {
       try {
         await adminDb
           .insertInto('apps')
-          .values({ id: app.id, status: 'available' })
+          .values({ id: app.id, status: app.defaultStatus ?? 'available' })
           .onConflict(oc => oc.column('id').doNothing())
           .execute()
       } catch (err) {

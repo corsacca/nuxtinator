@@ -23,57 +23,12 @@ import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions } from '#core/server/utils/rbac'
 import type { Database } from '#core/server/database/schema'
 import type { Permission } from '#core/app/utils/permissions'
-import type { Kysely as KyselyType } from 'kysely'
 
-// App-enable resolution: two-tier (global `apps.status` + per-org `org_apps`).
-type DbClient = KyselyType<Database> | Transaction<Database>
-
-export async function isAppEnabledForOrg(
-  client: DbClient,
-  orgId: string,
-  appId: string
-): Promise<boolean> {
-  const app = await client
-    .selectFrom('apps')
-    .select('status')
-    .where('id', '=', appId)
-    .executeTakeFirst()
-  if (!app || app.status === 'disabled') return false
-
-  const row = await client
-    .selectFrom('org_apps')
-    .select('enabled')
-    .where('org_id', '=', orgId)
-    .where('app_id', '=', appId)
-    .executeTakeFirst()
-  if (row) return row.enabled
-  return app.status === 'default'
-}
-
-export async function getOrgEnabledApps(
-  client: DbClient,
-  orgId: string
-): Promise<Set<string>> {
-  const apps = await client.selectFrom('apps').select(['id', 'status']).execute()
-  const orgApps = await client
-    .selectFrom('org_apps')
-    .select(['app_id', 'enabled'])
-    .where('org_id', '=', orgId)
-    .execute()
-  const orgMap = new Map(orgApps.map(r => [r.app_id, r.enabled]))
-
-  const enabled = new Set<string>()
-  for (const app of apps) {
-    if (app.status === 'disabled') continue
-    const explicit = orgMap.get(app.id)
-    if (explicit !== undefined) {
-      if (explicit) enabled.add(app.id)
-      continue
-    }
-    if (app.status === 'default') enabled.add(app.id)
-  }
-  return enabled
-}
+// App-enable resolution is registry-first — see `./app-settings.ts` for
+// the three-tier merge. Imported here for use inside `defineTenantHandler`'s
+// `appId` opt; external callers import the helpers directly from
+// `./app-settings.ts` so Nitro auto-import doesn't see two copies.
+import { isAppEnabledForOrg } from './app-settings'
 import { adminDb } from './database-admin'
 
 export interface TenantContext {

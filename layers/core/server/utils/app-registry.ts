@@ -26,6 +26,15 @@ export interface AppEntry {
   // for everyone.
   requiredPermission?: string
   order?: number
+  // Declared at registration time. Only consulted when the apps-catalog
+  // DB row for this app doesn't exist yet (fresh DB, or before the
+  // seeder has run for the first time on this boot). Once a row exists,
+  // it owns the status — see `seed-apps-catalog.ts` for the
+  // "code seeds existence, host admin owns contents" rule.
+  //   'available' — installed, off until an org opts in (existing default)
+  //   'default'   — installed, on for every org unless explicitly disabled
+  //   'disabled'  — installed but kill-switched
+  defaultStatus?: 'available' | 'default' | 'disabled'
 }
 
 const _apps = new Map<string, AppEntry>()
