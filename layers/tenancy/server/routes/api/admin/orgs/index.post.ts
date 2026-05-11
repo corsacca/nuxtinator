@@ -59,11 +59,13 @@ export default defineEventHandler(async (event) => {
         })
         .execute()
 
-      // Seed default-status apps.
+      // Seed every non-disabled app so the per-org bootstrap hook
+      // (`app.enabled`) fires for each enabled app. Under current policy
+      // all non-disabled apps are on by default for every org.
       const defaultApps = await trx
         .selectFrom('apps')
         .select('id')
-        .where('status', '=', 'default')
+        .where('status', '!=', 'disabled')
         .execute()
       if (defaultApps.length > 0) {
         await trx

@@ -31,7 +31,7 @@ export interface AppEntry {
   // seeder has run for the first time on this boot). Once a row exists,
   // it owns the status — see `seed-apps-catalog.ts` for the
   // "code seeds existence, host admin owns contents" rule.
-  //   'available' — installed, off until an org opts in (existing default)
+  //   'available' — installed, on for every org unless explicitly disabled
   //   'default'   — installed, on for every org unless explicitly disabled
   //   'disabled'  — installed but kill-switched
   defaultStatus?: 'available' | 'default' | 'disabled'

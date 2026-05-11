@@ -59,7 +59,7 @@ export const getOrgApps = defineSettings<AppCatalogEntry, OrgAppRow, OrgAppEntry
     let enabled: boolean
     if (lockedByHost) enabled = false
     else if (orgRow) enabled = orgRow.enabled
-    else enabled = a.status === 'default'
+    else enabled = true
     return {
       ...a,
       globalStatus: a.status,
