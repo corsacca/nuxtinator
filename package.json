@@ -14,6 +14,7 @@
     "layers/apps/kanban",
     "layers/apps/messages",
     "layers/apps/videos",
-    "layers/apps/feedback"
+    "layers/apps/feedback",
+    "layers/apps/list-of-100"
   ]
 }

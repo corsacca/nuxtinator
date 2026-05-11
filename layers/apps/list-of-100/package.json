@@ -1,0 +1,16 @@
+{
+  "name": "layer-list-of-100",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "apexcharts": "^5.10.0",
+    "vue3-apexcharts": "^1.11.0"
+  },
+  "peerDependencies": {
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "nuxt": "^4.0.0",
+    "vue": "^3.0.0",
+    "zod": "^3.23.0"
+  }
+}
