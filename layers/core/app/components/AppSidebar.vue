@@ -18,9 +18,9 @@ const isActive = (path: string) => {
 <template>
   <div class="flex flex-col h-full bg-(--ui-bg-elevated)">
     <div class="px-5 py-4 border-b border-(--ui-border) flex items-center gap-2">
-      <UIcon
-        :name="app.icon || 'i-lucide-square'"
-        class="size-5 text-(--ui-text-muted)"
+      <AppIcon
+        :name="app.icon"
+        class="size-5 text-xs text-(--ui-text-muted)"
       />
       <h2 class="text-lg font-semibold">
         {{ app.title }}

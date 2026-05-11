@@ -77,9 +77,9 @@ const canManageSettings = computed(() => org.value?.perms?.includes('org.setting
             :to="app.path"
             class="flex flex-col items-start rounded-md border border-(--ui-border) p-4 hover:bg-(--ui-bg-elevated) transition-colors"
           >
-            <UIcon
-              :name="app.icon || 'i-lucide-square'"
-              class="size-6 mb-2"
+            <AppIcon
+              :name="app.icon"
+              class="size-6 mb-2 text-sm"
             />
             <div class="font-medium">
               {{ app.title }}

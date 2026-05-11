@@ -16,10 +16,7 @@ const activeApp = useActiveApp(apps)
       :title="app.title"
       :aria-label="app.title"
     >
-      <UIcon
-        :name="app.icon || 'i-lucide-square'"
-        class="size-5"
-      />
+      <AppIcon :name="app.icon" class="size-5 text-[11px]" />
     </NuxtLink>
   </aside>
 </template>

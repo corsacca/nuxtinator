@@ -16,7 +16,7 @@ export default defineNitroPlugin(() => {
     id: 'list-of-100',
     title: 'List of 100',
     path: '/list-of-100',
-    icon: 'i-lucide-users-round',
+    icon: '100',
     description: 'Steward the 100 relationships God has put in your life.',
     requiredPermission: 'list-of-100.access',
     order: 30

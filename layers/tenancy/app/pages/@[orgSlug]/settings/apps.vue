@@ -68,9 +68,9 @@ const onToggle = async (app: OrgApp) => {
           class="flex items-center justify-between gap-3 p-4"
         >
           <div class="min-w-0 flex items-start gap-3">
-            <UIcon
-              :name="app.icon || 'i-lucide-square'"
-              class="size-6 mt-1 shrink-0"
+            <AppIcon
+              :name="app.icon"
+              class="size-6 mt-1 shrink-0 text-sm"
             />
             <div class="min-w-0">
               <div class="font-medium">

@@ -47,9 +47,9 @@ const open = ref(false)
             class="flex flex-col items-center justify-center gap-1.5 rounded-md p-3 hover:bg-(--ui-bg-accented) transition-colors text-center"
             @click="open = false"
           >
-            <UIcon
-              :name="app.icon || 'i-lucide-square'"
-              class="size-6 text-(--ui-text)"
+            <AppIcon
+              :name="app.icon"
+              class="size-6 text-sm text-(--ui-text)"
             />
             <span class="text-xs text-(--ui-text) line-clamp-2">{{ app.title }}</span>
           </NuxtLink>
