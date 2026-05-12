@@ -2,6 +2,9 @@
   "name": "layer-messages",
   "private": true,
   "type": "module",
+  "exports": {
+    "./test-helpers": "./tests/helpers/index.ts"
+  },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
     "croner": "^9.0.0",
@@ -15,5 +18,9 @@
     "nuxt": "^4.0.0",
     "vue": "^3.0.0",
     "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "layer-core": "*",
+    "layer-tenancy": "*"
   }
 }

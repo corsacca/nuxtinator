@@ -8,6 +8,7 @@ import {
   ALL_FORMATS,
 } from 'mediabunny'
 import fixWebmDuration from 'fix-webm-duration'
+import { getActiveSlug } from '#tenant'
 
 interface UploadProgress {
   stage: 'validating' | 'compressing' | 'uploading' | 'finalizing' | 'complete' | 'error'
@@ -778,11 +779,17 @@ export const useVideoUpload = () => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`
   }
 
-  // Computed: Generate shareable link from share token
+  // Computed: Generate shareable link from share token. In multi-tenant mode
+  // the URL includes the active org slug — anonymous visitors hitting the
+  // unprefixed `/watch/...` get bounced by the tenant route guard, while
+  // `/@<slug>/watch/...` is whitelisted and resolves the same page via the
+  // tenancy layer's pages:extend alias.
   const shareableLink = computed(() => {
     if (!shareToken.value) return null
     const siteUrl = window.location.origin
-    return `${siteUrl}/watch/${shareToken.value}`
+    const slug = getActiveSlug()
+    const prefix = slug ? `/@${slug}` : ''
+    return `${siteUrl}${prefix}/watch/${shareToken.value}`
   })
 
   // Computed: Extract just the progress number for backward compatibility

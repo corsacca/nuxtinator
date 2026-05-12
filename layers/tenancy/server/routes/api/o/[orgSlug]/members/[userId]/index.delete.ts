@@ -1,4 +1,5 @@
 import { getRouterParam } from 'h3'
+import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
 import { logEvent } from '#core/server/utils/activity-logger'
 
@@ -23,11 +24,13 @@ export default defineEventHandler(async (event) => {
     }
 
     if (existing.roles.includes('admin')) {
+      // `roles @> ARRAY['admin']::text[]` via raw sql — Kysely's binary
+      // builder mis-encodes a JS array as a single string here.
       const adminCountRow = await tx
         .selectFrom('memberships')
         .select(eb => eb.fn.count<string>('id').as('count'))
         .where('org_id', '=', ctx.orgId)
-        .where(eb => eb('roles', '@>', ['admin']))
+        .where(sql<boolean>`roles @> ARRAY['admin']::text[]`)
         .executeTakeFirst()
       const adminCount = Number(adminCountRow?.count ?? 0)
       if (adminCount <= 1) {
@@ -55,7 +58,7 @@ export default defineEventHandler(async (event) => {
       eventType: 'org_member_removed',
       userId: ctx.userId,
       metadata: { orgId: ctx.orgId, targetUserId, oldRoles: existing.roles }
-    }).catch(() => {})
+    }, tx).catch(() => {})
 
     return { success: true }
   })

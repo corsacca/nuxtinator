@@ -29,6 +29,10 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{
   saved: []
+  // Fired after a comment is posted (anchored or floating). The parent uses
+  // this to refresh its item list so the comment-count badge updates without
+  // waiting for the 30s poll.
+  commented: []
 }>()
 
 const { user } = useAuth()
@@ -125,6 +129,7 @@ async function postAnchored(bodyMd: string) {
   })
   clearPendingAnchor()
   await loadComments()
+  emit('commented')
 }
 
 async function postFloating(bodyMd: string) {
@@ -134,6 +139,7 @@ async function postFloating(bodyMd: string) {
     body: { body_md: bodyMd }
   })
   await loadComments()
+  emit('commented')
 }
 
 function startEdit() {
@@ -343,9 +349,22 @@ watch([() => props.item?.body_md, editing], () => {
                 />
               </div>
 
-              <!-- Bottom: catch-all "add a general comment" if none of the rail is occupied -->
-              <div v-if="!editing && floatingComments.length === 0 && anchoredComments.length === 0 && !pendingAnchor" class="text-xs text-(--ui-text-muted) p-3 border border-dashed border-(--ui-border) rounded-md">
-                Highlight text on the left to add a comment.
+              <!-- Catch-all composer when the rail is empty. Lets users post
+                   the first comment without having to make a text selection
+                   first — important on touch devices and for non-markdown
+                   items where selection-anchoring isn't possible. The hint
+                   sits above the composer; selecting text still works and
+                   morphs into the anchored-composer flow above. -->
+              <div v-if="!editing && floatingComments.length === 0 && anchoredComments.length === 0 && !pendingAnchor" class="space-y-2">
+                <p class="text-xs text-(--ui-text-muted)">
+                  Highlight text on the left to comment on it, or just leave a general comment below:
+                </p>
+                <MessagesComposer
+                  small
+                  placeholder="Add a comment..."
+                  submit-label="Comment"
+                  @submit="postFloating"
+                />
               </div>
             </aside>
           </div>

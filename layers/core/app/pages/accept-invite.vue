@@ -66,7 +66,7 @@ async function handleAccept() {
 
   submitting.value = true
   try {
-    await $fetch('/api/auth/accept-invite', {
+    const res = await $fetch<{ success: boolean, redirect: string }>('/api/auth/accept-invite', {
       method: 'POST',
       body: {
         token: token.value,
@@ -75,7 +75,8 @@ async function handleAccept() {
       }
     })
     await checkAuth()
-    await navigateTo('/dashboard', { replace: true })
+    // Server picks the right landing page (single-org → /@<slug>/, multi → /orgs).
+    await navigateTo(res?.redirect || '/orgs', { replace: true })
   } catch (err: any) {
     error.value = err?.data?.statusMessage || err?.data?.message || 'Failed to accept invitation. Please try again.'
   } finally {

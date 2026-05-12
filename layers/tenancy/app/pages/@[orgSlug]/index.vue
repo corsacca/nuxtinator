@@ -20,6 +20,11 @@ const { data: org, pending, error } = await useFetch<{
 const { apps } = await useApps()
 
 const canManageSettings = computed(() => org.value?.perms?.includes('org.settings.write'))
+
+// Server returns 423 for suspended orgs (from the tenancy middleware). Render
+// a dedicated state rather than a generic error alert — gives the user a
+// clear "this is the suspended page" experience.
+const isSuspended = computed(() => (error.value as { statusCode?: number } | null)?.statusCode === 423)
 </script>
 
 <template>
@@ -30,6 +35,28 @@ const canManageSettings = computed(() => org.value?.perms?.includes('org.setting
     >
       Loading...
     </div>
+
+    <UCard
+      v-else-if="isSuspended"
+      :ui="{ body: 'p-8 text-center' }"
+    >
+      <UIcon
+        name="i-lucide-pause-circle"
+        class="size-12 text-(--ui-text-muted) mx-auto mb-4"
+      />
+      <h1 class="text-2xl font-bold mb-2">
+        Organization suspended
+      </h1>
+      <p class="text-sm text-(--ui-text-muted) mb-6">
+        This organization is currently suspended. Contact your administrator if you believe this is a mistake.
+      </p>
+      <UButton
+        to="/orgs"
+        variant="outline"
+      >
+        Back to organizations
+      </UButton>
+    </UCard>
 
     <UAlert
       v-else-if="error"

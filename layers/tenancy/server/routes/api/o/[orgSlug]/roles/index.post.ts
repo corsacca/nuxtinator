@@ -57,7 +57,7 @@ export default defineEventHandler(async (event) => {
       eventType: 'custom_role_created',
       userId: ctx.userId,
       metadata: { orgId: ctx.orgId, name, permissions: perms }
-    }).catch(() => {})
+    }, tx).catch(() => {})
 
     return { id, name, description, permissions: perms }
   })

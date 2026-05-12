@@ -151,6 +151,7 @@ const sidebarOpen = ref(false)
       v-model:open="modalOpen"
       :item="modalItem"
       @saved="onModalSaved"
+      @commented="refresh"
     />
   </div>
 </template>

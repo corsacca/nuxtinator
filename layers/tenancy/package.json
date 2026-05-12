@@ -2,6 +2,9 @@
   "name": "layer-tenancy",
   "private": true,
   "type": "module",
+  "exports": {
+    "./test-helpers": "./tests/helpers/index.ts"
+  },
   "peerDependencies": {
     "@nuxt/kit": "^4.0.0",
     "h3": "^1.0.0",
@@ -10,5 +13,8 @@
     "nuxt": "^4.0.0",
     "postgres": "^3.4.7",
     "vue": "^3.0.0"
+  },
+  "devDependencies": {
+    "layer-core": "*"
   }
 }

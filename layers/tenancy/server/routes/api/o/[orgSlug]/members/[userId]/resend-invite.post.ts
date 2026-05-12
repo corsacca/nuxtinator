@@ -84,7 +84,7 @@ export default defineEventHandler(async (event) => {
       userId: ctx.userId,
       userAgent: getHeader(event, 'user-agent') || undefined,
       metadata: { orgId: ctx.orgId, targetUserId, email: user.email }
-    }).catch(() => {})
+    }, tx).catch(() => {})
 
     return { success: true }
   })

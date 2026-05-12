@@ -72,7 +72,10 @@ export default defineEventHandler(async (event) => {
 
   if (!row) {
     // Slug refers to nothing OR user isn't a member — same 404 either way.
-    if (orgSlug) {
+    // Same for an unknown orgId on `/api/admin/orgs/:id/...` paths: without
+    // this, the path param flows straight into the handler and an FK
+    // violation on insert surfaces as a noisy 500.
+    if (orgSlug || adminOrgMatch) {
       throw createError({
         statusCode: 404,
         statusMessage: 'This organization does not exist or you don\'t have access.'
@@ -90,7 +93,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (row.suspended_at) {
+  // Suspended orgs return 423 for normal traffic. Exception: the host-admin
+  // suspend endpoint itself — operator admins must be able to unsuspend, and
+  // blocking the very URL that toggles suspension would lock the org out
+  // forever. Match both the toggle and the legacy POST shape.
+  const isSuspendToggle = adminOrgMatch && /^\/api\/admin\/orgs\/[0-9a-f-]{36}\/suspend\b/.test(url)
+  if (row.suspended_at && !isSuspendToggle) {
     throw createError({ statusCode: 423, statusMessage: 'This organization is suspended.' })
   }
 

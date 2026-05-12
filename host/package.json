@@ -12,7 +12,11 @@
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
-    "seed": "bun run scripts/seed.ts"
+    "seed": "bun run scripts/seed.ts",
+    "test": "nuxt prepare && node scripts/run-tests.mjs",
+    "test:watch": "nuxt prepare && vitest",
+    "test:e2e": "nuxt prepare && playwright test",
+    "test:db": "../scripts/setup-test-db.sh"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.104",
@@ -26,8 +30,15 @@
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.15.2",
+    "@nuxt/test-utils": "^3.23.0",
+    "@playwright/test": "^1.57.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "bcrypt": "^6.0.0",
     "eslint": "^10.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "playwright-core": "^1.57.0",
     "typescript": "^6.0.3",
+    "vitest": "^4.0.17",
     "vue-tsc": "^3.2.7"
   }
 }

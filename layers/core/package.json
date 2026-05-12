@@ -2,6 +2,9 @@
   "name": "layer-core",
   "private": true,
   "type": "module",
+  "exports": {
+    "./test-helpers": "./tests/helpers/index.ts"
+  },
   "dependencies": {
     "@bradenmacdonald/s3-lite-client": "^0.9.6",
     "bcrypt": "^6.0.0",

@@ -1,4 +1,5 @@
 import { getRouterParam } from 'h3'
+import { sql } from 'kysely'
 import { adminDb as db } from '#tenant/admin-db'
 import { requireHostAdmin } from '#tenant/server'
 import { validateRoleNames } from '#core/server/utils/rbac'
@@ -34,11 +35,14 @@ export default defineEventHandler(async (event) => {
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'Membership not found' })
 
   if (existing.roles.includes('admin') && !newRoles.includes('admin')) {
+    // See note in members/[userId]/index.delete.ts: the `@>` operator needs
+    // a Postgres-encoded ARRAY literal; the Kysely binary builder mis-sends
+    // a JS array as a single string.
     const adminCountRow = await db
       .selectFrom('memberships')
       .select(eb => eb.fn.count<string>('id').as('count'))
       .where('org_id', '=', orgId)
-      .where(eb => eb('roles', '@>', ['admin']))
+      .where(sql<boolean>`roles @> ARRAY['admin']::text[]`)
       .executeTakeFirst()
     if (Number(adminCountRow?.count ?? 0) <= 1) {
       throw createError({ statusCode: 409, statusMessage: 'Cannot remove the last admin' })

@@ -43,11 +43,14 @@ export default defineEventHandler(async (event) => {
       throw err
     }
 
+    // Pass `tx` so activity_logs.org_id gets the active org stamped via the
+    // `current_org_id()` DEFAULT (the GUC is only set inside the txn).
+    // Without this, the org-side audit log can't see the row.
     logEvent({
       eventType: 'org_updated',
       userId: ctx.userId,
       metadata: { orgId: ctx.orgId, changes: next }
-    }).catch(() => {})
+    }, tx).catch(() => {})
 
     return {
       id: ctx.orgId,

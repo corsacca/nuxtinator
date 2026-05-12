@@ -22,11 +22,16 @@ export default defineNuxtPlugin(() => {
 
   const slot = document.createElement('div')
   slot.className = 'feedback-widget-slot'
+  // z-index 40 sits above normal page chrome (~10-30) but below Reka UI's
+  // modal/slideover layer (≥50). The third-party-host CSS in slot.css uses
+  // a much higher value (~2147483000) because it needs to sit above
+  // arbitrary host-page content; in-app we control the stacking context
+  // and want modals to cover the chat bubble.
   Object.assign(slot.style, {
     position: 'fixed',
     bottom: '20px',
     right: '20px',
-    zIndex: '9999'
+    zIndex: '40'
   } as Partial<CSSStyleDeclaration>)
 
   const el = document.createElement('feedback-web-component')

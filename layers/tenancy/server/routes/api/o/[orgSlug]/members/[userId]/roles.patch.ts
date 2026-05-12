@@ -1,4 +1,5 @@
 import { getRouterParam } from 'h3'
+import { sql } from 'kysely'
 import { withOrgPermission, computePermsForOrg } from '#tenant/server'
 import { validateRoleNames, getRolePermissions } from '#core/server/utils/rbac'
 import { logEvent } from '#core/server/utils/activity-logger'
@@ -58,11 +59,13 @@ export default defineEventHandler(async (event) => {
     const willBeAdmin = newRoles.includes('admin')
 
     if (wasAdmin && !willBeAdmin) {
+      // Raw SQL for `@>` — Kysely's binary builder mis-encodes a JS array
+      // as a single string, producing "malformed array literal".
       const adminCountRow = await tx
         .selectFrom('memberships')
         .select(eb => eb.fn.count<string>('id').as('count'))
         .where('org_id', '=', ctx.orgId)
-        .where(eb => eb('roles', '@>', ['admin']))
+        .where(sql<boolean>`roles @> ARRAY['admin']::text[]`)
         .executeTakeFirst()
       const adminCount = Number(adminCountRow?.count ?? 0)
       if (adminCount <= 1) {
@@ -93,7 +96,7 @@ export default defineEventHandler(async (event) => {
       eventType: 'org_member_roles_updated',
       userId: ctx.userId,
       metadata: { orgId: ctx.orgId, targetUserId, oldRoles, newRoles }
-    }).catch(() => {})
+    }, tx).catch(() => {})
 
     // Recompute the target's effective perms to mirror back, useful for UI.
     const targetPerms = await computePermsForOrg(tx, targetUserId, ctx.orgId)

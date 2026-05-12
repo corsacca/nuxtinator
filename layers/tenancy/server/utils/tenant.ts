@@ -305,6 +305,53 @@ export async function withProjectOrgContext<T>(
   })
 }
 
+// Operator-admin variant of `withProjectOrgContext`: looks up the org_id of an
+// arbitrary RLS-protected record via adminDb (BYPASSRLS), opens a db
+// transaction, sets `app.current_org` from that org, then runs the handler.
+//
+// Used by app-level operator-admin endpoints that need to triage a record by
+// its primary key without knowing which org owns it — for example,
+// `PATCH /api/admin/feedback/:id` on the feedback layer. App layers can't
+// import `#tenant/admin-db` directly (tenancy contract), so this helper is
+// the sanctioned path.
+//
+// The caller passes the table name + id; the helper interpolates the table
+// name via `sql.ref()` to prevent SQL injection. UUIDs are required so the
+// id is validated up front.
+//
+// Throws 404 with `notFoundMessage` if the record doesn't exist.
+export async function withRecordOrgContext<T>(
+  _event: H3Event,
+  opts: {
+    table: string
+    id: string
+    idColumn?: string
+    notFoundMessage?: string
+  },
+  fn: (tx: Transaction<Database>) => Promise<T>
+): Promise<T> {
+  const { table, id } = opts
+  const idColumn = opts.idColumn ?? 'id'
+  const notFoundMessage = opts.notFoundMessage ?? 'Not found'
+
+  if (!UUID_RE.test(id)) {
+    throw createError({ statusCode: 404, statusMessage: notFoundMessage })
+  }
+
+  const result = await sql<{ org_id: string }>`
+    select org_id from ${sql.ref(table)} where ${sql.ref(idColumn)} = ${id}
+  `.execute(adminDb)
+  const orgId = result.rows[0]?.org_id
+  if (!orgId) {
+    throw createError({ statusCode: 404, statusMessage: notFoundMessage })
+  }
+
+  return await db.transaction().execute(async (tx) => {
+    await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
+    return await fn(tx)
+  })
+}
+
 // Schema-retrofit helper for app layer migrations. Per-app tenancy migrations
 // live at `<layer>/migrations/<appId>_T<NNN>_*.ts` and call this. The tenancy
 // layer's migration discovery module includes those files only when the
