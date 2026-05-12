@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { getRouterParam, getHeader, getRequestURL } from 'h3'
+import { getRouterParam, getHeader } from 'h3'
 import { withOrgPermission } from '#tenant/server'
 import { adminDb } from '#tenant/admin-db'
 import { logEvent } from '#core/server/utils/activity-logger'
+import { getSiteUrl } from '#core/server/utils/site-url'
 import { sendTemplateEmail } from '#email'
 
 // Refresh the invite token for a member who hasn't accepted yet, and re-send
@@ -60,8 +61,7 @@ export default defineEventHandler(async (event) => {
       .where('id', '=', targetUserId)
       .execute()
 
-    const baseUrl = getRequestURL(event).origin
-    const inviteUrl = `${baseUrl}/accept-invite?token=${tokenKey}`
+    const inviteUrl = `${getSiteUrl()}/accept-invite?token=${tokenKey}`
 
     try {
       await sendTemplateEmail({

@@ -3,8 +3,9 @@ import { db } from '../../utils/database'
 import { logPasswordResetRequest } from '../../utils/activity-logger'
 import { sendTemplateEmail } from '#email'
 import { checkRateLimit, logRateLimitExceeded } from '../../utils/rate-limit'
+import { getSiteUrl } from '../../utils/site-url'
 import { readBody, getHeader } from 'h3'
-import { useRuntimeConfig, createError } from '#imports'
+import { createError } from '#imports'
 
 export default defineEventHandler(async (event) => {
   const { email } = await readBody(event)
@@ -75,14 +76,11 @@ export default defineEventHandler(async (event) => {
         .execute()
     })
 
-    // Get base URL from runtime config or construct from headers
-    const config = useRuntimeConfig()
-    const host = getHeader(event, 'host')
-    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
-    const baseUrl = config.public.baseUrl || `${protocol}://${host}`
-
-    // Construct reset URL
-    const resetUrl = `${baseUrl}/reset-password?token=${token}`
+    // Build the reset URL from the trusted NUXT_PUBLIC_SITE_URL. Never derive
+    // from the request Host header here — this endpoint is unauthenticated and
+    // an attacker could otherwise direct the victim's reset email to a host
+    // they control.
+    const resetUrl = `${getSiteUrl()}/reset-password?token=${token}`
 
     // Send email
     const emailSent = await sendTemplateEmail({

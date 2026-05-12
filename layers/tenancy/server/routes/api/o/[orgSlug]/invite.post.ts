@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { getHeader, getRequestURL } from 'h3'
+import { getHeader } from 'h3'
 import { withOrgPermission } from '#tenant/server'
 import { validateRoleNames, getRolePermissions } from '#core/server/utils/rbac'
 import { logEvent } from '#core/server/utils/activity-logger'
+import { getSiteUrl } from '#core/server/utils/site-url'
 import { sendTemplateEmail } from '#email'
 import { adminDb } from '#tenant/admin-db'
 
@@ -131,8 +132,7 @@ export default defineEventHandler(async (event) => {
     } catch (err) { console.warn('[hook membership.created]', err) }
 
     if (isNewUser && inviteToken) {
-      const baseUrl = getRequestURL(event).origin
-      const inviteUrl = `${baseUrl}/accept-invite?token=${inviteToken}`
+      const inviteUrl = `${getSiteUrl()}/accept-invite?token=${inviteToken}`
       try {
         await sendTemplateEmail({
           to: email,

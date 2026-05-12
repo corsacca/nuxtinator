@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { readBody, getHeader, getRequestURL } from 'h3'
+import { readBody, getHeader } from 'h3'
 import { db } from '#core/server/utils/database'
 import { requireOperatorAdmin } from '#tenant/server'
 import { requireAuth } from '../../../utils/auth'
 import { validateRoleNames } from '../../../utils/rbac'
 import { logEvent } from '../../../utils/activity-logger'
+import { getSiteUrl } from '../../../utils/site-url'
 import { sendTemplateEmail } from '#email'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -168,8 +169,7 @@ export default defineEventHandler(async (event) => {
 
   // Send a single invite email iff this is a new user.
   if (isNewUser && inviteToken) {
-    const baseUrl = getRequestURL(event).origin
-    const inviteUrl = `${baseUrl}/accept-invite?token=${inviteToken}`
+    const inviteUrl = `${getSiteUrl()}/accept-invite?token=${inviteToken}`
     try {
       await sendTemplateEmail({
         to: email,

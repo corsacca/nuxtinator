@@ -1,9 +1,10 @@
 import { randomUUID } from 'crypto'
-import { getRouterParam, getHeader, getRequestURL } from 'h3'
+import { getRouterParam, getHeader } from 'h3'
 import { db } from '#core/server/utils/database'
 import { requireOperatorAdmin } from '#tenant/server'
 import { requireAuth } from '../../../../utils/auth'
 import { logEvent } from '../../../../utils/activity-logger'
+import { getSiteUrl } from '../../../../utils/site-url'
 import { sendTemplateEmail } from '#email'
 
 export default defineEventHandler(async (event) => {
@@ -49,8 +50,7 @@ export default defineEventHandler(async (event) => {
     .where('id', '=', id)
     .execute()
 
-  const baseUrl = getRequestURL(event).origin
-  const inviteUrl = `${baseUrl}/accept-invite?token=${tokenKey}`
+  const inviteUrl = `${getSiteUrl()}/accept-invite?token=${tokenKey}`
 
   try {
     await sendTemplateEmail({

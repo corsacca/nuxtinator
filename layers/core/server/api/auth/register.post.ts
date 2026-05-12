@@ -5,7 +5,8 @@ import { db, sql } from '../../utils/database'
 import { logRegisterAttempt, logEvent } from '../../utils/activity-logger'
 import { sendTemplateEmail } from '#email'
 import { checkRateLimit, logRateLimitExceeded } from '../../utils/rate-limit'
-import { readBody, getHeader, setResponseHeader, getRequestURL, setCookie } from 'h3'
+import { readBody, getHeader, setResponseHeader, setCookie } from 'h3'
+import { getSiteUrl } from '../../utils/site-url'
 import { useRuntimeConfig, createError } from '#imports'
 
 // Advisory-lock key used to serialize concurrent registrations so the
@@ -143,8 +144,7 @@ export default defineEventHandler(async (event) => {
   // Normal registration: send verification email. Any failure is logged and
   // swallowed — the account is already committed, so turning an email failure
   // into a 500 would trap the user with an account they can't re-register.
-  const baseUrl = getRequestURL(event).origin
-  const verificationUrl = `${baseUrl}/api/auth/verify?token=${tokenKey}`
+  const verificationUrl = `${getSiteUrl()}/api/auth/verify?token=${tokenKey}`
 
   try {
     const emailSent = await sendTemplateEmail({
