@@ -183,7 +183,7 @@ export const inviteEmailTemplate: EmailTemplate = buildEmailTemplate(
     <h2 style="color: #333; margin-top: 0;">Hello ${data.userName || 'there'}!</h2>
     <p style="color: #666; line-height: 1.6;">
       ${data.inviterName ? `${data.inviterName} has invited you` : 'You have been invited'}
-      to join ${data.appName || 'the application'}.
+      to join ${data.orgName || data.appName || 'the application'}.
     </p>
     <p style="color: #666; line-height: 1.6;">
       Click the button below to set your password and activate your account.
@@ -205,7 +205,7 @@ export const inviteEmailTemplate: EmailTemplate = buildEmailTemplate(
       you can safely ignore it.
     </p>
   `,
-  data => `You've been invited to ${data.appName || 'the application'}\n\nHello ${data.userName || 'there'}!\n\n${data.inviterName ? `${data.inviterName} has invited you` : 'You have been invited'} to join ${data.appName || 'the application'}.\n\nAccept your invitation and set your password: ${data.inviteUrl || '#'}\n\nThis invitation will expire in 7 days.`
+  data => `You've been invited to ${data.orgName || data.appName || 'the application'}\n\nHello ${data.userName || 'there'}!\n\n${data.inviterName ? `${data.inviterName} has invited you` : 'You have been invited'} to join ${data.orgName || data.appName || 'the application'}.\n\nAccept your invitation and set your password: ${data.inviteUrl || '#'}\n\nThis invitation will expire in 7 days.`
 )
 
 export const passwordResetEmailTemplate: EmailTemplate = buildEmailTemplate(

@@ -63,13 +63,20 @@ export default defineEventHandler(async (event) => {
 
     const inviteUrl = `${getSiteUrl()}/accept-invite?token=${tokenKey}`
 
+    const inviter = await adminDb
+      .selectFrom('users')
+      .select(['display_name', 'email'])
+      .where('id', '=', ctx.userId)
+      .executeTakeFirst()
+
     try {
       await sendTemplateEmail({
         to: user.email,
         template: 'invite',
         data: {
           userName: user.display_name,
-          inviterName: ctx.userId,
+          inviterName: inviter?.display_name || inviter?.email || 'Someone',
+          orgName: ctx.orgName,
           inviteUrl
         }
       })
