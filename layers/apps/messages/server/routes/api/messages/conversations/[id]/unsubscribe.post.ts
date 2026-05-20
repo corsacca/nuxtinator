@@ -10,10 +10,15 @@ export default defineEventHandler(async (event) => {
     const conv = await requireConversationAccess(tx, ctx.userId, conversationId)
 
     if (conv.kind === 'channel') {
+      // Record an explicit opt-out (subscribed = false) rather than deleting
+      // the row, so auto-subscribe-on-visit won't silently re-subscribe later.
       await tx
-        .deleteFrom('messages_channel_subscriptions')
-        .where('channel_id', '=', conv.id)
-        .where('user_id', '=', ctx.userId)
+        .insertInto('messages_channel_subscriptions')
+        .values({ channel_id: conv.id, user_id: ctx.userId, subscribed: false })
+        .onConflict(oc => oc
+          .columns(['channel_id', 'user_id'])
+          .doUpdateSet({ subscribed: false })
+        )
         .execute()
     }
 

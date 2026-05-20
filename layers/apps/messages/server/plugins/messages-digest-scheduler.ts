@@ -58,6 +58,7 @@ async function scanForUser(
       eb => eb.fn.coalesce('r.last_read_at', sql<Date>`'epoch'::timestamptz`).as('last_read_at')
     ])
     .where('sub.user_id', '=', userId)
+    .where('sub.subscribed', '=', true)
     .where('c.archived_at', 'is', null)
     .where('c.kind', '=', 'channel')
     .execute()
@@ -201,6 +202,7 @@ async function runOnceLocked(): Promise<void> {
     const candidateRows = await db
       .selectFrom('messages_channel_subscriptions')
       .select('user_id as id')
+      .where('subscribed', '=', true)
       .union(qb => qb
         .selectFrom('messages_notifications')
         .select('user_id as id')

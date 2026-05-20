@@ -29,6 +29,10 @@ export function useConversationItems(conversationId: Ref<string | null>) {
   const pending = ref(false)
   const error = ref<string | null>(null)
 
+  // Shared sidebar conversations state — refreshed right after the read pointer
+  // moves so the unread badge clears immediately instead of waiting for its poll.
+  const conversations = useMessagesConversations()
+
   async function refresh() {
     if (!conversationId.value) return
     pending.value = true
@@ -81,11 +85,13 @@ export function useConversationItems(conversationId: Ref<string | null>) {
   async function markRead() {
     if (!conversationId.value) return
     await $fetch(`/api/messages/conversations/${conversationId.value}/read`, { method: 'POST' })
+    await conversations.refresh()
   }
 
   let interval: ReturnType<typeof setInterval> | null = null
   function start() {
     refresh()
+    markRead()
     if (interval) return
     interval = setInterval(refresh, 30_000)
   }

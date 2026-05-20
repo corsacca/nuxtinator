@@ -28,6 +28,7 @@ export interface MessagesConversationMembersTable {
 export interface MessagesChannelSubscriptionsTable {
   channel_id: string
   user_id: string
+  subscribed: Generated<boolean>
   subscribed_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 

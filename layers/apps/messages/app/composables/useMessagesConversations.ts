@@ -6,6 +6,7 @@ interface ConversationsResponse {
     name: string | null
     description: string | null
     subscribed: boolean
+    muted: boolean
     unread_count: number
   }>
   dms: Array<{

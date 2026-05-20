@@ -10,6 +10,7 @@ interface ChannelRow {
   name: string | null
   description: string | null
   subscribed: boolean
+  muted: boolean
   unread_count: number
 }
 
@@ -38,12 +39,15 @@ export default defineTenantHandler({ appId: 'messages' }, async (tx, ctx) => {
       'c.id',
       'c.name',
       'c.description',
-      eb => eb('sub.user_id', 'is not', null).as('subscribed'),
+      eb => eb('sub.subscribed', 'is', true).as('subscribed'),
+      // muted = an explicit opt-out row (subscribed = false). A missing row
+      // (never touched) is neither subscribed nor muted.
+      eb => eb('sub.subscribed', 'is', false).as('muted'),
       sql<string>`count(i.id) FILTER (WHERE i.created_at > coalesce(r.last_read_at, 'epoch'::timestamptz))`.as('unread_count')
     ])
     .where('c.kind', '=', 'channel')
     .where('c.archived_at', 'is', null)
-    .groupBy(['c.id', 'c.name', 'c.description', 'sub.user_id'])
+    .groupBy(['c.id', 'c.name', 'c.description', 'sub.subscribed'])
     .orderBy('c.name', 'asc')
     .execute()
 
@@ -52,6 +56,7 @@ export default defineTenantHandler({ appId: 'messages' }, async (tx, ctx) => {
     name: row.name,
     description: row.description,
     subscribed: !!row.subscribed,
+    muted: !!row.muted,
     unread_count: Number(row.unread_count ?? 0)
   }))
 

@@ -18,7 +18,7 @@ describe('POST /api/messages/conversations/:id/subscribe + unsubscribe', () => {
     await cleanupMessagesTestData(sql)
   })
 
-  it('subscribe inserts a messages_channel_subscriptions row; unsubscribe removes it', async () => {
+  it('subscribe sets subscribed=true; unsubscribe records an explicit subscribed=false opt-out', async () => {
     const { org, user, auth } = await createMessagesOrgWith(sql, ['admin'])
     const ch = await createTestChannel(sql, { org_id: org.id, created_by: user.id })
 
@@ -26,21 +26,48 @@ describe('POST /api/messages/conversations/:id/subscribe + unsubscribe', () => {
       method: 'POST',
       ...withOrgHeader(auth, org.slug)
     })
-    let rows = await sql<{ user_id: string }[]>`
-      SELECT user_id FROM messages_channel_subscriptions
+    let rows = await sql<{ subscribed: boolean }[]>`
+      SELECT subscribed FROM messages_channel_subscriptions
       WHERE channel_id = ${ch.id} AND user_id = ${user.id}
     `
     expect(rows.length).toBe(1)
+    expect(rows[0]!.subscribed).toBe(true)
 
     await $fetch(`/api/messages/conversations/${ch.id}/unsubscribe`, {
       method: 'POST',
       ...withOrgHeader(auth, org.slug)
     })
-    rows = await sql<{ user_id: string }[]>`
-      SELECT user_id FROM messages_channel_subscriptions
+    // Row is kept (now subscribed=false) so auto-subscribe-on-visit won't undo it.
+    rows = await sql<{ subscribed: boolean }[]>`
+      SELECT subscribed FROM messages_channel_subscriptions
       WHERE channel_id = ${ch.id} AND user_id = ${user.id}
     `
-    expect(rows.length).toBe(0)
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.subscribed).toBe(false)
+  })
+
+  it('opening a channel (read) auto-subscribes; a prior unsubscribe is not undone', async () => {
+    const { org, user, auth } = await createMessagesOrgWith(sql, ['admin'])
+    const ch = await createTestChannel(sql, { org_id: org.id, created_by: user.id })
+
+    // First visit auto-subscribes.
+    await $fetch(`/api/messages/conversations/${ch.id}/read`, { method: 'POST', ...withOrgHeader(auth, org.slug) })
+    let rows = await sql<{ subscribed: boolean }[]>`
+      SELECT subscribed FROM messages_channel_subscriptions
+      WHERE channel_id = ${ch.id} AND user_id = ${user.id}
+    `
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.subscribed).toBe(true)
+
+    // Explicit opt-out, then re-open: opt-out must persist.
+    await $fetch(`/api/messages/conversations/${ch.id}/unsubscribe`, { method: 'POST', ...withOrgHeader(auth, org.slug) })
+    await $fetch(`/api/messages/conversations/${ch.id}/read`, { method: 'POST', ...withOrgHeader(auth, org.slug) })
+    rows = await sql<{ subscribed: boolean }[]>`
+      SELECT subscribed FROM messages_channel_subscriptions
+      WHERE channel_id = ${ch.id} AND user_id = ${user.id}
+    `
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.subscribed).toBe(false)
   })
 
   it('subscribe is idempotent (calling twice does not 500)', async () => {

@@ -32,6 +32,18 @@ export default defineEventHandler(async (event) => {
       .where('read_at', 'is', null)
       .execute()
 
+    // Auto-subscribe to a channel the first time the caller opens it, so they
+    // start receiving the daily digest without a manual opt-in. `doNothing`
+    // on conflict means a prior explicit unsubscribe (subscribed = false) is
+    // left untouched.
+    if (conv.kind === 'channel') {
+      await tx
+        .insertInto('messages_channel_subscriptions')
+        .values({ channel_id: conv.id, user_id: ctx.userId, subscribed: true })
+        .onConflict(oc => oc.columns(['channel_id', 'user_id']).doNothing())
+        .execute()
+    }
+
     return { ok: true }
   })
 })

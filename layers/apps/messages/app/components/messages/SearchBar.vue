@@ -69,10 +69,10 @@ function go(conversationId: string) {
 </script>
 
 <template>
-  <UPopover v-model:open="open" :ui="{ content: 'w-96' }">
+  <UPopover v-model:open="open" :ui="{ content: 'w-96' }" class="block w-full">
     <button class="search-btn" aria-label="Search">
-      <UIcon name="i-lucide-search" class="size-4" />
-      <span class="text-sm hidden sm:inline">Search</span>
+      <UIcon name="i-lucide-search" class="size-4 shrink-0" />
+      <span class="text-sm">Search</span>
     </button>
     <template #content>
       <div class="flex flex-col">
@@ -132,7 +132,8 @@ function go(conversationId: string) {
 
 <style scoped>
 .search-btn {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   align-items: center;
   gap: 0.5rem;
   padding: 0.375rem 0.75rem;

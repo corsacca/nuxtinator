@@ -94,9 +94,9 @@ const sidebarOpen = ref(false)
           aria-label="Open conversations"
           @click="sidebarOpen = true"
         />
+        <MessagesConversationTitle :conversation-id="conversationId" />
         <div class="flex-1" />
-        <MessagesSearchBar />
-        <MessagesNotificationBell />
+        <MessagesSubscribeToggle :conversation-id="conversationId" />
       </header>
 
       <div v-if="!conversationId" class="flex-1 grid place-items-center text-(--ui-text-muted)">

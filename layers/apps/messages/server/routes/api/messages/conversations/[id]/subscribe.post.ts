@@ -15,8 +15,11 @@ export default defineEventHandler(async (event) => {
 
     await tx
       .insertInto('messages_channel_subscriptions')
-      .values({ channel_id: conv.id, user_id: ctx.userId })
-      .onConflict(oc => oc.doNothing())
+      .values({ channel_id: conv.id, user_id: ctx.userId, subscribed: true })
+      .onConflict(oc => oc
+        .columns(['channel_id', 'user_id'])
+        .doUpdateSet({ subscribed: true })
+      )
       .execute()
 
     return { subscribed: true }

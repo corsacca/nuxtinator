@@ -22,8 +22,6 @@ const sidebarOpen = ref(false)
           @click="sidebarOpen = true"
         />
         <div class="flex-1" />
-        <MessagesSearchBar />
-        <MessagesNotificationBell />
       </header>
 
       <div class="flex-1 grid place-items-center text-(--ui-text-muted)">

@@ -28,7 +28,7 @@ function pathFor(id: string): string {
   return slug ? `/@${slug}/messages/${id}` : `/messages/${id}`
 }
 
-interface ChannelMeta { unread: number, subscribed: boolean }
+interface ChannelMeta { unread: number, muted: boolean }
 interface DmMeta { unread: number }
 
 const channelItems = computed<SidebarNavItem[]>(() =>
@@ -37,7 +37,7 @@ const channelItems = computed<SidebarNavItem[]>(() =>
     label: ch.name ?? 'Untitled',
     icon: 'i-lucide-hash',
     exact: true,
-    meta: { unread: ch.unread_count, subscribed: ch.subscribed } satisfies ChannelMeta
+    meta: { unread: ch.unread_count, muted: ch.muted } satisfies ChannelMeta
   }))
 )
 
@@ -84,6 +84,7 @@ function onDmCreated(id: string) {
       <SidebarNav
         v-if="channelItems.length > 0"
         :items="channelItems"
+        class="-mx-3"
       >
         <template #trailing="{ item }">
           <UBadge
@@ -95,10 +96,10 @@ function onDmCreated(id: string) {
             {{ (item.meta as ChannelMeta).unread > 99 ? '99+' : (item.meta as ChannelMeta).unread }}
           </UBadge>
           <UIcon
-            v-if="(item.meta as ChannelMeta).subscribed"
-            name="i-lucide-bell"
-            class="size-3 text-(--ui-primary)"
-            title="Subscribed to digest"
+            v-if="(item.meta as ChannelMeta).muted"
+            name="i-lucide-bell-off"
+            class="size-3 text-(--ui-text-dimmed)"
+            title="Digest muted"
           />
         </template>
       </SidebarNav>
@@ -127,6 +128,7 @@ function onDmCreated(id: string) {
       <SidebarNav
         v-if="dmItems.length > 0"
         :items="dmItems"
+        class="-mx-3"
       >
         <template #trailing="{ item }">
           <UBadge
