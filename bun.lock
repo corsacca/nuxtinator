@@ -40,7 +40,7 @@
     },
     "layers/apps/feedback": {
       "name": "layer-feedback",
-      "devDependencies": {
+      "optionalDependencies": {
         "layer-core": "*",
         "layer-tenancy": "*",
       },
@@ -64,7 +64,7 @@
         "apexcharts": "^5.10.0",
         "vue3-apexcharts": "^1.11.0",
       },
-      "devDependencies": {
+      "optionalDependencies": {
         "layer-core": "*",
         "layer-tenancy": "*",
       },
@@ -85,7 +85,7 @@
         "emoji-mart": "^5.6.0",
         "marked": "^14.1.0",
       },
-      "devDependencies": {
+      "optionalDependencies": {
         "layer-core": "*",
         "layer-tenancy": "*",
       },
@@ -104,7 +104,7 @@
         "mediabunny": "^1.25.1",
         "uuid": "^12.0.0",
       },
-      "devDependencies": {
+      "optionalDependencies": {
         "layer-core": "*",
         "layer-tenancy": "*",
       },
@@ -197,7 +197,7 @@
     },
     "layers/tenancy": {
       "name": "layer-tenancy",
-      "devDependencies": {
+      "optionalDependencies": {
         "layer-core": "*",
       },
       "peerDependencies": {

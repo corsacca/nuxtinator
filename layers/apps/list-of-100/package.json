@@ -16,7 +16,7 @@
     "vue": "^3.0.0",
     "zod": "^3.23.0"
   },
-  "devDependencies": {
+  "optionalDependencies": {
     "layer-core": "*",
     "layer-tenancy": "*"
   }

@@ -16,7 +16,7 @@
     "nuxt": "^4.0.0",
     "vue": "^3.0.0"
   },
-  "devDependencies": {
+  "optionalDependencies": {
     "layer-core": "*",
     "layer-tenancy": "*"
   }
