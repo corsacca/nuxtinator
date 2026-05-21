@@ -547,7 +547,7 @@ export const useScreenRecorder = () => {
   }
 
   // Upload to S3
-  const uploadToS3 = async (visibility: 'public' | 'private' = 'private') => {
+  const uploadToS3 = async (visibility: 'public' | 'private' | 'org' = 'private') => {
     try {
       await upload.uploadRecording(recordedChunks.value, recordedVideoUrl.value!, recordingTime.value, recordingFormat.value, visibility)
       return true

@@ -14,12 +14,11 @@
     </div>
 
     <div class="action-buttons">
-      <UButton @click="$emit('upload', 'public')" icon="i-lucide-globe">
-        Upload & Share Public
-      </UButton>
-      <UButton @click="$emit('upload', 'private')" variant="outline" icon="i-lucide-lock">
-        Upload & Share Private
-      </UButton>
+      <UDropdownMenu :items="uploadOptions" :content="{ align: 'center' }">
+        <UButton icon="i-lucide-upload" trailing-icon="i-lucide-chevron-down">
+          Upload & Share
+        </UButton>
+      </UDropdownMenu>
       <UButton @click="$emit('download')" variant="outline">
         <template #leading>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
@@ -49,11 +48,32 @@ defineProps<{
   recordedVideoUrl: string
 }>()
 
-defineEmits<{
-  upload: [visibility: 'public' | 'private']
+const emit = defineEmits<{
+  upload: [visibility: 'public' | 'private' | 'org']
   download: []
   reset: []
 }>()
+
+const uploadOptions = [
+  {
+    label: 'Private',
+    description: 'Only you can see it',
+    icon: 'i-lucide-lock',
+    onSelect: () => emit('upload', 'private')
+  },
+  {
+    label: 'Organization',
+    description: 'Anyone signed in to your org can see it',
+    icon: 'i-lucide-users',
+    onSelect: () => emit('upload', 'org')
+  },
+  {
+    label: 'Public link',
+    description: 'Anyone with the link can see it',
+    icon: 'i-lucide-globe',
+    onSelect: () => emit('upload', 'public')
+  }
+]
 </script>
 
 <style scoped>

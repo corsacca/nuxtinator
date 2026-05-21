@@ -476,7 +476,7 @@ export const useVideoUpload = () => {
     recordedVideoUrl: string,
     recordingTime: number,
     format?: { mimeType: string; isMP4: boolean } | null,
-    visibility: 'public' | 'private' = 'private'
+    visibility: 'public' | 'private' | 'org' = 'private'
   ) => {
     if (!recordedVideoUrl || recordedChunks.length === 0) {
       throw new Error('No recording to upload')
