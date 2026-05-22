@@ -10,7 +10,6 @@ import {
   createMessagesOrgWith,
   addMessagesMember,
   createTestChannel,
-  createTestItem,
   withOrgHeader
 } from '../helpers'
 
@@ -40,20 +39,20 @@ describe('POST /api/messages/conversations/:id/read', () => {
     const { org, user, auth } = await createMessagesOrgWith(sql, ['admin'])
     const other = await addMessagesMember(sql, org.id, ['member'])
     const ch = await createTestChannel(sql, { org_id: org.id, created_by: user.id })
-    const item = await createTestItem(sql, { org_id: org.id, conversation_id: ch.id, author_id: other.user.id })
 
-    // Seed an unread notification for the caller on this conversation.
+    // Seed an unread global notification for the caller on this conversation.
+    // Messages clears these by matching the link it writes.
     const notifId = randomUUID()
     await sql`
-      INSERT INTO messages_notifications
-        (id, user_id, kind, item_id, conversation_id, actor_id, org_id)
-      VALUES (${notifId}, ${user.id}, 'mention', ${item.id}, ${ch.id}, ${other.user.id}, ${org.id})
+      INSERT INTO notifications
+        (id, user_id, app_id, title, link, actor_id, org_id)
+      VALUES (${notifId}, ${user.id}, 'messages', 'mentioned you', ${`/messages/${ch.id}`}, ${other.user.id}, ${org.id})
     `
 
     await $fetch(`/api/messages/conversations/${ch.id}/read`, { method: 'POST', ...withOrgHeader(auth, org.slug) })
 
     const rows = await sql<{ read_at: Date | null }[]>`
-      SELECT read_at FROM messages_notifications WHERE id = ${notifId}
+      SELECT read_at FROM notifications WHERE id = ${notifId}
     `
     expect(rows[0]!.read_at).not.toBeNull()
   })

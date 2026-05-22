@@ -155,9 +155,10 @@ export async function cleanupMessagesTestData(sql: ReturnType<typeof postgres>):
   // Order is chosen so that delete-cascades from parent tables don't surprise
   // an INSERT that runs immediately after the cleanup.
   await sql`
-    DELETE FROM messages_notifications
-    WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'test-%@example.com')
-       OR actor_id IN (SELECT id FROM users WHERE email LIKE 'test-%@example.com')
+    DELETE FROM notifications
+    WHERE app_id = 'messages'
+      AND (user_id IN (SELECT id FROM users WHERE email LIKE 'test-%@example.com')
+        OR actor_id IN (SELECT id FROM users WHERE email LIKE 'test-%@example.com'))
   `
   await sql`
     DELETE FROM messages_mentions

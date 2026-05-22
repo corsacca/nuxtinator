@@ -1,12 +1,11 @@
 // Given a set of mention nodes from a freshly-created item or comment,
-// validate the mentioned users are org members and write
-//   - messages_mentions rows
-//   - messages_notifications rows (kind='mention', perEventEmail=true)
+// validate the mentioned users are org members and write the
+// `messages_mentions` rows. Returns the validated targets so the caller can
+// create the global notifications (with the message body for the excerpt).
 
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import type { ExtractedMention } from './markdown-mentions'
-import { createNotifications } from './notification-creator'
 
 export interface MentionFanoutOpts {
   orgId: string | null
@@ -64,20 +63,6 @@ export async function fanoutMentions(
       mentioned_user_id: uid
     })))
     .execute()
-
-  // Insert notification rows (per-event email path).
-  await createNotifications(
-    tx,
-    targets.map(uid => ({
-      user_id: uid,
-      kind: 'mention' as const,
-      item_id: opts.itemId ?? null,
-      comment_id: opts.commentId ?? null,
-      conversation_id: opts.conversationId,
-      actor_id: opts.authorId
-    })),
-    { perEventEmail: true }
-  )
 
   return { notified: targets }
 }

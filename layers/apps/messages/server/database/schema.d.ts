@@ -3,7 +3,6 @@ import type { ColumnType, Generated } from 'kysely'
 
 export type ConversationKind = 'channel' | 'dm'
 export type ItemKind = 'markdown' | 'image' | 'file'
-export type NotificationKind = 'mention' | 'dm' | 'comment' | 'reply'
 export type ReactionTargetKind = 'item' | 'comment'
 
 export interface MessagesConversationsTable {
@@ -112,19 +111,6 @@ export interface MessagesMentionsTable {
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
-export interface MessagesNotificationsTable {
-  id: Generated<string>
-  user_id: string
-  kind: NotificationKind
-  item_id: string | null
-  comment_id: string | null
-  conversation_id: string | null
-  actor_id: string | null
-  created_at: ColumnType<Date, Date | string | undefined, Date | string>
-  read_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
-  emailed_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
-}
-
 declare module '#core/server/database/schema' {
   interface Database {
     messages_conversations: MessagesConversationsTable
@@ -138,6 +124,5 @@ declare module '#core/server/database/schema' {
     messages_item_tags: MessagesItemTagsTable
     messages_item_stars: MessagesItemStarsTable
     messages_mentions: MessagesMentionsTable
-    messages_notifications: MessagesNotificationsTable
   }
 }

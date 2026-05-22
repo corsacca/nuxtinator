@@ -11,7 +11,6 @@ watch(() => route.path, () => { open.value = false })
     <template #header>
       <div class="flex items-center gap-2 -mx-3">
         <MessagesSearchBar class="flex-1 min-w-0" />
-        <MessagesNotificationBell />
       </div>
     </template>
     <MessagesSidebarBody />
@@ -41,7 +40,6 @@ watch(() => route.path, () => { open.value = false })
             </div>
             <div class="flex items-center gap-2">
               <MessagesSearchBar class="flex-1 min-w-0" />
-              <MessagesNotificationBell />
             </div>
           </div>
         </template>

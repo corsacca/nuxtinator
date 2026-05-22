@@ -6,7 +6,8 @@ import { type Kysely, sql } from 'kysely'
 // from another's.
 //
 // All messages content is per-org (channels, DMs, items, comments, reactions,
-// tags, stars, mentions, notifications, read pointers).
+// tags, stars, mentions, read pointers). Notifications moved to the global
+// `notifications` table (retrofitted by tenancy_012); see messages_014.
 
 async function enableTenantScoping(db: Kysely<unknown>, table: string): Promise<void> {
   await sql`
@@ -39,8 +40,7 @@ const TABLES = [
   'messages_user_tags',
   'messages_item_tags',
   'messages_item_stars',
-  'messages_mentions',
-  'messages_notifications'
+  'messages_mentions'
 ] as const
 
 export async function up(db: Kysely<unknown>): Promise<void> {

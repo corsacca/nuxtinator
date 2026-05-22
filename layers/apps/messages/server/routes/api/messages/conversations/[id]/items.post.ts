@@ -11,8 +11,7 @@ import { requireConversationAccess } from '../../../../../utils/conversation-acc
 import { extractMentions } from '../../../../../utils/markdown-mentions'
 import { fanoutMentions } from '../../../../../utils/mention-fanout'
 import { getDmMemberIds } from '../../../../../utils/dm-members'
-import { createNotifications } from '../../../../../utils/notification-creator'
-import { sendDmEmail, sendMentionEmail } from '../../../../../utils/messages-email'
+import { notifyMessages } from '../../../../../utils/notification-creator'
 
 const MarkdownBody = z.object({
   kind: z.literal('markdown'),
@@ -31,19 +30,8 @@ const UploadBody = z.object({
 
 const Body = z.discriminatedUnion('kind', [MarkdownBody, UploadBody])
 
-interface PendingEmails {
-  mentionRecipients: string[]
-  dmRecipients: string[]
-  authorId: string
-  conversationId: string
-  itemId: string
-  bodyMd: string | null
-}
-
 export default defineEventHandler(async (event) => {
-  let pending: PendingEmails | null = null
-
-  const result = await withOrgPermission(event, { appId: 'messages' }, 'messages.write', async (tx, ctx) => {
+  return await withOrgPermission(event, { appId: 'messages' }, 'messages.write', async (tx, ctx) => {
     const conversationId = getRouterParam(event, 'id')!
     const conv = await requireConversationAccess(tx, ctx.userId, conversationId)
 
@@ -97,68 +85,29 @@ export default defineEventHandler(async (event) => {
         dmMemberIds
       })
       mentionRecipients = mentionResult.notified
+      await notifyMessages(tx, {
+        recipients: mentionRecipients,
+        actorId: ctx.userId,
+        conversationId: conv.id,
+        kind: 'mention',
+        bodyMd
+      })
     }
 
-    // DM per-event notifications for participants. We still write the
-    // notification row for every recipient (drives the bell + unread state),
-    // but skip a duplicate per-event email for users already getting a
-    // mention email about this same item.
-    let dmRecipients: string[] = []
+    // DM notifications for participants who weren't already mentioned (a
+    // mention notification already covers them).
     if (dmMemberIds) {
-      const allDmRecipients = [...dmMemberIds].filter(uid => uid !== ctx.userId)
-      if (allDmRecipients.length > 0) {
-        await createNotifications(
-          tx,
-          allDmRecipients.map(uid => ({
-            user_id: uid,
-            kind: 'dm' as const,
-            item_id: inserted.id,
-            conversation_id: conv.id,
-            actor_id: ctx.userId
-          })),
-          { perEventEmail: true }
-        )
-      }
-      dmRecipients = allDmRecipients.filter(uid => !mentionRecipients.includes(uid))
-    }
-
-    pending = {
-      mentionRecipients,
-      dmRecipients,
-      authorId: ctx.userId,
-      conversationId: conv.id,
-      itemId: inserted.id,
-      bodyMd
+      const dmRecipients = [...dmMemberIds]
+        .filter(uid => uid !== ctx.userId && !mentionRecipients.includes(uid))
+      await notifyMessages(tx, {
+        recipients: dmRecipients,
+        actorId: ctx.userId,
+        conversationId: conv.id,
+        kind: 'dm',
+        bodyMd
+      })
     }
 
     return { id: inserted.id, created_at: inserted.created_at }
   })
-
-  // Per-event email dispatch (after txn commits). Failures are swallowed
-  // inside each sender so they never block the response.
-  const p = pending as PendingEmails | null
-  if (p) {
-    if (p.bodyMd) {
-      for (const uid of p.mentionRecipients) {
-        await sendMentionEmail({
-          recipientId: uid,
-          actorId: p.authorId,
-          conversationId: p.conversationId,
-          itemId: p.itemId,
-          bodyMd: p.bodyMd
-        })
-      }
-    }
-    for (const uid of p.dmRecipients) {
-      await sendDmEmail({
-        recipientId: uid,
-        actorId: p.authorId,
-        conversationId: p.conversationId,
-        itemId: p.itemId,
-        bodyMd: p.bodyMd ?? '(attachment)'
-      })
-    }
-  }
-
-  return result
 })

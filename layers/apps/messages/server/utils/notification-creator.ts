@@ -1,43 +1,95 @@
-// Helpers for inserting notification rows into messages_notifications.
-// Per-event email is handled in Phase 5; this layer only writes rows and
-// flags them with `emailed_at = now` for kinds that don't go to digest
-// (so the daily digest scan correctly skips them).
+// Builds messages-flavored notification snapshots and writes them to the
+// global store via core's `createNotification`. The messages layer no longer
+// owns a notifications table — it just assembles finished title/body/link text
+// and a per-kind email mode, then hands rows to core.
+//
+//   mention / dm     → emailed immediately
+//   comment / reply  → rolled into the daily digest
 
 import type { Transaction } from 'kysely'
-import { sql } from 'kysely'
-import type { Database } from '#core/server/database/schema'
-import type { NotificationKind } from '../database/schema.d'
+import { createNotification } from '#core/server/utils/notifications'
+import type { Database, NotificationEmailMode } from '#core/server/database/schema'
 
-export interface NotificationRow {
-  user_id: string
-  kind: NotificationKind
-  item_id?: string | null
-  comment_id?: string | null
-  conversation_id?: string | null
-  actor_id?: string | null
+export type NotificationKind = 'mention' | 'dm' | 'comment' | 'reply'
+
+const KIND_META: Record<NotificationKind, { verb: string, icon: string, email: NotificationEmailMode }> = {
+  mention: { verb: 'mentioned you', icon: 'i-lucide-at-sign', email: 'immediate' },
+  dm: { verb: 'sent you a message', icon: 'i-lucide-mail', email: 'immediate' },
+  comment: { verb: 'commented on a thread', icon: 'i-lucide-message-circle', email: 'digest' },
+  reply: { verb: 'replied to a thread', icon: 'i-lucide-message-circle', email: 'digest' }
 }
 
-export async function createNotifications(
-  tx: Transaction<Database>,
-  rows: NotificationRow[],
-  opts: { perEventEmail?: boolean } = {}
-): Promise<void> {
-  if (rows.length === 0) return
+export interface NotifyInput {
+  recipients: string[]
+  actorId: string
+  conversationId: string
+  kind: NotificationKind
+  bodyMd?: string | null
+}
 
-  // For DMs and mentions we mark `emailed_at = now` so the daily digest
-  // scan ignores them — Phase 5 will (also) trigger a per-event email.
-  const emailedAt = opts.perEventEmail ? sql<Date>`now()` : null
+function truncate(s: string, max = 240): string {
+  if (s.length <= max) return s
+  return s.slice(0, max - 1).trimEnd() + '…'
+}
 
-  await tx
-    .insertInto('messages_notifications')
-    .values(rows.map(r => ({
-      user_id: r.user_id,
-      kind: r.kind,
-      item_id: r.item_id ?? null,
-      comment_id: r.comment_id ?? null,
-      conversation_id: r.conversation_id ?? null,
-      actor_id: r.actor_id ?? null,
-      emailed_at: emailedAt
-    })))
-    .execute()
+// Strips markdown link/emphasis syntax for a readable excerpt. Best-effort —
+// keeps `[@Name](uuid)` readable as `@Name`, drops code/emphasis markers.
+function plainifyExcerpt(md: string): string {
+  return md
+    .replace(/\[@([^\]\n]+)\]\(([0-9a-f-]{36})\)/g, '@$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/^#+\s*/gm, '')
+    .trim()
+}
+
+async function loadActorName(tx: Transaction<Database>, actorId: string): Promise<string> {
+  const row = await tx
+    .selectFrom('users')
+    .select('display_name')
+    .where('id', '=', actorId)
+    .executeTakeFirst()
+  return row?.display_name || 'Someone'
+}
+
+// Channel → `#name`; DM → null (a "sent you a message in a direct message"
+// suffix would read awkwardly).
+async function loadChannelLabel(tx: Transaction<Database>, conversationId: string): Promise<string | null> {
+  const conv = await tx
+    .selectFrom('messages_conversations')
+    .select(['kind', 'name'])
+    .where('id', '=', conversationId)
+    .executeTakeFirst()
+  if (!conv || conv.kind !== 'channel') return null
+  return conv.name ? `#${conv.name}` : null
+}
+
+export async function notifyMessages(tx: Transaction<Database>, input: NotifyInput): Promise<void> {
+  const recipients = input.recipients.filter(id => id !== input.actorId)
+  if (recipients.length === 0) return
+
+  const meta = KIND_META[input.kind]
+  const [actorName, label] = await Promise.all([
+    loadActorName(tx, input.actorId),
+    loadChannelLabel(tx, input.conversationId)
+  ])
+
+  const title = `${actorName} ${meta.verb}${label ? ` in ${label}` : ''}`
+  const body = input.bodyMd ? truncate(plainifyExcerpt(input.bodyMd)) : null
+  const link = `/messages/${input.conversationId}`
+
+  await createNotification(
+    tx,
+    recipients.map(uid => ({
+      userId: uid,
+      appId: 'messages',
+      title,
+      body,
+      icon: meta.icon,
+      link,
+      actorId: input.actorId,
+      email: meta.email
+    }))
+  )
 }

@@ -39,6 +39,7 @@ watch(() => route.path, () => {
           </NuxtLink>
         </div>
         <div class="flex items-center gap-1 shrink-0">
+          <NotificationBell :active-app-id="activeApp?.id" />
           <AppSwitcher />
           <UButton
             v-if="isHostAdmin"
@@ -76,6 +77,7 @@ watch(() => route.path, () => {
           </NuxtLink>
         </div>
         <div class="flex items-center gap-3">
+          <NotificationBell :active-app-id="activeApp?.id" />
           <AppSwitcher />
           <UButton
             v-if="isHostAdmin"

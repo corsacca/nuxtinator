@@ -7,8 +7,7 @@ import { requireConversationAccess } from '../../../../../utils/conversation-acc
 import { extractMentions } from '../../../../../utils/markdown-mentions'
 import { fanoutMentions } from '../../../../../utils/mention-fanout'
 import { getDmMemberIds } from '../../../../../utils/dm-members'
-import { createNotifications } from '../../../../../utils/notification-creator'
-import { sendMentionEmail } from '../../../../../utils/messages-email'
+import { notifyMessages } from '../../../../../utils/notification-creator'
 
 const Anchor = z.object({
   quote: z.string().min(1).max(2000),
@@ -25,9 +24,7 @@ const Body = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  let mentionEmailQueue: Array<{ recipientId: string, actorId: string, conversationId: string, itemId: string, commentId: string, bodyMd: string }> = []
-
-  const result = await withOrgPermission(event, { appId: 'messages' }, 'messages.write', async (tx, ctx) => {
+  return await withOrgPermission(event, { appId: 'messages' }, 'messages.write', async (tx, ctx) => {
     const itemId = getRouterParam(event, 'id')!
 
     const item = await tx
@@ -92,17 +89,13 @@ export default defineEventHandler(async (event) => {
     })
     const mentionedSet = new Set(mentionResult.notified)
 
-    // Queue per-event mention emails for after the txn commits.
-    for (const uid of mentionResult.notified) {
-      mentionEmailQueue.push({
-        recipientId: uid,
-        actorId: ctx.userId,
-        conversationId: conv.id,
-        itemId,
-        commentId: inserted.id,
-        bodyMd
-      })
-    }
+    await notifyMessages(tx, {
+      recipients: mentionResult.notified,
+      actorId: ctx.userId,
+      conversationId: conv.id,
+      kind: 'mention',
+      bodyMd
+    })
 
     // Comment-thread auto-subscribe.
     const priorCommenterRows = await tx
@@ -120,26 +113,15 @@ export default defineEventHandler(async (event) => {
     for (const id of mentionedSet) recipients.delete(id)
 
     if (recipients.size > 0) {
-      await createNotifications(
-        tx,
-        [...recipients].map(uid => ({
-          user_id: uid,
-          kind: parentId ? ('reply' as const) : ('comment' as const),
-          item_id: itemId,
-          comment_id: inserted.id,
-          conversation_id: conv.id,
-          actor_id: ctx.userId
-        })),
-        { perEventEmail: false }
-      )
+      await notifyMessages(tx, {
+        recipients: [...recipients],
+        actorId: ctx.userId,
+        conversationId: conv.id,
+        kind: parentId ? 'reply' : 'comment',
+        bodyMd
+      })
     }
 
     return { id: inserted.id, created_at: inserted.created_at }
   })
-
-  for (const m of mentionEmailQueue) {
-    await sendMentionEmail(m)
-  }
-
-  return result
 })

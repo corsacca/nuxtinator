@@ -8,6 +8,7 @@
   "dependencies": {
     "@bradenmacdonald/s3-lite-client": "^0.9.6",
     "bcrypt": "^6.0.0",
+    "croner": "^9.0.0",
     "jsonwebtoken": "^9.0.2"
   },
   "peerDependencies": {

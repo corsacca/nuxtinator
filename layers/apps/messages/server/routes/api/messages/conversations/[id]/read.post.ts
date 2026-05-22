@@ -23,12 +23,15 @@ export default defineEventHandler(async (event) => {
       )
       .execute()
 
-    // Also clear unread notifications for this conversation.
+    // Also clear unread global notifications for this conversation. The
+    // snapshot store has no conversation_id column, so we match on the link
+    // messages writes (`/messages/<conversationId>`), which this layer owns.
     await tx
-      .updateTable('messages_notifications')
+      .updateTable('notifications')
       .set({ read_at: sql<Date>`now()` })
       .where('user_id', '=', ctx.userId)
-      .where('conversation_id', '=', conv.id)
+      .where('app_id', '=', 'messages')
+      .where('link', '=', `/messages/${conv.id}`)
       .where('read_at', 'is', null)
       .execute()
 

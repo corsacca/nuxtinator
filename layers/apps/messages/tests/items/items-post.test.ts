@@ -1,9 +1,9 @@
 // POST /api/messages/conversations/:id/items
 // Creates an item (markdown or upload). Markdown bodies trigger mention
-// fan-out — for each [@Name](uuid) link in body_md whose uuid corresponds
-// to an org member, a messages_mentions row + messages_notifications row +
-// per-event email is fired.
-import { describe, it, expect, afterEach, beforeEach } from 'vitest'
+// fan-out — for each [@Name](uuid) link in body_md whose uuid corresponds to
+// an org member, a messages_mentions row + a global `notifications` row
+// (email_mode='immediate', emailed by the core sweep) is written.
+import { describe, it, expect, afterEach } from 'vitest'
 import { $fetch } from '@nuxt/test-utils/e2e'
 import {
   getHostAdminDb,
@@ -12,9 +12,7 @@ import {
   addMessagesMember,
   createTestChannel,
   createTestDm,
-  withOrgHeader,
-  clearMailhog,
-  waitForMailTo
+  withOrgHeader
 } from '../helpers'
 
 describe('POST /api/messages/conversations/:id/items', () => {
@@ -103,11 +101,7 @@ describe('POST /api/messages/conversations/:id/items', () => {
   })
 
   describe('mention fan-out', () => {
-    beforeEach(async () => {
-      await clearMailhog()
-    })
-
-    it('writes messages_mentions + messages_notifications rows for org members named in body_md', async () => {
+    it('writes messages_mentions + a global mention notification for org members named in body_md', async () => {
       const { org, user: author, auth } = await createMessagesOrgWith(sql, ['admin'])
       const mentioned = await addMessagesMember(sql, org.id, ['member'])
       const ch = await createTestChannel(sql, { org_id: org.id, created_by: author.id })
@@ -123,16 +117,14 @@ describe('POST /api/messages/conversations/:id/items', () => {
       `
       expect(mentions.map(m => m.mentioned_user_id)).toEqual([mentioned.user.id])
 
-      const notifs = await sql<{ kind: string }[]>`
-        SELECT kind FROM messages_notifications
-        WHERE user_id = ${mentioned.user.id} AND item_id = ${res.id}
+      // A global notification is queued for immediate email by the core sweep.
+      const notifs = await sql<{ title: string, email_mode: string }[]>`
+        SELECT title, email_mode FROM notifications
+        WHERE user_id = ${mentioned.user.id} AND app_id = 'messages' AND link = ${`/messages/${ch.id}`}
       `
       expect(notifs.length).toBe(1)
-      expect(notifs[0]!.kind).toBe('mention')
-
-      // Per-event mention email lands in Mailpit.
-      const mail = await waitForMailTo(mentioned.user.email, 8000)
-      expect(mail.body.length).toBeGreaterThan(0)
+      expect(notifs[0]!.title).toContain('mentioned you')
+      expect(notifs[0]!.email_mode).toBe('immediate')
     })
 
     it('does not write a self-mention row when author mentions themselves', async () => {
@@ -152,22 +144,24 @@ describe('POST /api/messages/conversations/:id/items', () => {
     })
   })
 
-  it('creates a per-event DM notification row for every other participant', async () => {
+  it('creates a DM notification for every other participant', async () => {
     const { org, user: a, auth } = await createMessagesOrgWith(sql, ['admin'])
     const b = await addMessagesMember(sql, org.id, ['member'])
     const dm = await createTestDm(sql, { org_id: org.id, created_by: a.id, other_user_id: b.user.id })
 
-    const res = await $fetch<{ id: string }>(
+    await $fetch<{ id: string }>(
       `/api/messages/conversations/${dm.id}/items`,
       { method: 'POST', body: { kind: 'markdown', body_md: 'yo' }, ...withOrgHeader(auth, org.slug) }
     )
 
-    const notifs = await sql<{ user_id: string, kind: string }[]>`
-      SELECT user_id, kind FROM messages_notifications WHERE item_id = ${res.id}
+    const notifs = await sql<{ user_id: string, title: string, email_mode: string }[]>`
+      SELECT user_id, title, email_mode FROM notifications
+      WHERE app_id = 'messages' AND link = ${`/messages/${dm.id}`}
     `
     // Only the other participant (not the author).
     expect(notifs.length).toBe(1)
     expect(notifs[0]!.user_id).toBe(b.user.id)
-    expect(notifs[0]!.kind).toBe('dm')
+    expect(notifs[0]!.title).toContain('sent you a message')
+    expect(notifs[0]!.email_mode).toBe('immediate')
   })
 })

@@ -55,10 +55,28 @@ export interface AppsTable {
   updated_at: ColumnType<Date, string | undefined, string>
 }
 
+export type NotificationEmailMode = 'immediate' | 'digest' | 'none'
+
+export interface NotificationsTable {
+  id: Generated<string>
+  user_id: string
+  app_id: string
+  title: string
+  body: string | null
+  icon: string | null
+  link: string
+  actor_id: string | null
+  email_mode: Generated<NotificationEmailMode>
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+  read_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
+  emailed_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
+}
+
 export interface Database {
   users: UsersTable
   password_reset_requests: PasswordResetRequestsTable
   activity_logs: ActivityLogsTable
   custom_roles: CustomRolesTable
   apps: AppsTable
+  notifications: NotificationsTable
 }

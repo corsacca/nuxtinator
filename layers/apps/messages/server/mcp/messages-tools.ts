@@ -20,7 +20,7 @@ import type { Database as CoreDatabase } from '#core/server/database/schema'
 import { runInOrgTransaction } from '#tenant/server'
 import { extractMentions } from '../utils/markdown-mentions'
 import { fanoutMentions } from '../utils/mention-fanout'
-import { createNotifications } from '../utils/notification-creator'
+import { notifyMessages } from '../utils/notification-creator'
 import { getDmMemberIds } from '../utils/dm-members'
 import { requireConversationAccess, loadConversation } from '../utils/conversation-access'
 import {
@@ -28,7 +28,6 @@ import {
   MAX_ITEM_BODY_BYTES,
   MAX_COMMENT_BODY_BYTES
 } from '../utils/mcp-markdown'
-import { sendDmEmail, sendMentionEmail } from '../utils/messages-email'
 
 function getOrgId(ctx: McpToolContext): string | null {
   return (ctx.event.context.orgId as string | undefined) ?? null
@@ -364,26 +363,19 @@ export const listNotificationsTool = defineMcpTool({
     const unreadOnly = input.unread_only ?? true
     return await runInOrgTransaction(ctx.event, async (tx) => {
       let qb = tx
-        .selectFrom('messages_notifications as n')
+        .selectFrom('notifications as n')
         .leftJoin('users as actor', 'actor.id', 'n.actor_id')
-        .leftJoin('messages_conversations as conv', 'conv.id', 'n.conversation_id')
-        .leftJoin('messages_items as i', 'i.id', 'n.item_id')
-        .leftJoin('messages_comments as c', 'c.id', 'n.comment_id')
         .select([
           'n.id',
-          'n.kind',
-          'n.item_id',
-          'n.comment_id',
-          'n.conversation_id',
+          'n.title',
+          'n.body',
+          'n.link',
           'n.created_at',
           'n.read_at',
-          'actor.display_name as actor_name',
-          'conv.kind as conv_kind',
-          'conv.name as conv_name',
-          'i.body_md as item_body',
-          'c.body_md as comment_body'
+          'actor.display_name as actor_name'
         ])
         .where('n.user_id', '=', ctx.auth.userId)
+        .where('n.app_id', '=', 'messages')
         .orderBy('n.created_at', 'desc')
         .limit(limit)
       if (unreadOnly) qb = qb.where('n.read_at', 'is', null)
@@ -394,13 +386,10 @@ export const listNotificationsTool = defineMcpTool({
         {
           notifications: rows.map(r => ({
             id: r.id,
-            kind: r.kind,
-            item_id: r.item_id,
-            comment_id: r.comment_id,
-            conversation_id: r.conversation_id,
-            conversation: r.conv_kind === 'channel' && r.conv_name ? `#${r.conv_name}` : (r.conv_kind ?? null),
+            title: r.title,
+            excerpt: r.body ?? '',
+            link: r.link,
             actor: r.actor_name,
-            excerpt: ((r.comment_body ?? r.item_body) ?? '').slice(0, 240),
             created_at: (r.created_at as Date).toISOString(),
             read: !!r.read_at
           }))
@@ -422,15 +411,6 @@ export const postItemTool = defineMcpTool({
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      type Pending = {
-        mentionRecipients: string[]
-        dmRecipients: string[]
-        itemId: string
-        bodyMd: string
-        conversationId: string
-      }
-      let pending: Pending | null = null
-
       const result = await runInOrgTransaction(ctx.event, async (tx) => {
         const orgId = getOrgId(ctx)
         const conv = await requireConversationAccess(tx, ctx.auth.userId, input.conversation_id)
@@ -463,24 +443,24 @@ export const postItemTool = defineMcpTool({
           itemId: inserted.id,
           dmMemberIds
         })
+        await notifyMessages(tx, {
+          recipients: mentionResult.notified,
+          actorId: ctx.auth.userId,
+          conversationId: conv.id,
+          kind: 'mention',
+          bodyMd
+        })
 
-        let dmRecipients: string[] = []
         if (dmMemberIds) {
-          const allDmRecipients = [...dmMemberIds].filter(uid => uid !== ctx.auth.userId)
-          if (allDmRecipients.length > 0) {
-            await createNotifications(
-              tx,
-              allDmRecipients.map(uid => ({
-                user_id: uid,
-                kind: 'dm' as const,
-                item_id: inserted.id,
-                conversation_id: conv.id,
-                actor_id: ctx.auth.userId
-              })),
-              { perEventEmail: true }
-            )
-          }
-          dmRecipients = allDmRecipients.filter(uid => !mentionResult.notified.includes(uid))
+          const dmRecipients = [...dmMemberIds]
+            .filter(uid => uid !== ctx.auth.userId && !mentionResult.notified.includes(uid))
+          await notifyMessages(tx, {
+            recipients: dmRecipients,
+            actorId: ctx.auth.userId,
+            conversationId: conv.id,
+            kind: 'dm',
+            bodyMd
+          })
         }
 
         await mcpLog('CREATE', 'messages_items', inserted.id, ctx, {
@@ -488,41 +468,11 @@ export const postItemTool = defineMcpTool({
           kind: 'markdown'
         }, asAuditExecutor(tx))
 
-        pending = {
-          mentionRecipients: mentionResult.notified,
-          dmRecipients,
-          itemId: inserted.id,
-          bodyMd,
-          conversationId: conv.id
-        }
-
         return {
           item_id: inserted.id,
           created_at: (inserted.created_at as Date).toISOString()
         }
       })
-
-      const p = pending as Pending | null
-      if (p) {
-        for (const uid of p.mentionRecipients) {
-          await sendMentionEmail({
-            recipientId: uid,
-            actorId: ctx.auth.userId,
-            conversationId: p.conversationId,
-            itemId: p.itemId,
-            bodyMd: p.bodyMd
-          })
-        }
-        for (const uid of p.dmRecipients) {
-          await sendDmEmail({
-            recipientId: uid,
-            actorId: ctx.auth.userId,
-            conversationId: p.conversationId,
-            itemId: p.itemId,
-            bodyMd: p.bodyMd
-          })
-        }
-      }
 
       return textResult(`Posted item ${result.item_id}`, result)
     }
@@ -552,15 +502,6 @@ export const postCommentTool = defineMcpTool({
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      type Pending = {
-        mentionRecipients: string[]
-        commentId: string
-        bodyMd: string
-        conversationId: string
-        itemId: string
-      }
-      let pending: Pending | null = null
-
       const result = await runInOrgTransaction(ctx.event, async (tx) => {
         const orgId = getOrgId(ctx)
         const item = await tx
@@ -619,6 +560,13 @@ export const postCommentTool = defineMcpTool({
           dmMemberIds
         })
         const mentionedSet = new Set(mentionResult.notified)
+        await notifyMessages(tx, {
+          recipients: mentionResult.notified,
+          actorId: ctx.auth.userId,
+          conversationId: conv.id,
+          kind: 'mention',
+          bodyMd
+        })
 
         const priorCommenterRows = await tx
           .selectFrom('messages_comments')
@@ -635,18 +583,13 @@ export const postCommentTool = defineMcpTool({
         for (const id of mentionedSet) recipients.delete(id)
 
         if (recipients.size > 0) {
-          await createNotifications(
-            tx,
-            [...recipients].map(uid => ({
-              user_id: uid,
-              kind: parentId ? ('reply' as const) : ('comment' as const),
-              item_id: item.id,
-              comment_id: inserted.id,
-              conversation_id: conv.id,
-              actor_id: ctx.auth.userId
-            })),
-            { perEventEmail: false }
-          )
+          await notifyMessages(tx, {
+            recipients: [...recipients],
+            actorId: ctx.auth.userId,
+            conversationId: conv.id,
+            kind: parentId ? 'reply' : 'comment',
+            bodyMd
+          })
         }
 
         await mcpLog('CREATE', 'messages_comments', inserted.id, ctx, {
@@ -655,33 +598,11 @@ export const postCommentTool = defineMcpTool({
           parent_comment_id: parentId
         }, asAuditExecutor(tx))
 
-        pending = {
-          mentionRecipients: mentionResult.notified,
-          commentId: inserted.id,
-          bodyMd,
-          conversationId: conv.id,
-          itemId: item.id
-        }
-
         return {
           comment_id: inserted.id,
           created_at: (inserted.created_at as Date).toISOString()
         }
       })
-
-      const p = pending as Pending | null
-      if (p) {
-        for (const uid of p.mentionRecipients) {
-          await sendMentionEmail({
-            recipientId: uid,
-            actorId: ctx.auth.userId,
-            conversationId: p.conversationId,
-            itemId: p.itemId,
-            commentId: p.commentId,
-            bodyMd: p.bodyMd
-          })
-        }
-      }
 
       return textResult(`Posted comment ${result.comment_id}`, result)
     }
@@ -791,12 +712,13 @@ export const markReadTool = defineMcpTool({
         }
 
         await tx
-          .updateTable('messages_notifications')
+          .updateTable('notifications')
           .set({ read_at: sql<Date>`now()` })
           .where('user_id', '=', ctx.auth.userId)
+          .where('app_id', '=', 'messages')
           .where('id', 'in', input.notification_ids)
           .execute()
-        await mcpLog('UPDATE', 'messages_notifications', input.notification_ids[0]!, ctx, {
+        await mcpLog('UPDATE', 'notifications', input.notification_ids[0]!, ctx, {
           mark: 'notifications',
           count: input.notification_ids.length
         }, asAuditExecutor(tx))
