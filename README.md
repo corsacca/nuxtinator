@@ -77,17 +77,13 @@ Dependencies are resolved automatically: asking for `mcp` pulls in `oauth`; aski
 
 ## How layers actually load
 
-Your host's [nuxt.config.ts](host/nuxt.config.ts) lists each layer through a `layer()` helper that resolves to one of two things:
+Your host's [nuxt.config.ts](host/nuxt.config.ts) lists each layer by its package name (`@nuxtinator/<id>`). Nuxt resolves each name via standard node module resolution against `node_modules/`. The packages arrive there one of three ways, same path on disk in every case:
 
-- **Local path** when `LAYERS_PATH` is set in `.env` — used during development, points at a checkout of this repo's `layers/`.
-- **A giget tuple** otherwise — `[github:corsacca/nuxtinator/layers/<name>#<ref>, { install: true }]`. Nuxt fetches each layer at config-load time; `install: true` runs an install inside it so layer-private deps land in `node_modules/.c12/<hash>/`.
+- **Workspace symlink** in this monorepo — `"@nuxtinator/core": "workspace:*"` in `host/package.json` points at `layers/core/`.
+- **npm tarball** once layers are published.
+- **Git URL** in `package.json` deps (`"github:org/repo#ref"`) when a layer lives in its own repo.
 
-Two env vars tune the remote source:
-
-| Var | Default | Effect |
-|---|---|---|
-| `LAYERS_REMOTE` | `github:corsacca/nuxtinator/layers` | The git source. Override to point at your fork. |
-| `LAYERS_REF` | `master` | Branch / tag / SHA. **Pin to a tag for production** — `master` will pull whatever HEAD is each time c12 re-resolves. |
+A `layer()` helper passes the package name through unless an env var redirects it. Point a single layer at a sibling checkout with `NUXTINATOR_<ID>_PATH` (id uppercased, hyphens become underscores) — e.g. `NUXTINATOR_MESSAGES_PATH=../../scratch/messages-experiment`. `bun link` works too.
 
 See [documentation/getting-started.md](documentation/getting-started.md) for the full setup guide.
 
@@ -175,6 +171,8 @@ NUXT_GOOGLE_OAUTH_REDIRECT_URI=http://localhost:2080/api/mail/accounts/google/ca
 ## Assembly instructions (for the AI scaffolding a new project)
 
 > **This section is read by Claude Code when a user asks it to "build from nuxtinator".** If you're a human reader, skip it — the manual walkthrough is in [getting-started.md](documentation/getting-started.md).
+>
+> **Note:** The instructions below predate the named-package refactor (layers are now `@nuxtinator/<id>` packages, not path/giget-resolved). The high-level flow still applies — pick layers, scaffold a host, fill in .env — but the giget commands and `LAYERS_*` env vars referenced below are stale. A consumer artifact (starter repo or CLI scaffold) for the new model is an open design item.
 
 When a user asks to build from this repo, follow these steps. Don't skip the confirmation step.
 

@@ -1,9 +1,13 @@
 {
-  "name": "layer-tenancy",
+  "name": "@nuxtinator/tenancy",
   "private": true,
   "type": "module",
   "exports": {
+    ".": "./nuxt.config.ts",
     "./test-helpers": "./tests/helpers/index.ts"
+  },
+  "dependencies": {
+    "@nuxtinator/core": "workspace:*"
   },
   "peerDependencies": {
     "@nuxt/kit": "^4.0.0",
@@ -13,8 +17,5 @@
     "nuxt": "^4.0.0",
     "postgres": "^3.4.7",
     "vue": "^3.0.0"
-  },
-  "optionalDependencies": {
-    "layer-core": "*"
   }
 }

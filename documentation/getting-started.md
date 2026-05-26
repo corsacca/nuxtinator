@@ -95,21 +95,21 @@ Rules of thumb:
 
 ---
 
-## Step 3: pick a layer source (and optionally pin a ref)
+## Step 3: pick a layer source
 
-By default, layers come from `github:corsacca/nuxtinator/layers` at branch `master`. You almost never need to change this, but two env vars let you:
+Each layer is a workspace package (`@nuxtinator/<id>`) declared as a dependency of `host/`. The default in this repo is `workspace:*`, which resolves to the sibling `layers/<id>/` directory. To consume a layer from outside this monorepo, replace the version in `host/package.json` with an npm version (once published) or a `github:org/repo#ref` URL:
 
-```bash
-# Optional — override the git source (e.g. point at your own fork of the layers)
-LAYERS_REMOTE=github:your-org/your-fork/layers
-
-# Optional — pin to a tag, branch, or commit SHA. Defaults to "master".
-LAYERS_REF=v0.4.2
+```jsonc
+// host/package.json
+"dependencies": {
+  "@nuxtinator/core": "github:your-org/your-fork#v0.4.2",
+  // ...
+}
 ```
 
-For a production deploy, **pin `LAYERS_REF`** to a tag or SHA. `master` will pull whatever the upstream HEAD is the next time c12 re-resolves, which can change behaviour silently.
+For production deploys, pin to a tag or SHA — `master` will pull whatever HEAD is each time `bun install` runs.
 
-For local development against an in-progress copy of the layers, set `LAYERS_PATH` instead — see [Working against local layer source](#working-against-local-layer-source-optional) below.
+For hacking on a single layer in a sibling checkout without changing committed deps, see [Working against local layer source](#working-against-local-layer-source-optional) below.
 
 ---
 
@@ -186,7 +186,7 @@ You don't need to fork the layers repo to add features. Two options:
 
 1. **In-host code** — drop pages under `app/pages/<your-app>/` and routes under `server/routes/api/<your-app>/` directly in your host project. Anything you `import` resolves against the host's deps. Good for project-specific stuff that won't be reused.
 
-2. **A new layer in your own repo** — create a sibling directory (or another git repo) shaped like the layers in nuxtinator and add a `layer()` entry in `extends:` pointing at it. The remote form is `github:your-org/your-repo/path-to-layer#ref`; the local form is just a relative path. See [layers.md](layers.md#creating-a-new-app-layer) for the full layer template.
+2. **A new layer in your own repo** — create a sibling directory (or another git repo) shaped like the layers in nuxtinator. Add it as `"@yourscope/your-layer": "github:your-org/your-repo#ref"` (or `"workspace:*"` if local) in `host/package.json`, and add a `layer('@yourscope/your-layer')` entry in `extends:`. See [layers.md](layers.md#creating-a-new-app-layer) for the full layer template.
 
 Either way, you're adding to your own host without touching nuxtinator's code.
 
@@ -194,13 +194,7 @@ Either way, you're adding to your own host without touching nuxtinator's code.
 
 ## Updating to a newer cut of nuxtinator
 
-Bump `LAYERS_REF` in your `.env` (or change the default in `nuxt.config.ts`) to the new tag / branch / SHA, then:
-
-```bash
-rm -rf node_modules/.c12          # clear giget's cache
-bun install
-bun run dev
-```
+Bump the version / ref of each `@nuxtinator/*` dep in `host/package.json` (e.g. from `github:corsacca/nuxtinator#v0.4.2` to `#v0.5.0`), then `bun install`.
 
 Read the upstream changelog before bumping — schema migrations included in newer layer cuts will run on first boot and may not be reversible.
 
@@ -208,20 +202,23 @@ Read the upstream changelog before bumping — schema migrations included in new
 
 ## Working against local layer source (optional)
 
-If you're contributing to nuxtinator itself, or want to hack on a layer in tandem with your host, clone nuxtinator separately and point `LAYERS_PATH` at it:
+To hack on a single layer in a sibling checkout without changing committed deps, set a per-layer env override in `host/.env`:
 
 ```bash
 # Sibling layout:
 #   ~/code/nuxtinator/      ← clone of github:corsacca/nuxtinator
-#   ~/code/my-app/          ← your host (the giget'd one)
+#   ~/code/my-app/          ← your host
 
-# In ~/code/my-app/.env:
-LAYERS_PATH=../nuxtinator/layers
+# In ~/code/my-app/host/.env:
+NUXTINATOR_CORE_PATH=../../nuxtinator/layers/core
+NUXTINATOR_MESSAGES_PATH=../../nuxtinator/layers/apps/messages
 ```
 
-When `LAYERS_PATH` is set, `extends:` resolves to local file paths — `../nuxtinator/layers/core`, `../nuxtinator/layers/tenancy`, etc. — and giget is skipped. Layer deps resolve from your host's `node_modules/`.
+The `layer()` helper reads `NUXTINATOR_<ID>_PATH` (id uppercased, hyphens/slashes become underscores) and returns that path instead of the package name. Only the named layers are overridden; the rest still resolve from `node_modules/`.
 
-To go back to remote layers, unset `LAYERS_PATH` and `bun install` again.
+`bun link` is the alternative: `bun link` in the sibling repo, then `bun link @nuxtinator/messages` in your host.
+
+To go back to package-resolved layers, remove the env var and `bun install` again.
 
 ---
 
@@ -230,11 +227,11 @@ To go back to remote layers, unset `LAYERS_PATH` and `bun install` again.
 Your host directory deploys standalone. There's no parent workspace, no sibling `layers/`, just the host:
 
 ```bash
-bun install              # giget fetches each layer; `install: true` runs per-layer installs
+bun install              # resolves each @nuxtinator/* layer from npm / git URL / workspace
 bun run build            # standard Nuxt build
 ```
 
-The output under `.output/` runs anywhere Nuxt runs (Node, Bun, Docker, your platform of choice). Set `NODE_ENV=production` and the same env vars you used in dev (with production values, obviously, and `LAYERS_PATH` unset).
+The output under `.output/` runs anywhere Nuxt runs (Node, Bun, Docker, your platform of choice). Set `NODE_ENV=production` and the same env vars you used in dev (with production values).
 
 For multi-tenant production specifics — the two-role split, transaction-pooling — see [tenancy.md](tenancy.md). For single-tenant, see [single-tenant-deploy.md](single-tenant-deploy.md).
 
@@ -244,9 +241,8 @@ For multi-tenant production specifics — the two-role split, transaction-poolin
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Failed to download https://api.github.com/repos/corsacca/nuxtinator/...: 404` | `LAYERS_REF` points at a non-existent tag/branch | Pick an existing ref. `master` always exists. |
-| `Cannot find package '<x>' imported from .c12/.../layers/<name>/...` | Upstream layer added a dep that the host doesn't carry, or a regression in the layer's package.json | Try clearing `node_modules/.c12` and reinstalling; if it persists, file an issue upstream |
-| Layers don't update after bumping `LAYERS_REF` | giget's tarball cache is sticky | `rm -rf node_modules/.c12 && bun install` |
+| `Cannot find package '@nuxtinator/<x>'` | A layer dep isn't installed | Check `host/package.json` lists every `@nuxtinator/*` layer in `extends:`, then `bun install` |
+| `Cannot find package '<x>' imported from @nuxtinator/<name>` | Layer added a transitive dep that didn't make it into the layer's `package.json` | File an issue against the layer; as a workaround, add the package to `host/dependencies` |
 | Hangs on a page route that worked yesterday | Layer added a new migration that failed | Check the boot logs — failed migrations halt boot. Fix the DB state, restart |
 
 ---

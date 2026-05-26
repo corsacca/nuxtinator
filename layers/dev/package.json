@@ -1,7 +1,10 @@
 {
-  "name": "layer-dev",
+  "name": "@nuxtinator/dev",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./nuxt.config.ts"
+  },
   "peerDependencies": {
     "nuxt": "^4.0.0",
     "vue": "^3.0.0"

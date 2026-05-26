@@ -1,9 +1,12 @@
 {
-  "name": "layer-mcp",
+  "name": "@nuxtinator/mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Reusable Nuxt layer that turns a project into an MCP server (Streamable HTTP, stateless).",
+  "exports": {
+    ".": "./nuxt.config.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -11,6 +14,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
+    "@nuxtinator/core": "workspace:*",
+    "@nuxtinator/oauth": "workspace:*",
     "zod": "^3.23.0",
     "zod-to-json-schema": "^3.23.0"
   },

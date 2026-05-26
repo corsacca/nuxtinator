@@ -16,24 +16,25 @@ import { PostgresJSDialect } from 'kysely-postgres-js'
 import postgres from 'postgres'
 import type { SeedContext } from './types'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
-
-// Defaults to the layout used in dev (host/ next to layers/). Override via
-// LAYERS_PATH if seeding a different working copy.
-const LAYERS_PATH = process.env.LAYERS_PATH
-  ? resolve(process.cwd(), process.env.LAYERS_PATH)
-  : resolve(HERE, '../..')
-
 // Mirror of host/nuxt.config.ts `extends:` order, minus dev (no demo data
 // to seed there). Tenancy is auto-skipped at runtime if its tables don't
 // exist — listing it here is harmless in single-tenant deploys.
 const SEED_LAYERS = [
-  'core',
-  'tenancy',
-  'apps/calendar',
-  'apps/kanban',
-  'apps/messages'
+  '@nuxtinator/core',
+  '@nuxtinator/tenancy',
+  '@nuxtinator/calendar',
+  '@nuxtinator/kanban',
+  '@nuxtinator/messages'
 ]
+
+function resolveLayerRoot(pkg: string): string | null {
+  try {
+    const url = import.meta.resolve(pkg)
+    return dirname(fileURLToPath(url))
+  } catch {
+    return null
+  }
+}
 
 function buildDb(): Kysely<any> {
   // BYPASSRLS connection (host_admin in multi-tenant deploys, the lone
@@ -79,14 +80,15 @@ export async function runSeeds(): Promise<void> {
     }
 
     console.log(`[seed] tenancy mode: ${tenancyEnabled ? 'multi' : 'single'}`)
-    console.log(`[seed] layers root: ${LAYERS_PATH}`)
 
     for (const layer of SEED_LAYERS) {
-      if (layer === 'tenancy' && !tenancyEnabled) {
+      if (layer === '@nuxtinator/tenancy' && !tenancyEnabled) {
         console.log(`[seed] skip ${layer} (tables not present)`)
         continue
       }
-      const seedPath = resolve(LAYERS_PATH, layer, 'seeds/index.ts')
+      const layerRoot = resolveLayerRoot(layer)
+      if (!layerRoot) continue
+      const seedPath = resolve(layerRoot, 'seeds/index.ts')
       if (!existsSync(seedPath)) continue
 
       console.log(`[seed] ${layer}`)

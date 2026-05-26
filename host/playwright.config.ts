@@ -44,8 +44,7 @@ export default defineConfig({
       APP_DATABASE_URL: env.TEST_APP_DATABASE_URL!,
       JWT_SECRET: env.JWT_SECRET!,
       NUXT_PUBLIC_SITE_URL: baseURL,
-      NODE_ENV: 'development',
-      LAYERS_PATH: env.LAYERS_PATH || '../layers'
+      NODE_ENV: 'development'
     }
   }
 })

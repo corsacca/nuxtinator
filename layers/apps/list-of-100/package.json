@@ -1,11 +1,13 @@
 {
-  "name": "layer-list-of-100",
+  "name": "@nuxtinator/list-of-100",
   "private": true,
   "type": "module",
   "exports": {
+    ".": "./nuxt.config.ts",
     "./test-helpers": "./tests/helpers/index.ts"
   },
   "dependencies": {
+    "@nuxtinator/core": "workspace:*",
     "apexcharts": "^5.10.0",
     "vue3-apexcharts": "^1.11.0"
   },
@@ -15,9 +17,5 @@
     "nuxt": "^4.0.0",
     "vue": "^3.0.0",
     "zod": "^3.23.0"
-  },
-  "optionalDependencies": {
-    "layer-core": "*",
-    "layer-tenancy": "*"
   }
 }

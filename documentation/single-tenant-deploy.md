@@ -25,24 +25,24 @@ Single-tenant mode is the default when [layers/tenancy/](../layers/tenancy/) is 
 
 ### host/nuxt.config.ts
 
-Just don't include `layer('tenancy')` in `extends:`:
+Just don't include `layer('@nuxtinator/tenancy')` in `extends:`:
 
 ```ts
 export default defineNuxtConfig({
   extends: [
-    layer('core'),
-    layer('email-mailgun'),       // optional — pick an email backend
-    layer('oauth'),               // optional — only if you need OAuth/MCP
-    layer('mcp'),                 // optional
-    layer('apps/calendar'),
-    layer('apps/kanban')
-    // no layer('tenancy')
+    layer('@nuxtinator/core'),
+    layer('@nuxtinator/email-mailgun'),  // optional — pick an email backend
+    layer('@nuxtinator/oauth'),          // optional — only if you need OAuth/MCP
+    layer('@nuxtinator/mcp'),            // optional
+    layer('@nuxtinator/calendar'),
+    layer('@nuxtinator/kanban')
+    // no layer('@nuxtinator/tenancy')
   ],
   // ...
 })
 ```
 
-The `layer()` helper resolves to local file paths in dev (`LAYERS_PATH=../layers`) and to a giget tuple `[git-url, { install: true }]` in prod — see [dev-setup.md](dev-setup.md#how-layers-are-wired).
+Each layer is a named workspace package; the `layer()` helper passes the name through to node module resolution. See [dev-setup.md](dev-setup.md#how-layers-are-wired) for the full mechanics.
 
 ### Environment
 

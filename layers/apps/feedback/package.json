@@ -1,21 +1,21 @@
 {
-  "name": "layer-feedback",
+  "name": "@nuxtinator/feedback",
   "private": true,
   "type": "module",
   "scripts": {
     "build:widgets": "cd embeddables/feedback-web-component && bun install && bun run build"
   },
   "exports": {
+    ".": "./nuxt.config.ts",
     "./test-helpers": "./tests/helpers/index.ts"
+  },
+  "dependencies": {
+    "@nuxtinator/core": "workspace:*"
   },
   "peerDependencies": {
     "h3": "^1.0.0",
     "kysely": "^0.28.0",
     "nuxt": "^4.0.0",
     "vue": "^3.0.0"
-  },
-  "optionalDependencies": {
-    "layer-core": "*",
-    "layer-tenancy": "*"
   }
 }

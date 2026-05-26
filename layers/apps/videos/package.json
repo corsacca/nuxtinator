@@ -1,11 +1,13 @@
 {
-  "name": "layer-videos",
+  "name": "@nuxtinator/videos",
   "private": true,
   "type": "module",
   "exports": {
+    ".": "./nuxt.config.ts",
     "./test-helpers": "./tests/helpers/index.ts"
   },
   "dependencies": {
+    "@nuxtinator/core": "workspace:*",
     "fix-webm-duration": "^1.0.6",
     "mediabunny": "^1.25.1",
     "uuid": "^12.0.0"
@@ -15,9 +17,5 @@
     "kysely": "^0.28.0",
     "nuxt": "^4.0.0",
     "vue": "^3.0.0"
-  },
-  "optionalDependencies": {
-    "layer-core": "*",
-    "layer-tenancy": "*"
   }
 }

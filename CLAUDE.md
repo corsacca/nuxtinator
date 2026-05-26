@@ -12,8 +12,8 @@ go-saas/                          ← repo root (bun workspace)
 ├── node_modules/                 ← hoisted; layers resolve deps from here
 │
 ├── host/                         ← the Nuxt app (this project's shell + branding)
-│   ├── nuxt.config.ts            ← extends: layer('core'), layer('tenancy'), ... — resolved via LAYERS_PATH or LAYERS_REMOTE
-│   ├── package.json              ← host-only deps (nuxt, ui, kysely/postgres, tailwind, icon sets)
+│   ├── nuxt.config.ts            ← extends: layer('@nuxtinator/core'), … — resolved by node module resolution
+│   ├── package.json              ← host-only deps + workspace:* refs to each @nuxtinator/* layer
 │   ├── tsconfig.json, eslint.config.mjs
 │   ├── public/
 │   └── .env, .env.example
@@ -39,7 +39,7 @@ go-saas/                          ← repo root (bun workspace)
         └── videos/               ← deps: fix-webm-duration, mediabunny, uuid
 ```
 
-Every layer has its own `package.json` declaring exactly what it imports. Layer-private deps (no other layer needs them, no shared runtime state) go in `dependencies`. Framework/DB singletons that must resolve to a single instance (`nuxt`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `vue`, `tailwindcss`) go in `peerDependencies` so they resolve to host's installed copy in dev (via the bun workspace) and to host's `.c12/`-installed copy in prod (via giget's `install: true`). Don't add a `main` field to layer package.json files — Nuxt generates `/// <reference types="layer-<id>" />` and TS would resolve through `main`, breaking the typecheck.
+Every layer has its own `package.json` declaring exactly what it imports. The `name` is `@nuxtinator/<id>` and the package exposes its config via `exports: { ".": "./nuxt.config.ts" }`. Cross-layer deps are declared as `workspace:*` in `dependencies`. Layer-private deps (no other layer needs them, no shared runtime state) also go in `dependencies`. Framework/DB singletons that must resolve to a single instance (`nuxt`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `vue`, `tailwindcss`) go in `peerDependencies` so they resolve to host's installed copy. Don't add a `main` field to layer package.json files — Nuxt generates `/// <reference types="@nuxtinator/<id>" />` and TS would resolve through `main`, breaking the typecheck. `exports` is fine.
 
 Run dev/build from `host/`:
 
@@ -56,22 +56,28 @@ Dev server defaults to port **2080**.
 
 ### Layer source resolution
 
-`host/nuxt.config.ts` builds its `extends:` array via a `layer()` helper that returns either a local path string (dev) or a c12 install-tuple (prod):
+`host/nuxt.config.ts` lists each layer by package name in `extends:`. A tiny `layer()` helper lets a single layer be redirected to a local checkout via an env var; otherwise the name is passed through and Nuxt resolves it via standard node module resolution against `node_modules/`:
 
 ```ts
-function layer(name: string): string | [string, { install: true }] {
-  if (LAYERS_PATH) return `${LAYERS_PATH}/${name}`
-  return [`${LAYERS_REMOTE}/${name}${LAYERS_REF}`, { install: true }]
+function layer(pkg: string): string {
+  // @nuxtinator/messages → NUXTINATOR_MESSAGES_PATH
+  const envKey = pkg.replace(/^@/, '').replace(/[/-]/g, '_').toUpperCase() + '_PATH'
+  return process.env[envKey] || pkg
 }
 ```
 
-- `LAYERS_PATH` — set in `host/.env` to a local path (e.g. `../layers`). When set, `extends:` resolves to `${LAYERS_PATH}/<name>` for each layer; deps come from the bun workspace's hoisted `node_modules/`.
-- `LAYERS_REMOTE` — git source baked into `nuxt.config.ts` (default `github:corsacca/nuxtinator/layers`). Used when `LAYERS_PATH` is unset. Override with the env var to point at a fork.
-- `LAYERS_REF` — optional git ref (branch / tag / SHA). Appended as `#<ref>` to the remote URL.
+Layers can arrive in `node_modules/@nuxtinator/<id>/` from three sources, same path on disk, same `extends:` line:
 
-The `host/` directory deploys standalone in production: no parent dir, no workspace root, no sibling `layers/`. With `LAYERS_PATH` unset, c12 + giget fetches each layer from `${LAYERS_REMOTE}/<name>${LAYERS_REF ? '#' + LAYERS_REF : ''}` at config-load time, and `install: true` runs the layer's package install into `node_modules/.c12/<hash>/node_modules/`.
+- **Workspace symlink** in this repo (`"@nuxtinator/core": "workspace:*"` in `host/package.json`).
+- **npm tarball** once published.
+- **Git URL** in a downstream project's `package.json` deps (`"github:org/repo#ref"`) when a layer lives in its own repo.
 
-Downstream projects that copy this blueprint reference these same layers via `LAYERS_REMOTE` (or by editing `nuxt.config.ts` directly) without forking the layer code.
+Cross-layer name resolution works automatically because each layer's `package.json` declares its own deps — when `@nuxtinator/messages` imports from `@nuxtinator/core`, node module resolution walks up from the messages package and finds core wherever bun/npm/git put it.
+
+**Per-layer local override.** Two ways to point a single layer at a sibling checkout without changing committed config:
+
+- **Env var** — set `NUXTINATOR_<ID>_PATH` in `host/.env` (id uppercased, hyphens become underscores), e.g. `NUXTINATOR_MESSAGES_PATH=../../scratch/messages-experiment`. The `layer()` helper reads it and returns the path instead of the package name.
+- **`bun link`** — run `bun link` in a sibling repo, then `bun link @nuxtinator/messages` in this one. Symlinks the sibling into `node_modules/@nuxtinator/messages/` until the next `bun install`.
 
 ## High-level architecture
 

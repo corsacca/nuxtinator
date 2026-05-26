@@ -1,8 +1,9 @@
 {
-  "name": "layer-core",
+  "name": "@nuxtinator/core",
   "private": true,
   "type": "module",
   "exports": {
+    ".": "./nuxt.config.ts",
     "./test-helpers": "./tests/helpers/index.ts"
   },
   "dependencies": {

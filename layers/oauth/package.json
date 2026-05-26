@@ -1,9 +1,15 @@
 {
-  "name": "layer-oauth",
+  "name": "@nuxtinator/oauth",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "OAuth 2.1 server layer for MCP-compatible token issuance",
+  "exports": {
+    ".": "./nuxt.config.ts"
+  },
+  "dependencies": {
+    "@nuxtinator/core": "workspace:*"
+  },
   "peerDependencies": {
     "@nuxt/ui": "^4.0.0",
     "h3": "^1.0.0",

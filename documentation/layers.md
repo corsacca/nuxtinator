@@ -10,7 +10,7 @@ For background and the full decision trail see [context/plans/multi-tenancy-laye
 
 ## Layers in this repo
 
-All layers are tracked source under `layers/`. In dev they're consumed via local file paths (`LAYERS_PATH=../layers` in `host/.env`); in prod they're fetched from git via giget with c12's `install: true`. See [dev-setup.md](dev-setup.md#how-layers-are-wired) for the resolution mechanics.
+All layers are tracked source under `layers/`. Each is a workspace package named `@nuxtinator/<id>`; the host extends them by name via standard node module resolution. See [dev-setup.md](dev-setup.md#how-layers-are-wired) for the resolution mechanics.
 
 | Layer | Lives at | Purpose |
 |---|---|---|
@@ -263,17 +263,17 @@ The default layout (host) renders the launcher rail + per-app sidebar around you
 ```ts
 // host/nuxt.config.ts
 extends: [
-  layer('core'),
-  layer('tenancy'),        // optional — omit for single-tenant
-  layer('oauth'),
-  layer('mcp'),
-  layer('apps/calendar'),
-  layer('apps/kanban'),
-  layer('apps/tasks')      // new
+  layer('@nuxtinator/core'),
+  layer('@nuxtinator/tenancy'),     // optional — omit for single-tenant
+  layer('@nuxtinator/oauth'),
+  layer('@nuxtinator/mcp'),
+  layer('@nuxtinator/calendar'),
+  layer('@nuxtinator/kanban'),
+  layer('@nuxtinator/tasks')        // new
 ]
 ```
 
-The `layer()` helper resolves to a local path in dev (when `LAYERS_PATH` is set) and to a giget tuple `[git-url, { install: true }]` in prod.
+The `layer()` helper passes the package name through to node module resolution; set `NUXTINATOR_TASKS_PATH=…` in `host/.env` to point this layer at a sibling checkout. Add `"@nuxtinator/tasks": "workspace:*"` to `host/package.json` and the `layers/apps/tasks` path to the root workspaces array first.
 
 ### 8. Install + restart
 

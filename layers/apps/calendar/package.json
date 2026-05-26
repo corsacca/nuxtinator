@@ -1,7 +1,13 @@
 {
-  "name": "layer-calendar",
+  "name": "@nuxtinator/calendar",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./nuxt.config.ts"
+  },
+  "dependencies": {
+    "@nuxtinator/core": "workspace:*"
+  },
   "peerDependencies": {
     "nuxt": "^4.0.0",
     "vue": "^3.0.0"
