@@ -86,9 +86,6 @@ export default defineNuxtConfig({
     mcpServerName: process.env.MCP_SERVER_NAME || 'Apps',
     mcpServerVersion: process.env.MCP_SERVER_VERSION || '1.0.0',
     secretEncryptionKey: process.env.NUXT_SECRET_ENCRYPTION_KEY || '',
-    googleClientId: process.env.NUXT_GOOGLE_CLIENT_ID || '',
-    googleClientSecret: process.env.NUXT_GOOGLE_CLIENT_SECRET || '',
-    googleOauthRedirectUri: process.env.NUXT_GOOGLE_OAUTH_REDIRECT_URI || '',
     public: {
       appName: process.env.APP_TITLE || 'My App',
       nodeEnv: process.env.NODE_ENV || '',
