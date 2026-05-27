@@ -8,11 +8,13 @@
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
-    "@nuxtinator/core": "workspace:*",
     "croner": "^9.0.0",
     "dompurify": "^3.2.0",
     "emoji-mart": "^5.6.0",
     "marked": "^14.1.0"
+  },
+  "optionalDependencies": {
+    "@nuxtinator/core": "*"
   },
   "peerDependencies": {
     "h3": "^1.0.0",

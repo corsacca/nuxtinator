@@ -7,10 +7,12 @@
     "./test-helpers": "./tests/helpers/index.ts"
   },
   "dependencies": {
-    "@nuxtinator/core": "workspace:*",
     "fix-webm-duration": "^1.0.6",
     "mediabunny": "^1.25.1",
     "uuid": "^12.0.0"
+  },
+  "optionalDependencies": {
+    "@nuxtinator/core": "*"
   },
   "peerDependencies": {
     "h3": "^1.0.0",

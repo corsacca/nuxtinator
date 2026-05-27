@@ -14,10 +14,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
-    "@nuxtinator/core": "workspace:*",
-    "@nuxtinator/oauth": "workspace:*",
     "zod": "^3.23.0",
     "zod-to-json-schema": "^3.23.0"
+  },
+  "optionalDependencies": {
+    "@nuxtinator/core": "*",
+    "@nuxtinator/oauth": "*"
   },
   "peerDependencies": {
     "@nuxt/kit": "^4.0.0",

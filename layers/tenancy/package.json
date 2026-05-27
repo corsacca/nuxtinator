@@ -6,8 +6,8 @@
     ".": "./nuxt.config.ts",
     "./test-helpers": "./tests/helpers/index.ts"
   },
-  "dependencies": {
-    "@nuxtinator/core": "workspace:*"
+  "optionalDependencies": {
+    "@nuxtinator/core": "*"
   },
   "peerDependencies": {
     "@nuxt/kit": "^4.0.0",

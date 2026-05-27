@@ -5,8 +5,8 @@
   "exports": {
     ".": "./nuxt.config.ts"
   },
-  "dependencies": {
-    "@nuxtinator/core": "workspace:*"
+  "optionalDependencies": {
+    "@nuxtinator/core": "*"
   },
   "peerDependencies": {
     "nuxt": "^4.0.0",
