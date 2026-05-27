@@ -12,17 +12,19 @@ go-saas/                          ← repo root (bun workspace)
 ├── node_modules/                 ← hoisted; layers resolve deps from here
 │
 ├── dev/                          ← maintainer's dev host (used inside this monorepo)
-│   ├── nuxt.config.ts            ← extends: layer('@nuxtinator/core'), … — resolves via workspace symlinks
-│   ├── package.json              ← workspace:* deps on each @nuxtinator/* layer
+│   ├── layers.ts                 ← LAYERS array (id + pkg per layer) — source of truth for extends:
+│   ├── nuxt.config.ts            ← imports LAYERS; extends: derived from it
+│   ├── package.json              ← workspace:* deps on each @nuxtinator/* layer (must agree w/ layers.ts)
 │   ├── tsconfig.json, eslint.config.mjs
 │   ├── public/
 │   └── .env, .env.example
 │
 ├── prod/                         ← consumer-starter template (copy-and-trim into a new project)
-│   ├── nuxt.config.ts            ← same layer() helper + extends, but consumer-side
+│   ├── layers.ts                 ← LAYERS array (id + pkg + giget url per layer) — single source of truth
+│   ├── nuxt.config.ts            ← imports LAYERS; extends: derived from it
 │   ├── package.json              ← workspaces: ["_layers/*"]; NO @nuxtinator/* deps
 │   ├── bunfig.toml               ← [install] linker = "hoisted" (required for name-based extends)
-│   ├── scripts/sync-layers.ts    ← fetches _layers/<id>/ from giget URLs in a LAYERS map
+│   ├── scripts/sync-layers.ts    ← iterates LAYERS, calls giget for each URL → _layers/<id>/
 │   ├── tsconfig.json, .gitignore, public/
 │   └── .env.example              ← superset of every layer's env vars (consumer trims)
 │
@@ -52,7 +54,7 @@ go-saas/                          ← repo root (bun workspace)
 
 Both are Nuxt host shells; they differ in **how they resolve layers**:
 
-- **`dev/`** is a workspace member of this monorepo. Its `package.json` lists each layer as `"@nuxtinator/<id>": "workspace:*"`; bun symlinks each name to its sibling `layers/<id>/` source. Use this for editing layers + host together. Run `bun dev` from `dev/`.
+- **`dev/`** is a workspace member of this monorepo. Layer selection lives in [dev/layers.ts](dev/layers.ts) — a `LAYERS` array of `{ id, pkg }` entries — and `dev/nuxt.config.ts` derives `extends:` from it. `dev/package.json` separately lists each layer as `"@nuxtinator/<id>": "workspace:*"` so bun symlinks each name into `dev/node_modules/@nuxtinator/<id>/` (the two files must agree — bun needs the explicit dep entry to symlink). Use this for editing layers + host together. Run `bun dev` from `dev/`.
 - **`prod/`** is a **standalone starter template** — NOT a workspace member of this monorepo. It uses the consumer recipe: `workspaces: ["_layers/*"]`, a `sync-layers` script that fetches each chosen layer from a giget URL into `_layers/<id>/`, `bunfig.toml linker = "hoisted"` for name-based resolution. When someone starts a new project on nuxtinator, they copy `prod/` (via `bunx giget github:corsacca/nuxtinator/prod . --force`), trim it to their selected layers, and run `bun run setup`. `prod/` is what the README's Assembly Instructions point to.
 
 Two `dev` names exist (the top-level `dev/` host folder and the `layers/dev/` `@nuxtinator/dev` sandbox layer) and they're distinct things. Context (path vs. package name) disambiguates.
@@ -74,7 +76,7 @@ Dev server defaults to port **2080**.
 
 ### Layer source resolution
 
-`dev/nuxt.config.ts` lists each layer by package name in `extends:`. A tiny `layer()` helper lets a single layer be redirected to a local checkout via an env var; otherwise the name is passed through and Nuxt resolves it via standard node module resolution against `node_modules/`:
+[dev/layers.ts](dev/layers.ts) holds a `LAYERS` array (one `{ id, pkg }` entry per layer); [dev/nuxt.config.ts](dev/nuxt.config.ts) imports it and derives `extends: LAYERS.map(l => layer(l.pkg))`. A tiny `layer()` helper lets a single layer be redirected to a local checkout via an env var; otherwise the package name is passed through and Nuxt resolves it via standard node module resolution against `node_modules/`:
 
 ```ts
 function layer(pkg: string): string {

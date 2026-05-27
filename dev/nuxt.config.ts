@@ -1,9 +1,10 @@
+import { LAYERS } from './layers'
+
 declare const process: { env: Record<string, string | undefined> }
 
 // Resolve where each layer comes from. By default, `extends:` uses the layer's
 // package name (`@nuxtinator/<id>`), which resolves via standard node module
-// resolution against `node_modules/` — workspace symlink in dev, npm tarball or
-// git URL when consumed externally.
+// resolution against `node_modules/` — workspace symlink in this monorepo.
 //
 // Per-layer local override: set `NUXTINATOR_<ID>_PATH` (id uppercased, hyphens
 // and slashes become underscores) to point an individual layer at a sibling
@@ -15,32 +16,13 @@ function layer(pkg: string): string {
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 //
-// This is the host shell. Project-specific configuration lives here:
-// branding, runtime config, the `extends:` list, and any project-specific
-// page overrides under `app/pages/`. The framework foundation (auth, admin,
-// registries, kernel, RBAC, etc.) lives in `layers/core/` and is the first
-// thing extended below.
+// This is the host shell. Layer selection lives in ./layers.ts — this file
+// just consumes it. The `extends:` array is derived from LAYERS in order, so
+// reordering or trimming is done by editing layers.ts (and the matching
+// workspace:* dep block in package.json).
 export default defineNuxtConfig({
 
-  extends: [
-    // Foundation. Auth, admin, registries, kernel, RBAC, chrome.
-    layer('@nuxtinator/core'),
-    // Tenancy is optional. Comment out to deploy single-tenant.
-    layer('@nuxtinator/tenancy'),
-    // Email backend — pick one (mailgun / smtp / ses / ...). Provides `#email`.
-    // If none is loaded, code that imports from `#email` throws helpfully.
-    layer('@nuxtinator/email-mailgun'),
-    layer('@nuxtinator/oauth'),
-    layer('@nuxtinator/mcp'),
-    layer('@nuxtinator/calendar'),
-    layer('@nuxtinator/kanban'),
-    layer('@nuxtinator/messages'),
-    layer('@nuxtinator/videos'),
-    layer('@nuxtinator/feedback'),
-    layer('@nuxtinator/list-of-100'),
-    // Dev tooling — UI sandbox at /kitchen. Comment out for prod builds.
-    layer('@nuxtinator/dev')
-  ],
+  extends: LAYERS.map(l => layer(l.pkg)),
 
   modules: [
     '@nuxt/eslint',

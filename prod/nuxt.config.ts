@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { LAYERS } from './layers'
 
 declare const process: { env: Record<string, string | undefined> }
 
@@ -19,7 +20,7 @@ stripLayerTsconfigs()
 
 // Resolve each layer by package name. Per-layer local override via env var:
 // set NUXTINATOR_<ID>_PATH=../../sibling-checkout to point one layer at a
-// local working copy without touching package.json (id uppercased; hyphens
+// local working copy without touching layers.ts (id uppercased; hyphens
 // and slashes become underscores). Without an override, the package name
 // resolves through node_modules/@nuxtinator/<id>/ (the bun workspace symlink
 // created from _layers/<id>/).
@@ -30,27 +31,12 @@ function layer(pkg: string): string {
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 //
-// This is the project's host shell. Trim the `extends:` array to only the
-// layers your project actually uses (matching the `LAYERS` map in
-// scripts/sync-layers.ts). Load order matters: core first; tenancy second
-// so its multi-mode kernel overrides core's single-mode; email backend;
-// oauth; mcp; app layers; dev last.
+// Layer selection lives in ./layers.ts — this file just consumes it.
+// The `extends:` array is derived from LAYERS in the same order, so reordering
+// or trimming the LAYERS array in layers.ts is the only place to do it.
 export default defineNuxtConfig({
 
-  extends: [
-    layer('@nuxtinator/core'),
-    layer('@nuxtinator/tenancy'),         // comment out (or remove) for single-tenant
-    layer('@nuxtinator/email-mailgun'),   // pick at most one email backend (or omit)
-    layer('@nuxtinator/oauth'),
-    layer('@nuxtinator/mcp'),
-    layer('@nuxtinator/calendar'),
-    layer('@nuxtinator/feedback'),
-    layer('@nuxtinator/kanban'),
-    layer('@nuxtinator/list-of-100'),
-    layer('@nuxtinator/messages'),
-    layer('@nuxtinator/videos'),
-    layer('@nuxtinator/dev')              // remove before production build
-  ],
+  extends: LAYERS.map(l => layer(l.pkg)),
 
   modules: [
     '@nuxt/eslint',
