@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "host",
+    "dev",
     "layers/core",
     "layers/tenancy",
     "layers/email-mailgun",

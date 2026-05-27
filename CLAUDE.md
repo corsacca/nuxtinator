@@ -6,19 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 go-saas/                          ← repo root (bun workspace)
-├── package.json                  ← workspace root, lists host + layers
+├── package.json                  ← workspace root, lists dev + layers
 ├── bun.lock                      ← single lockfile for the monorepo
-├── bunfig.toml                   ← linker = "hoisted" (layers see host's peer deps)
+├── bunfig.toml                   ← linker = "hoisted" (layers see dev's peer deps)
 ├── node_modules/                 ← hoisted; layers resolve deps from here
 │
-├── host/                         ← the Nuxt app (this project's shell + branding)
-│   ├── nuxt.config.ts            ← extends: layer('@nuxtinator/core'), … — resolved by node module resolution
-│   ├── package.json              ← host-only deps + workspace:* refs to each @nuxtinator/* layer
+├── dev/                          ← maintainer's dev host (used inside this monorepo)
+│   ├── nuxt.config.ts            ← extends: layer('@nuxtinator/core'), … — resolves via workspace symlinks
+│   ├── package.json              ← workspace:* deps on each @nuxtinator/* layer
 │   ├── tsconfig.json, eslint.config.mjs
 │   ├── public/
 │   └── .env, .env.example
 │
-└── layers/                       ← all reusable layers (siblings of host)
+├── prod/                         ← consumer-starter template (copy-and-trim into a new project)
+│   ├── nuxt.config.ts            ← same layer() helper + extends, but consumer-side
+│   ├── package.json              ← workspaces: ["_layers/*"]; NO @nuxtinator/* deps
+│   ├── bunfig.toml               ← [install] linker = "hoisted" (required for name-based extends)
+│   ├── scripts/sync-layers.ts    ← fetches _layers/<id>/ from giget URLs in a LAYERS map
+│   ├── tsconfig.json, .gitignore, public/
+│   └── .env.example              ← superset of every layer's env vars (consumer trims)
+│
+└── layers/                       ← all reusable layers (siblings of dev/ and prod/)
     ├── core/                     ← always-on foundation: auth, admin, registries,
     │   └── package.json             #tenant single-mode kernel, RBAC, chrome,
     │                                migrations runner, activity logger, etc.
@@ -31,7 +39,8 @@ go-saas/                          ← repo root (bun workspace)
     ├── oauth/                    ← OPTIONAL OAuth 2.1 server (peer-deps only)
     ├── mcp/                      ← OPTIONAL MCP transport
     │   └── package.json             deps: @modelcontextprotocol/sdk, zod, zod-to-json-schema
-    ├── dev/                      ← OPTIONAL UI sandbox (/kitchen). Comment out for prod.
+    ├── dev/                      ← OPTIONAL UI sandbox layer (@nuxtinator/dev — distinct
+    │                                from the top-level dev/ host folder above). /kitchen pages.
     └── apps/                     ← per-app feature layers
         ├── calendar/             ← peer-deps only
         ├── kanban/               ← peer-deps only
@@ -39,12 +48,21 @@ go-saas/                          ← repo root (bun workspace)
         └── videos/               ← deps: fix-webm-duration, mediabunny, uuid
 ```
 
+### `dev/` vs `prod/` — two hosts, two recipes
+
+Both are Nuxt host shells; they differ in **how they resolve layers**:
+
+- **`dev/`** is a workspace member of this monorepo. Its `package.json` lists each layer as `"@nuxtinator/<id>": "workspace:*"`; bun symlinks each name to its sibling `layers/<id>/` source. Use this for editing layers + host together. Run `bun dev` from `dev/`.
+- **`prod/`** is a **standalone starter template** — NOT a workspace member of this monorepo. It uses the consumer recipe: `workspaces: ["_layers/*"]`, a `sync-layers` script that fetches each chosen layer from a giget URL into `_layers/<id>/`, `bunfig.toml linker = "hoisted"` for name-based resolution. When someone starts a new project on nuxtinator, they copy `prod/` (via `bunx giget github:corsacca/nuxtinator/prod . --force`), trim it to their selected layers, and run `bun run setup`. `prod/` is what the README's Assembly Instructions point to.
+
+Two `dev` names exist (the top-level `dev/` host folder and the `layers/dev/` `@nuxtinator/dev` sandbox layer) and they're distinct things. Context (path vs. package name) disambiguates.
+
 Every layer has its own `package.json` declaring exactly what it imports. The `name` is `@nuxtinator/<id>` and the package exposes its config via `exports: { ".": "./nuxt.config.ts" }`. Cross-layer deps are declared as `workspace:*` in `dependencies`. Layer-private deps (no other layer needs them, no shared runtime state) also go in `dependencies`. Framework/DB singletons that must resolve to a single instance (`nuxt`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `vue`, `tailwindcss`) go in `peerDependencies` so they resolve to host's installed copy. Don't add a `main` field to layer package.json files — Nuxt generates `/// <reference types="@nuxtinator/<id>" />` and TS would resolve through `main`, breaking the typecheck. `exports` is fine.
 
-Run dev/build from `host/`:
+Run dev/build from `dev/`:
 
 ```
-cd host
+cd dev
 bun dev          # start dev server (runs migrations on boot via Nitro plugin)
 bun run build    # production build
 bun run preview  # preview built app
@@ -56,7 +74,7 @@ Dev server defaults to port **2080**.
 
 ### Layer source resolution
 
-`host/nuxt.config.ts` lists each layer by package name in `extends:`. A tiny `layer()` helper lets a single layer be redirected to a local checkout via an env var; otherwise the name is passed through and Nuxt resolves it via standard node module resolution against `node_modules/`:
+`dev/nuxt.config.ts` lists each layer by package name in `extends:`. A tiny `layer()` helper lets a single layer be redirected to a local checkout via an env var; otherwise the name is passed through and Nuxt resolves it via standard node module resolution against `node_modules/`:
 
 ```ts
 function layer(pkg: string): string {
@@ -68,7 +86,7 @@ function layer(pkg: string): string {
 
 Layers can arrive in `node_modules/@nuxtinator/<id>/` from three sources, same path on disk, same `extends:` line:
 
-- **Workspace symlink** in this repo (`"@nuxtinator/core": "workspace:*"` in `host/package.json`).
+- **Workspace symlink** in this repo (`"@nuxtinator/core": "workspace:*"` in `dev/package.json`).
 - **npm tarball** once published.
 - **Git URL** in a downstream project's `package.json` deps (`"github:org/repo#ref"`) when a layer lives in its own repo.
 
@@ -76,12 +94,12 @@ Cross-layer name resolution works automatically because each layer's `package.js
 
 **Per-layer local override.** Two ways to point a single layer at a sibling checkout without changing committed config:
 
-- **Env var** — set `NUXTINATOR_<ID>_PATH` in `host/.env` (id uppercased, hyphens become underscores), e.g. `NUXTINATOR_MESSAGES_PATH=../../scratch/messages-experiment`. The `layer()` helper reads it and returns the path instead of the package name.
+- **Env var** — set `NUXTINATOR_<ID>_PATH` in `dev/.env` (id uppercased, hyphens become underscores), e.g. `NUXTINATOR_MESSAGES_PATH=../../scratch/messages-experiment`. The `layer()` helper reads it and returns the path instead of the package name.
 - **`bun link`** — run `bun link` in a sibling repo, then `bun link @nuxtinator/messages` in this one. Symlinks the sibling into `node_modules/@nuxtinator/messages/` until the next `bun install`.
 
 ## High-level architecture
 
-This repo is **a host shell + a stack of layers** wired through Nuxt's `extends:`. The host (`host/`) is project-specific (config, branding, page overrides). All reusable code lives in `layers/`. New projects copy the layers they need and write their own thin host.
+This repo is **a host shell + a stack of layers** wired through Nuxt's `extends:`. The host (`dev/`) is project-specific (config, branding, page overrides). All reusable code lives in `layers/`. New projects copy the layers they need and write their own thin host.
 
 ### Layer roles
 
@@ -101,7 +119,7 @@ This repo is **a host shell + a stack of layers** wired through Nuxt's `extends:
 
 ### Layer auto-discovery escape
 
-Nuxt 4 auto-discovers any direct child of `host/layers/*` (regardless of `extends:`). To keep `tenancy` truly optional, all layers live at `<repo>/layers/` (siblings of `host/`, not under `host/layers/`), so the auto-glob doesn't see them. Each layer is loaded only via an explicit `layer('<name>')` entry in `extends:`. Comment out a line to remove that layer. Adding a layer also requires adding `"layers/<name>"` (or `"layers/apps/<name>"`) to the `workspaces` array in the root `package.json`.
+Nuxt 4 auto-discovers any direct child of `dev/layers/*` (regardless of `extends:`). To keep `tenancy` truly optional, all layers live at `<repo>/layers/` (siblings of `dev/`, not under `dev/layers/`), so the auto-glob doesn't see them. Each layer is loaded only via an explicit `layer('<name>')` entry in `extends:`. Comment out a line to remove that layer. Adding a layer also requires adding `"layers/<name>"` (or `"layers/apps/<name>"`) to the `workspaces` array in the root `package.json`.
 
 ### The `#tenant` kernel
 
@@ -135,9 +153,9 @@ import { sendTemplateEmail } from '#email'
 
 Each email backend layer (`email-mailgun`, future `email-smtp`/`email-ses`) provides its own implementation and registers `#email` to point at it. Core ships a throwing fallback at [layers/core/email-fallback/email.ts](layers/core/email-fallback/email.ts) that surfaces a clear error if no email layer is loaded.
 
-### Layer wiring (host/nuxt.config.ts)
+### Layer wiring (dev/nuxt.config.ts)
 
-[host/nuxt.config.ts](host/nuxt.config.ts) does three layer-related things worth knowing about:
+[dev/nuxt.config.ts](dev/nuxt.config.ts) does three layer-related things worth knowing about:
 
 1. **`stripLayerTsconfigs()`** runs before modules — layers extracted from full Nuxt projects sometimes ship a `tsconfig.json` that references `./.nuxt/tsconfig.*.json` (only generated when the layer is opened standalone). Vite's tsconfig walker would crash; the cleanup deletes them.
 2. **`extends:`** lists every layer in load order. `core` first (lowest priority — gets overridden by other layers and host); `tenancy` next (multi-mode kernel overrides core's single-mode); then email backend, oauth, mcp, app layers, dev.
@@ -249,4 +267,4 @@ Database is Postgres via Kysely + `kysely-postgres-js`. Schema composed: core ta
 - App-layer pages live at `app/pages/<appId>/...`. Don't write them with org-slug prefixes — the tenancy layer adds those automatically when loaded.
 - Layer code that touches the database imports `db` from `#core/server/utils/database`. Only the tenancy layer imports `adminDb` (via `#tenant/admin-db`); doing so from outside that layer is a tenancy contract violation.
 - Server route handlers that need user identity / permissions use `defineTenantHandler` from `#tenant/server`. In single mode it's just `requireAuth` + a transaction; in multi mode it adds the org context.
-- Run dev/build/test commands from `host/`, not from the repo root.
+- Run dev/build/test commands from `dev/`, not from the repo root.

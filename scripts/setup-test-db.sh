@@ -60,7 +60,7 @@ ALTER SCHEMA public OWNER TO host_admin;
 SQL
 
 echo ""
-echo "==> Done. Add these to host/.env:"
+echo "==> Done. Add these to dev/.env:"
 echo ""
 echo "TEST_DATABASE_URL=postgresql://host_admin:${HOST_ADMIN_PW}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 echo "TEST_APP_DATABASE_URL=postgresql://app_user:${APP_USER_PW}@${DB_HOST}:${DB_PORT}/${DB_NAME}"

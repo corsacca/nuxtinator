@@ -37,7 +37,7 @@ That's it. The first `bun run dev` will:
 
 ## Step 1: scaffold a host
 
-The `host/` directory inside [corsacca/nuxtinator](https://github.com/corsacca/nuxtinator) is **the deployable**. Everything else in that repo is layer source you'll consume remotely. Copy just the host:
+The `dev/` directory inside [corsacca/nuxtinator](https://github.com/corsacca/nuxtinator) is **the deployable**. Everything else in that repo is layer source you'll consume remotely. Copy just the host:
 
 ```bash
 bunx giget github:corsacca/nuxtinator/host my-app
@@ -68,7 +68,7 @@ git init && git add . && git commit -m "scaffold from nuxtinator"
 
 ## Step 2: choose your layers
 
-Open [nuxt.config.ts](../host/nuxt.config.ts). The `extends:` array decides what's loaded:
+Open [nuxt.config.ts](../dev/nuxt.config.ts). The `extends:` array decides what's loaded:
 
 ```ts
 extends: [
@@ -97,10 +97,10 @@ Rules of thumb:
 
 ## Step 3: pick a layer source
 
-Each layer is a workspace package (`@nuxtinator/<id>`) declared as a dependency of `host/`. The default in this repo is `workspace:*`, which resolves to the sibling `layers/<id>/` directory. To consume a layer from outside this monorepo, replace the version in `host/package.json` with an npm version (once published) or a `github:org/repo#ref` URL:
+Each layer is a workspace package (`@nuxtinator/<id>`) declared as a dependency of `dev/`. The default in this repo is `workspace:*`, which resolves to the sibling `layers/<id>/` directory. To consume a layer from outside this monorepo, replace the version in `dev/package.json` with an npm version (once published) or a `github:org/repo#ref` URL:
 
 ```jsonc
-// host/package.json
+// dev/package.json
 "dependencies": {
   "@nuxtinator/core": "github:your-org/your-fork#v0.4.2",
   // ...
@@ -138,7 +138,7 @@ Add more depending on which layers you enabled:
 | `oauth` | `OAUTH_CONSENT_COOKIE_SECRET` |
 | Anything that uploads (videos, attachments) | `S3_*` vars |
 
-The full list is in [.env.example](../host/.env.example).
+The full list is in [.env.example](../dev/.env.example).
 
 ---
 
@@ -185,7 +185,7 @@ You don't need to fork the layers repo to add features. Two options:
 
 1. **In-host code** — drop pages under `app/pages/<your-app>/` and routes under `server/routes/api/<your-app>/` directly in your host project. Anything you `import` resolves against the host's deps. Good for project-specific stuff that won't be reused.
 
-2. **A new layer in your own repo** — create a sibling directory (or another git repo) shaped like the layers in nuxtinator. Add it as `"@yourscope/your-layer": "github:your-org/your-repo#ref"` (or `"workspace:*"` if local) in `host/package.json`, and add a `layer('@yourscope/your-layer')` entry in `extends:`. See [layers.md](layers.md#creating-a-new-app-layer) for the full layer template.
+2. **A new layer in your own repo** — create a sibling directory (or another git repo) shaped like the layers in nuxtinator. Add it as `"@yourscope/your-layer": "github:your-org/your-repo#ref"` (or `"workspace:*"` if local) in `dev/package.json`, and add a `layer('@yourscope/your-layer')` entry in `extends:`. See [layers.md](layers.md#creating-a-new-app-layer) for the full layer template.
 
 Either way, you're adding to your own host without touching nuxtinator's code.
 
@@ -193,7 +193,7 @@ Either way, you're adding to your own host without touching nuxtinator's code.
 
 ## Updating to a newer cut of nuxtinator
 
-Bump the version / ref of each `@nuxtinator/*` dep in `host/package.json` (e.g. from `github:corsacca/nuxtinator#v0.4.2` to `#v0.5.0`), then `bun install`.
+Bump the version / ref of each `@nuxtinator/*` dep in `dev/package.json` (e.g. from `github:corsacca/nuxtinator#v0.4.2` to `#v0.5.0`), then `bun install`.
 
 Read the upstream changelog before bumping — schema migrations included in newer layer cuts will run on first boot and may not be reversible.
 
@@ -201,14 +201,14 @@ Read the upstream changelog before bumping — schema migrations included in new
 
 ## Working against local layer source (optional)
 
-To hack on a single layer in a sibling checkout without changing committed deps, set a per-layer env override in `host/.env`:
+To hack on a single layer in a sibling checkout without changing committed deps, set a per-layer env override in `dev/.env`:
 
 ```bash
 # Sibling layout:
 #   ~/code/nuxtinator/      ← clone of github:corsacca/nuxtinator
 #   ~/code/my-app/          ← your host
 
-# In ~/code/my-app/host/.env:
+# In ~/code/my-app/dev/.env:
 NUXTINATOR_CORE_PATH=../../nuxtinator/layers/core
 NUXTINATOR_MESSAGES_PATH=../../nuxtinator/layers/apps/messages
 ```
@@ -240,8 +240,8 @@ For multi-tenant production specifics — the two-role split, transaction-poolin
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Cannot find package '@nuxtinator/<x>'` | A layer dep isn't installed | Check `host/package.json` lists every `@nuxtinator/*` layer in `extends:`, then `bun install` |
-| `Cannot find package '<x>' imported from @nuxtinator/<name>` | Layer added a transitive dep that didn't make it into the layer's `package.json` | File an issue against the layer; as a workaround, add the package to `host/dependencies` |
+| `Cannot find package '@nuxtinator/<x>'` | A layer dep isn't installed | Check `dev/package.json` lists every `@nuxtinator/*` layer in `extends:`, then `bun install` |
+| `Cannot find package '<x>' imported from @nuxtinator/<name>` | Layer added a transitive dep that didn't make it into the layer's `package.json` | File an issue against the layer; as a workaround, add the package to `dev/dependencies` |
 | Hangs on a page route that worked yesterday | Layer added a new migration that failed | Check the boot logs — failed migrations halt boot. Fix the DB state, restart |
 
 ---

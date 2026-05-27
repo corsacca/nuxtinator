@@ -1,0 +1,9 @@
+# Bun 1.3+ defaults to the isolated linker for workspaces. Under isolated,
+# cross-workspace deps appear in each member's local node_modules/@nuxtinator/<id>/
+# (so a layer's own code can `import '@nuxtinator/core'`), but the top-level
+# node_modules/@nuxtinator/<id>/ symlinks are NOT created. Nuxt's `extends:
+# [layer('@nuxtinator/core')]` resolves by package name from the project root —
+# without the top-level symlink, resolution fails. Hoisted mode restores those
+# top-level symlinks.
+[install]
+linker = "hoisted"

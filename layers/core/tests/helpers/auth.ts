@@ -23,7 +23,7 @@ export interface AuthHeaders {
 
 function jwtSecret(): string {
   const s = process.env.JWT_SECRET
-  if (!s) throw new Error('JWT_SECRET must be set in the test environment (host/.env)')
+  if (!s) throw new Error('JWT_SECRET must be set in the test environment (dev/.env)')
   return s
 }
 

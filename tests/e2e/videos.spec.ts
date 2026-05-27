@@ -30,7 +30,7 @@ import {
 import { loginIntoNewOrg } from './helpers/login'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-loadDotenv({ path: resolve(__dirname, '../../host/.env') })
+loadDotenv({ path: resolve(__dirname, '../../dev/.env') })
 
 // Per-spec cleanup. Global teardown handles closeTestDatabases().
 test.afterAll(async () => {

@@ -53,8 +53,8 @@ Verify:
 Two connection strings — same database, different roles:
 
 ```bash
-DATABASE_URL=postgres://host_admin:...@host/db        # migrations + tenancy layer's adminDb
-APP_DATABASE_URL=postgres://app_user:...@host/db      # default for the host's `db`
+DATABASE_URL=postgres://host_admin:...@dev/db        # migrations + tenancy layer's adminDb
+APP_DATABASE_URL=postgres://app_user:...@dev/db      # default for the host's `db`
 NUXT_TENANT_FLOW_SECRET=<random 32+ bytes hex>        # HMAC key for OAuth state-binding
 ```
 

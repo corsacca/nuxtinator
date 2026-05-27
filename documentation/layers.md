@@ -71,7 +71,7 @@ Worked example: a "Tasks" app with permissions `tasks.access`, `tasks.read`, `ta
 
 ```
 layers/apps/tasks/
-  host/nuxt.config.ts
+  dev/nuxt.config.ts
   package.json
   app/
     pages/
@@ -91,10 +91,10 @@ layers/apps/tasks/
 
 Note: server routes for layers go under `server/routes/api/` (not `server/api/`). Pages stay at `app/pages/tasks/...` — single-tenant shape always; the tenancy layer's `pages:extend` hook adds `/@:orgSlug/tasks/...` aliases automatically.
 
-### 2. host/nuxt.config.ts and package.json
+### 2. dev/nuxt.config.ts and package.json
 
 ```ts
-// layers/apps/tasks/host/nuxt.config.ts
+// layers/apps/tasks/dev/nuxt.config.ts
 export default defineNuxtConfig({})
 ```
 
@@ -119,7 +119,7 @@ Then add the layer to the workspace in the root [package.json](../package.json):
 // /package.json (workspace root)
 {
   "workspaces": [
-    "host",
+    "dev",
     "layers/core",
     ...,
     "layers/apps/tasks"
@@ -261,7 +261,7 @@ The default layout (host) renders the launcher rail + per-app sidebar around you
 ### 7. Wire it into `extends:`
 
 ```ts
-// host/nuxt.config.ts
+// dev/nuxt.config.ts
 extends: [
   layer('@nuxtinator/core'),
   layer('@nuxtinator/tenancy'),     // optional — omit for single-tenant
@@ -273,13 +273,13 @@ extends: [
 ]
 ```
 
-The `layer()` helper passes the package name through to node module resolution; set `NUXTINATOR_TASKS_PATH=…` in `host/.env` to point this layer at a sibling checkout. Add `"@nuxtinator/tasks": "workspace:*"` to `host/package.json` and the `layers/apps/tasks` path to the root workspaces array first.
+The `layer()` helper passes the package name through to node module resolution; set `NUXTINATOR_TASKS_PATH=…` in `dev/.env` to point this layer at a sibling checkout. Add `"@nuxtinator/tasks": "workspace:*"` to `dev/package.json` and the `layers/apps/tasks` path to the root workspaces array first.
 
 ### 8. Install + restart
 
 ```
 bun install              # from repo root, picks up the new workspace
-cd host && bun run dev
+cd dev && bun run dev
 ```
 
 The launcher rail now shows the Tasks tile. Authenticated users with `tasks.access` see it; admins (in either mode) see everything.
@@ -456,7 +456,7 @@ Permission strings use `.` (one namespace shared with OAuth/MCP scopes). DB tabl
 
 **Install:**
 1. Add `"layers/apps/<id>"` to the `workspaces` array in the root [package.json](../package.json).
-2. Add `layer('apps/<id>')` to `extends:` in [host/nuxt.config.ts](../host/nuxt.config.ts).
+2. Add `layer('apps/<id>')` to `extends:` in [dev/nuxt.config.ts](../dev/nuxt.config.ts).
 3. `bun install` from root, then `bun dev` (or restart). Migrations run, the layer's plugin registers permissions/default-grants/app meta/nav/admin sections/static roles.
 
 **Uninstall:**

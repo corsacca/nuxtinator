@@ -13,11 +13,11 @@ import {
 import { cleanupTenancyTestData } from 'layer-tenancy/test-helpers'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-loadDotenv({ path: resolve(__dirname, '../../host/.env') })
+loadDotenv({ path: resolve(__dirname, '../../dev/.env') })
 
 export default async function globalSetup() {
   if (!process.env.TEST_DATABASE_URL) {
-    throw new Error('TEST_DATABASE_URL must be set in host/.env')
+    throw new Error('TEST_DATABASE_URL must be set in dev/.env')
   }
   const sql = getHostAdminDb()
   await cleanupTenancyTestData(sql)

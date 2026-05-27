@@ -1,7 +1,7 @@
 // Mounts the feedback web component on every client-side page render.
 // No-op when `runtimeConfig.public.feedbackProjectId` is empty — set the
 // FEEDBACK_PROJECT_ID env var (or NUXT_PUBLIC_FEEDBACK_PROJECT_ID) in
-// host/.env to a project UUID from /feedback to enable the widget.
+// dev/.env to a project UUID from /feedback to enable the widget.
 
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()

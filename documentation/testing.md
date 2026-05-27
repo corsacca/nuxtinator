@@ -6,9 +6,9 @@ How tests are organized, how to run them, and how to add new ones.
 
 ```bash
 # One-time: provision the test database + roles. Re-runnable.
-cd host && bun run test:db
+cd dev && bun run test:db
 
-# Append the printed TEST_DATABASE_URL + TEST_APP_DATABASE_URL to host/.env.
+# Append the printed TEST_DATABASE_URL + TEST_APP_DATABASE_URL to dev/.env.
 
 # Make sure Mailpit (or MailHog) is running on :1025 (SMTP) + :8025 (HTTP API).
 # This repo's docker-compose at the project root already runs it.
@@ -45,7 +45,7 @@ Two non-negotiables:
 go-saas/
 ├── scripts/
 │   └── setup-test-db.sh             ← provisions go_saas_test + host_admin / app_user roles
-├── host/
+├── dev/
 │   ├── vitest.config.ts             ← one project per layer
 │   ├── playwright.config.ts         ← self-starts Nuxt on :2090 against test DB
 │   └── scripts/run-tests.mjs        ← wrapper that prints a TTY-safe summary
@@ -78,7 +78,7 @@ Tests live with their layer. Cross-layer helper imports go through each layer's 
 
 Each layer is a vitest project. Projects run in parallel; files within a project run serial (`fileParallelism: false`). Each layer prefixes its test data (`test-core-…`, `test-tenancy-…`) so layers running in parallel never collide.
 
-To add a new layer's tests, append a `layerProject(...)` entry to [host/vitest.config.ts](../host/vitest.config.ts):
+To add a new layer's tests, append a `layerProject(...)` entry to [dev/vitest.config.ts](../dev/vitest.config.ts):
 
 ```ts
 projects: [
@@ -95,7 +95,7 @@ projects: [
 - `host_admin` role with `BYPASSRLS` — used by migrations and the tenancy layer's `adminDb`. Test setup uses this for seeding (since RLS would block plain INSERTs into tenant tables outside the `defineTenantHandler` txn).
 - `app_user` role with normal RLS enforcement — what the spawned Nuxt server's `db` client connects as. This is what catches RLS bugs.
 
-Two env vars in `host/.env` map to the two roles:
+Two env vars in `dev/.env` map to the two roles:
 
 ```
 TEST_DATABASE_URL=postgresql://host_admin:test@localhost:5432/go_saas_test
@@ -117,7 +117,7 @@ Each test calls the appropriate cleanup in `afterEach`. The global-setup teardow
 
 `@nuxt/test-utils` defaults the spawned Nuxt server to `NODE_ENV='test'`. The email layer's `isDevelopment` check is `=== 'development'` and is **inlined** into the bundle by Vite/Nitro at build time — so a `NODE_ENV='test'` build hardcodes `isDevelopment = false` forever, and emails attempt to go through real Mailgun.
 
-The fix is in [host/vitest.config.ts](../host/vitest.config.ts) (`process.env.NODE_ENV = 'development'` at the top) and in each layer's `global-setup.ts` (`nuxtConfig.vite.define` + `nuxtConfig.nitro.replace` overrides). If you ever see "Failed to send verification email" in test output, this is what's broken.
+The fix is in [dev/vitest.config.ts](../dev/vitest.config.ts) (`process.env.NODE_ENV = 'development'` at the top) and in each layer's `global-setup.ts` (`nuxtConfig.vite.define` + `nuxtConfig.nitro.replace` overrides). If you ever see "Failed to send verification email" in test output, this is what's broken.
 
 ### MailHog / Mailpit
 
@@ -204,7 +204,7 @@ describe('POST /api/whatever', () => {
 
 ## Playwright
 
-Playwright lives at the host level (one runner serves multi-layer flows). It self-starts Nuxt on `:2090` against the test DB via the `webServer` block in [host/playwright.config.ts](../host/playwright.config.ts).
+Playwright lives at the host level (one runner serves multi-layer flows). It self-starts Nuxt on `:2090` against the test DB via the `webServer` block in [dev/playwright.config.ts](../dev/playwright.config.ts).
 
 ### Serial, not parallel
 
@@ -292,13 +292,13 @@ Skip if it's too fragile to drive reliably (e.g. emoji pickers, drag-and-drop on
 Add tests for a new layer in this order:
 
 1. Inventory the layer's API endpoints + UI pages
-2. Write vitest tests for the API (helpers, global-setup, register `layerProject(...)` in `host/vitest.config.ts`)
+2. Write vitest tests for the API (helpers, global-setup, register `layerProject(...)` in `dev/vitest.config.ts`)
 3. Get vitest green for the layer (`bun run test --project=<layer>`)
 4. Write Playwright spec at `tests/e2e/<layer>.spec.ts` covering the marquee flows
 5. Run `bun run test:e2e` twice in a row to catch flakes
 6. Run the full suite (`bun run test && bun run test:e2e`) before declaring done — your layer must not regress others
 
-When adding multiple layers via background subagents, **dispatch serially**: every agent edits `host/vitest.config.ts` to add its `layerProject(...)` entry, and parallel agents will race on that file. Wait for each to complete + verify before launching the next.
+When adding multiple layers via background subagents, **dispatch serially**: every agent edits `dev/vitest.config.ts` to add its `layerProject(...)` entry, and parallel agents will race on that file. Wait for each to complete + verify before launching the next.
 
 ## Test database lifecycle
 
@@ -308,9 +308,9 @@ scripts/setup-test-db.sh                 → CREATE ROLE host_admin / app_user; 
 
 bun run test
   ↓
-host/scripts/run-tests.mjs               → spawns vitest with verbose + json reporters
+dev/scripts/run-tests.mjs               → spawns vitest with verbose + json reporters
   ↓
-vitest loads host/vitest.config.ts       → pins NODE_ENV='development' before build
+vitest loads dev/vitest.config.ts       → pins NODE_ENV='development' before build
   ↓
 each layer project's global-setup.ts     → @nuxt/test-utils starts Nuxt server
                                             with DATABASE_URL=TEST_DATABASE_URL

@@ -13,7 +13,7 @@ import { cleanupTenancyTestData } from 'layer-tenancy/test-helpers'
 import { loginIntoMultipleOrgs } from './helpers/login'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-loadDotenv({ path: resolve(__dirname, '../../host/.env') })
+loadDotenv({ path: resolve(__dirname, '../../dev/.env') })
 
 test.afterAll(async () => {
   const sql = getHostAdminDb()

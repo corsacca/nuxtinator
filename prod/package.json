@@ -1,0 +1,38 @@
+{
+  "name": "my-project",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "workspaces": ["_layers/*"],
+  "scripts": {
+    "sync-layers": "bun run scripts/sync-layers.ts",
+    "setup": "bun install && bun run sync-layers && bun install",
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "start": "bun .output/server/index.mjs",
+    "preview": "nuxt preview",
+    "typecheck": "nuxt typecheck",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.104",
+    "@iconify-json/simple-icons": "^1.2.80",
+    "@nuxt/kit": "^4.0.0",
+    "@nuxt/ui": "^4.7.0",
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "kysely-postgres-js": "^2.0.0",
+    "nuxt": "^4.4.2",
+    "postgres": "^3.4.7",
+    "tailwindcss": "^4.2.4",
+    "vue": "^3.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.15.2",
+    "eslint": "^10.2.1",
+    "giget": "^1.2.0",
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.2.7"
+  }
+}

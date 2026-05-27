@@ -26,7 +26,7 @@ export function getHostAdminDb(): ReturnType<typeof postgres> {
   const url = process.env.TEST_DATABASE_URL
   if (!url) {
     throw new Error(
-      'TEST_DATABASE_URL is not set. Run scripts/setup-test-db.sh and add the printed values to host/.env.'
+      'TEST_DATABASE_URL is not set. Run scripts/setup-test-db.sh and add the printed values to dev/.env.'
     )
   }
   _hostAdmin = buildPool(url)

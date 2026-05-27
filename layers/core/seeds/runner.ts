@@ -2,7 +2,7 @@
 //
 // Each layer ships an optional `seeds/index.ts` that default-exports an
 // async `(ctx: SeedContext) => Promise<void>`. The runner imports and
-// executes them in the same order they appear in `host/nuxt.config.ts`
+// executes them in the same order they appear in `dev/nuxt.config.ts`
 // `extends:` — so core's users/roles exist before tenancy creates orgs,
 // and the demo org exists before the messages seed creates channels.
 //
@@ -16,7 +16,7 @@ import { PostgresJSDialect } from 'kysely-postgres-js'
 import postgres from 'postgres'
 import type { SeedContext } from './types'
 
-// Mirror of host/nuxt.config.ts `extends:` order, minus dev (no demo data
+// Mirror of dev/nuxt.config.ts `extends:` order, minus dev (no demo data
 // to seed there). Tenancy is auto-skipped at runtime if its tables don't
 // exist — listing it here is harmless in single-tenant deploys.
 const SEED_LAYERS = [

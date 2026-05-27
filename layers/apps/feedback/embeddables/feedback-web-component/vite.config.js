@@ -7,8 +7,8 @@ import { fileURLToPath, URL } from 'node:url'
 // served at: http://localhost:2080/js/feedback-web-component.iife.js
 //
 // Path:  layers/apps/feedback/embeddables/feedback-web-component/vite.config.js
-//        → ../../../../../host/public/js
-const PUBLIC_JS_DIR = fileURLToPath(new URL('../../../../../host/public/js', import.meta.url))
+//        → ../../../../../dev/public/js
+const PUBLIC_JS_DIR = fileURLToPath(new URL('../../../../../dev/public/js', import.meta.url))
 
 export default defineConfig({
   plugins: [

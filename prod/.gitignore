@@ -1,5 +1,5 @@
-_layers
 node_modules
 .nuxt
 .output
-bun.lock
+.env
+_layers

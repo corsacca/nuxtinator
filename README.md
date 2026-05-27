@@ -79,9 +79,9 @@ Dependencies are resolved automatically: asking for `mcp` pulls in `oauth`; aski
 
 Two artifacts, two mechanisms.
 
-**This monorepo (maintainer side).** Layers live at `layers/<id>/` and `layers/apps/<id>/`. [host/package.json](host/package.json) lists each as `"@nuxtinator/<id>": "workspace:*"`; [host/nuxt.config.ts](host/nuxt.config.ts) extends by package name. Bun's workspace symlinks make each name resolve through `node_modules/@nuxtinator/<id>/` to the local source. One repo, one install, one resolution path.
+**This monorepo (maintainer side).** Layers live at `layers/<id>/` and `layers/apps/<id>/`. [dev/package.json](dev/package.json) lists each as `"@nuxtinator/<id>": "workspace:*"`; [dev/nuxt.config.ts](dev/nuxt.config.ts) extends by package name. Bun's workspace symlinks make each name resolve through `node_modules/@nuxtinator/<id>/` to the local source. One repo, one install, one resolution path.
 
-**A consumer project (this is what the AI scaffolds).** Each layer is fetched via a `sync-layers` script (which uses `giget` under the hood) into a local `_layers/<id>/` directory. The consumer's `package.json` declares those as **bun workspace members** (`"workspaces": ["_layers/*"]`); on `bun install`, bun reads each layer's `package.json`, merges its `dependencies` into the resolution graph, and symlinks each layer as `node_modules/@nuxtinator/<id>/`. Nuxt's `extends:` resolves by package name through that symlink. Layer source is visible at `_layers/<id>/` for inspection, debugging, or grep.
+**A consumer project (what the AI scaffolds).** The [prod/](prod/) folder in this repo is the **starter template** — it ships the consumer recipe fully wired up: `package.json` with `workspaces: ["_layers/*"]` and no `@nuxtinator/*` deps, `bunfig.toml linker = "hoisted"`, `scripts/sync-layers.ts` with a `LAYERS` map of giget URLs, `nuxt.config.ts` with the `layer()` helper and `extends:` array, `.env.example` with the full env superset. Scaffolding a new project = copy `prod/` and trim. At runtime, each layer fetched by `sync-layers` lands in `_layers/<id>/`; on `bun install`, bun reads those as workspace members, hoists their deps into the root `node_modules/`, and symlinks each into `node_modules/@nuxtinator/<id>/` where Nuxt's `extends:` resolves them by package name. Layer source is visible at `_layers/<id>/` for inspection, debugging, or grep.
 
 Net: one `node_modules/` at the root, no per-layer install, no per-layer duplication of the framework peer tree. Each layer's `package.json` remains the source of truth for its deps — the consumer's `package.json` never lists them, and a layer's dep changes flow through on the next `sync-layers && bun install` automatically.
 
@@ -234,189 +234,43 @@ A few things to confirm:
 - **If the user didn't mention apps/* at all**, default the proposed list to no app layers and the confirmation message must list every available app layer so they can pick.
 - **If you genuinely have no way to ask** (true non-interactive context with no orchestrator inbox), halt. Tell whatever invoked you that the layer list is needed. **Do not write files.** A wrong scaffold is worse than no scaffold.
 
-### Step 4: Copy the host into the user's project
+### Step 4: Copy the prod template into the user's project
 
-Pull just the `host/` directory from this repo into the user's project:
-
-```bash
-bunx giget github:corsacca/nuxtinator/host . --force
-```
-
-Run from the user's project directory. `giget` is used here only as a one-shot file-copy tool — it extracts the `host/` subtree. The extracted host is the consumer artifact: everything the user owns and edits lives here.
-
-The extracted `nuxt.config.ts` and `package.json` are tuned for **this monorepo** (`workspace:*` deps pointing at sibling `layers/`). Steps 5 and 6 retune them for a **consumer** who fetches layers via `sync-layers` and consumes them as bun workspace members under `_layers/<id>/`.
-
-### Step 5: Edit nuxt.config.ts — trim extends, add the strip hook
-
-The scaffolded `nuxt.config.ts` already has the right shape — a `layer()` helper that returns the package name (with a `NUXTINATOR_<ID>_PATH` env override) and an `extends:` array calling `layer('@nuxtinator/<id>')` for each layer. Two edits:
-
-**1. Trim the `extends:` array** to only the layers the user selected, in load order: `core` first; `tenancy` second (so its multi-mode kernel overrides core's single-mode); email backend; `oauth`; `mcp`; app layers; `dev` last. Delete entries for layers not selected — don't comment them out.
-
-**2. Add a tsconfig strip hook** at the top of the file (before `defineNuxtConfig`). A layer's `tsconfig.json` references paths Vite's walker can crash on; this defensive cleanup is cheap:
-
-```ts
-import { existsSync, readdirSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
-
-const LAYERS_DIR = '_layers'
-
-function stripLayerTsconfigs() {
-  if (!existsSync(LAYERS_DIR)) return
-  for (const name of readdirSync(LAYERS_DIR)) {
-    const t = join(LAYERS_DIR, name, 'tsconfig.json')
-    if (existsSync(t)) rmSync(t)
-  }
-}
-stripLayerTsconfigs()
-```
-
-And add `hooks: { 'modules:before': stripLayerTsconfigs }` inside the `defineNuxtConfig({ ... })` block (alongside `modules:`, `ssr:`, etc.).
-
-Final shape — keep the existing `layer()` helper, leave the rest of the scaffolded config untouched:
-
-```ts
-// ...the scaffolded `layer()` helper stays as-is...
-function layer(pkg: string): string {
-  const envKey = pkg.replace(/^@/, '').replace(/[/-]/g, '_').toUpperCase() + '_PATH'
-  return process.env[envKey] || pkg
-}
-
-// ...stripLayerTsconfigs() block from above...
-
-export default defineNuxtConfig({
-  extends: [
-    layer('@nuxtinator/core'),
-    layer('@nuxtinator/tenancy'),          // omit for single-tenant
-    layer('@nuxtinator/email-mailgun'),    // pick one email backend, or omit
-    layer('@nuxtinator/oauth'),
-    layer('@nuxtinator/mcp'),
-    layer('@nuxtinator/calendar'),
-    layer('@nuxtinator/kanban'),
-    // ...other selected app layers in load order...
-    layer('@nuxtinator/dev')               // remove before production build
-  ],
-  hooks: { 'modules:before': stripLayerTsconfigs }
-
-  // ...keep modules, ssr, runtimeConfig, devServer, etc. as scaffolded...
-})
-```
-
-No giget tuples in `extends:`, no `install: true`, no `forceClean`. Nuxt resolves each `@nuxtinator/<id>` through the bun workspace symlink set up in Step 6.
-
-### Step 6: Rewrite package.json — workspaces, scripts, giget devDep
-
-The scaffolded `package.json` has every layer as `"@nuxtinator/<id>": "workspace:*"` and `postinstall: nuxt prepare`. Four structural edits:
-
-1. **Rename `name`** from `"go-saas"` to the user's project name (kebab-case from the directory name is a fine default).
-2. **Strip every `"@nuxtinator/*"` line from `dependencies`.** Layers come in as workspace members (set up below), not as npm deps. Keep all the non-`@nuxtinator/` dependencies (`nuxt`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `tailwindcss`, `@iconify-json/*`, etc.) and the existing `devDependencies` (`@nuxt/eslint`, `vitest`, `playwright`, etc.).
-3. **Add `"workspaces": ["_layers/*"]`** at the top level. This is what hoists each fetched layer's deps to root `node_modules/` and symlinks `node_modules/@nuxtinator/<id>/`.
-4. **Replace the `scripts` block** with the setup-aware version below and **remove `postinstall: nuxt prepare`** entirely. Reason: postinstall would fire during the first `bun install` before layers are fetched, and `nuxt prepare` would error trying to extend non-existent paths. The `setup` script handles ordering correctly.
-5. **Add `giget` to `devDependencies`** (used by `scripts/sync-layers.ts`).
-6. **Create `bunfig.toml`** at the project root with:
-
-```toml
-[install]
-linker = "hoisted"
-```
-
-Bun 1.3+ defaults to the **isolated** linker for workspaces. Under isolated, cross-workspace deps appear in each member's local `node_modules/@nuxtinator/<id>/` (so a layer's own code can `import '@nuxtinator/core'`), but the **top-level** `node_modules/@nuxtinator/<id>/` symlinks **are not created**. Nuxt's `extends: [layer('@nuxtinator/core')]` resolves by package name from the project root — without the top-level symlink, the resolution fails and `nuxt prepare` errors with `Cannot find module '@nuxtinator/core'`. Hoisted mode restores the top-level symlinks and matches how the maintainer monorepo resolves. `bunfig.toml` is one of the few files this recipe genuinely needs at the project root.
-
-```jsonc
-{
-  "name": "my-project",
-  "private": true,
-  "type": "module",
-  "packageManager": "bun@1.3.14",
-  "workspaces": ["_layers/*"],
-  "scripts": {
-    "sync-layers": "bun run scripts/sync-layers.ts",
-    "setup": "bun install && bun run sync-layers && bun install",
-    "dev": "nuxt dev",
-    "build": "nuxt build",
-    "start": "bun .output/server/index.mjs",
-    "preview": "nuxt preview",
-    "typecheck": "nuxt typecheck",
-    "lint": "eslint .",
-    "seed": "bun run scripts/seed.ts",
-    "test": "nuxt prepare && node scripts/run-tests.mjs",
-    "test:watch": "nuxt prepare && vitest",
-    "test:e2e": "nuxt prepare && playwright test"
-  },
-  "dependencies": {
-    // ...all non-@nuxtinator/* deps from the scaffolded host...
-  },
-  "devDependencies": {
-    "giget": "^1.2.0"
-    // ...all the scaffolded devDeps...
-  }
-}
-```
-
-> **Critical: use `_layers/*`, not `.layers/*`** for the workspaces glob. Bun's workspaces follow minimatch's default `dot: false` and won't match dot-prefixed directories. `bun install` succeeds silently but no workspace symlinks are created — no error message, nothing works. This is the #1 footgun of this recipe.
-
-### Step 6.5: Write scripts/sync-layers.ts
-
-The fetcher script. Create the directory and the file:
+Pull the `prod/` directory from this repo into the user's project:
 
 ```bash
-mkdir -p scripts
+bunx giget github:corsacca/nuxtinator/prod . --force
 ```
+
+Run from the user's project directory. `giget` is used here only as a one-shot file-copy tool — it extracts the `prod/` subtree. The extracted template is **already wired with the consumer recipe**: `package.json` (workspaces glob + no `@nuxtinator/*` deps + `setup`/`sync-layers` scripts + `giget` devDep), `bunfig.toml` (`linker = "hoisted"`), `scripts/sync-layers.ts` (LAYERS map of giget URLs), `nuxt.config.ts` (`layer()` helper + `stripLayerTsconfigs` hook + `extends:` array of every available layer), `.env.example` (env superset), `.gitignore`, `tsconfig.json`, `eslint.config.mjs`, `public/favicon.ico`.
+
+You do NOT write any of these files from scratch. Steps 5–8 trim the template to what the user selected and customize branding.
+
+### Step 5: Trim nuxt.config.ts's `extends:` array
+
+The scaffolded `nuxt.config.ts` extends every available layer. Open it and **delete the `layer('@nuxtinator/<id>')` entries for layers the user did NOT select** — don't comment them out, delete entirely. Keep load order intact: `core` first; `tenancy` second (so its multi-mode kernel overrides core's single-mode); email backend; `oauth`; `mcp`; app layers; `dev` last (and remove `dev` before a production build).
+
+**Do not touch** the `layer()` helper, the `stripLayerTsconfigs()` function, the `hooks: { 'modules:before': … }` line, `modules:`, `runtimeConfig`, or anything else in `nuxt.config.ts`. That's all required infrastructure already correctly wired.
+
+### Step 6: Trim scripts/sync-layers.ts's `LAYERS` map (and rename the project)
+
+Open `scripts/sync-layers.ts`. The `LAYERS` map has an entry for every available layer:
 
 ```ts
-// scripts/sync-layers.ts
-import { downloadTemplate } from 'giget'
-
-declare const process: { env: Record<string, string | undefined>, exit: (code: number) => never }
-
-const REF = process.env.NUXTINATOR_REF || 'master'
-
-// All known layers. Keep the full map; SELECTED below is what's actually fetched.
-const SUBPATH: Record<string, string> = {
-  core:             'layers/core',
-  tenancy:          'layers/tenancy',
-  'email-mailgun':  'layers/email-mailgun',
-  oauth:            'layers/oauth',
-  mcp:              'layers/mcp',
-  dev:              'layers/dev',
-  calendar:         'layers/apps/calendar',
-  feedback:         'layers/apps/feedback',
-  kanban:           'layers/apps/kanban',
-  'list-of-100':    'layers/apps/list-of-100',
-  messages:         'layers/apps/messages',
-  videos:           'layers/apps/videos'
+const LAYERS: Record<string, string> = {
+  core:             `github:corsacca/nuxtinator/layers/core#${REF}`,
+  tenancy:          `github:corsacca/nuxtinator/layers/tenancy#${REF}`,
+  // …one entry per available layer…
 }
-
-// The layers this project uses — must match the entries in nuxt.config.ts's extends.
-const SELECTED: Array<keyof typeof SUBPATH> = [
-  'core',
-  'tenancy',
-  'email-mailgun',
-  'oauth',
-  'mcp',
-  'calendar',
-  'kanban',
-  // ...one entry per layer, in load order...
-  'dev'
-]
-
-for (const id of SELECTED) {
-  if (!SUBPATH[id]) {
-    console.error(`Unknown layer: ${id}`)
-    process.exit(1)
-  }
-  const url = `github:corsacca/nuxtinator/${SUBPATH[id]}#${REF}`
-  console.log(`Fetching ${id} from ${url}`)
-  await downloadTemplate(url, { dir: `_layers/${id}`, forceClean: true })
-}
-
-console.log(`\nFetched ${SELECTED.length} layers. Run 'bun install' to hoist their deps via workspaces.`)
 ```
 
-`forceClean: true` re-extracts each layer on every `sync-layers` run, keeping it in sync with the ref. The per-layer env override (`NUXTINATOR_<ID>_PATH`) is honored by `nuxt.config.ts`'s `layer()` helper at Nuxt-time — `sync-layers.ts` doesn't need to know about it.
+**Delete the entries for layers the user did NOT select.** The map key (id) must match (by package name) the layer the corresponding `layer('@nuxtinator/<id>')` call extends in `nuxt.config.ts`.
 
-**Two places to keep in sync** when adding/removing layers (note this to the user):
-- `SELECTED` in `scripts/sync-layers.ts`
-- `extends` in `nuxt.config.ts`
+If the user mentioned a layer not in the available-layers table — third-party, future Disciple.Tools layers in their own repo, an in-development layer in a sibling checkout — add a new `LAYERS` entry with the appropriate giget URL: `'github:other-org/some-layer#v1.0.0'`, `'file:../sibling-checkout'`, etc. Bun workspaces resolve cross-layer deps by package name across sources, so a third-party layer that lists `"@nuxtinator/core": "*"` finds it through the consumer's workspace as long as `core` is still a `LAYERS` entry.
+
+Also rename `package.json`'s `"name": "my-project"` to the user's project name (kebab-case from the directory name is a fine default).
+
+**Two places to keep in sync** when adding/removing layers later (mention this to the user): `LAYERS` in `scripts/sync-layers.ts` and `extends:` in `nuxt.config.ts`.
 
 Add `_layers/` to `.gitignore`:
 
@@ -428,18 +282,19 @@ node_modules
 _layers
 ```
 
-### Step 7: Generate .env.example
+### Step 7: Trim .env.example
 
-The scaffolded `.env.example` already contains the union of every layer's vars. Trim it down to just the vars for the layers the user selected:
+The scaffolded `.env.example` contains the union of every layer's vars. Trim it to the layers the user selected:
 
-- Always keep the **Core** block.
+- Always keep the **Core** block (`APP_TITLE`, `DATABASE_URL`, `JWT_SECRET`, `NUXT_SECRET_ENCRYPTION_KEY`, `NUXT_PUBLIC_SITE_URL`, `NODE_ENV`).
 - Keep `APP_DATABASE_URL` only if `tenancy` is selected.
-- Keep the `MAILGUN_*` and `SMTP_FROM*` block only if `email-mailgun` is selected.
+- Keep the `MAILGUN_*` + `SMTP_FROM*` block only if `email-mailgun` is selected.
 - Keep `OAUTH_*` only if `oauth` is selected.
 - Keep `MCP_*` only if `mcp` is selected.
-- Keep `S3_*` only if `apps/videos` or `apps/messages` is selected (or any other layer that uploads).
-- Leave the `NUXTINATOR_<ID>_PATH` block commented out — it's a per-layer local-override hint useful only to people hacking on a layer in a sibling checkout.
-- Add a commented `# NUXTINATOR_REF=master` line. The user can set it to a tag or SHA later for production pinning; the default if unset is `master`.
+- Keep `S3_*` only if a layer that uploads is selected (`videos`, `messages`, etc.).
+- Keep `NUXT_GOOGLE_*` only if `messages` (with Gmail) is selected.
+- Keep `NUXT_PUBLIC_FEEDBACK_PROJECT_ID` only if `feedback` is selected.
+- Leave the `# NUXTINATOR_REF=master` and `# NUXTINATOR_<ID>_PATH=...` blocks commented as scaffolded — both are advanced opt-ins (production ref pinning; per-layer sibling-checkout override).
 
 ### Step 8: Customize branding
 
@@ -455,7 +310,7 @@ bun run dev
 `bun run setup` runs the three-phase bootstrap defined in the `scripts` block:
 
 1. **`bun install`** — installs the consumer's root deps (nuxt + framework peers + giget). The `_layers/*` workspaces glob doesn't match yet (directory doesn't exist), so no layers are linked. Expect ~700–800 packages.
-2. **`bun run sync-layers`** — calls `giget` for each entry in `SELECTED`, extracting the layer's subpath from `github:corsacca/nuxtinator` into `_layers/<id>/`. Expect a "Fetching <id> from ..." line per layer.
+2. **`bun run sync-layers`** — calls `giget` for each entry in `LAYERS`, extracting from each entry's giget URL into `_layers/<id>/`. Expect a "Fetching <id> from ..." line per layer.
 3. **`bun install`** (second pass) — bun re-evaluates the workspaces glob, finds `_layers/<id>/` directories, reads each layer's `package.json`, merges their `dependencies` into the resolution graph, places everything in the root `node_modules/.bun/` content-addressable store, and symlinks each layer as `node_modules/@nuxtinator/<id>/`. Package count grows; `bun pm ls` shows `@nuxtinator/<id>@workspace:_layers/<id>` entries.
 
 After setup, verify:
@@ -481,11 +336,11 @@ After scaffolding is verified, tell the user:
 ### Things to **not** do
 
 - **Don't fork the layers.** The user fetches each via `sync-layers` into `_layers/<id>/`; they never own the layer source. The extracted host is the only thing they edit.
-- **Don't add layers to `extends:` (or to `SELECTED` in `sync-layers.ts`) that don't exist** in the available-layers table. If the user asks for something not on the list, say so and offer to scaffold a custom layer in their own repo (see [layers.md](documentation/layers.md)).
-- **Don't put `@nuxtinator/*` in the consumer's `package.json` `dependencies`** — not as `workspace:*` (only valid in this monorepo) and not as a `github:` URL (bun's `github:` dep protocol can't resolve a monorepo subpath; install will fail). Layers arrive as workspace members via the `_layers/*` glob in Step 6, not as npm deps.
-- **Don't use `.layers/*` for the workspaces glob.** Bun's minimatch doesn't match dot-prefixed dirs. Use `_layers/*` or any other non-dot name. There is no error if you get this wrong — `bun install` succeeds, no symlinks get made, nothing works.
-- **Don't skip `bunfig.toml`** with `linker = "hoisted"`. Bun 1.3+ defaults to the isolated linker, which doesn't create the top-level `node_modules/@nuxtinator/<id>` symlinks Nuxt needs to resolve `extends: [layer('@nuxtinator/core')]` by package name. Symptom: `nuxt prepare` errors with `Cannot find module '@nuxtinator/<id>'`. The fix is `linker = "hoisted"` in `bunfig.toml`.
-- **Don't leave `postinstall: nuxt prepare`** in the consumer's `package.json`. It runs before layers are fetched on the first install and errors trying to extend non-existent paths. The `setup` script orchestrates the right order; if the user wants `nuxt prepare` to run automatically after install, they need a real lifecycle hook that runs *after* `sync-layers`, not before.
+- **Don't add layers to `extends:` (or to `LAYERS` in `sync-layers.ts`) that don't exist** in the available-layers table — unless the user has explicitly given you a giget URL for a third-party / sibling-checkout layer. If the user asks for something not on the list and provides no URL, say so and offer to scaffold a custom layer in their own repo (see [layers.md](documentation/layers.md)).
+- **Don't add `@nuxtinator/*` to the consumer's `package.json` `dependencies`** — not as `workspace:*` (only valid in this monorepo) and not as a `github:` URL (bun's `github:` dep protocol can't resolve a monorepo subpath; install will fail). Layers arrive as workspace members via the `_layers/*` glob already wired in `package.json`'s `workspaces`, not as npm deps.
+- **Don't change the workspaces glob to `.layers/*`.** Bun's minimatch doesn't match dot-prefixed dirs. The template uses `_layers/*` for this exact reason. There is no error if you change it wrong — `bun install` succeeds, no symlinks get made, nothing works.
+- **Don't delete `bunfig.toml`** or change `linker = "hoisted"` to `"isolated"`. Bun 1.3+ defaults to isolated, which doesn't create the top-level `node_modules/@nuxtinator/<id>` symlinks Nuxt needs to resolve `extends: [layer('@nuxtinator/core')]` by package name. Symptom of getting this wrong: `nuxt prepare` errors with `Cannot find module '@nuxtinator/<id>'`.
+- **Don't add `postinstall: nuxt prepare`** to the consumer's `package.json`. It runs before layers are fetched on the first install and would error trying to extend non-existent paths. The `setup` script in the template orchestrates the right order — leave it alone.
 - **Don't pin to a SHA silently** — set `NUXTINATOR_REF` in `.env` for production pins and tell the user what they're pinned to so they can bump it deliberately.
 - **Don't commit `_layers/`** — it's a build-time artifact (re-fetched on every `sync-layers` run). Make sure `.gitignore` includes it.
 - **Don't run a production build** during scaffolding. Verify dev only.
