@@ -159,14 +159,6 @@ S3_BUCKET_NAME=
 S3_PUBLIC_BASE_URL=               # only for public files
 ```
 
-### Google OAuth (apps/messages with Gmail)
-
-```env
-NUXT_GOOGLE_CLIENT_ID=
-NUXT_GOOGLE_CLIENT_SECRET=
-NUXT_GOOGLE_OAUTH_REDIRECT_URI=http://localhost:2080/api/mail/accounts/google/callback
-```
-
 ---
 
 ## Documentation
@@ -320,6 +312,14 @@ The scaffolded `package.json` has every layer as `"@nuxtinator/<id>": "workspace
 3. **Add `"workspaces": ["_layers/*"]`** at the top level. This is what hoists each fetched layer's deps to root `node_modules/` and symlinks `node_modules/@nuxtinator/<id>/`.
 4. **Replace the `scripts` block** with the setup-aware version below and **remove `postinstall: nuxt prepare`** entirely. Reason: postinstall would fire during the first `bun install` before layers are fetched, and `nuxt prepare` would error trying to extend non-existent paths. The `setup` script handles ordering correctly.
 5. **Add `giget` to `devDependencies`** (used by `scripts/sync-layers.ts`).
+6. **Create `bunfig.toml`** at the project root with:
+
+```toml
+[install]
+linker = "hoisted"
+```
+
+Bun 1.3+ defaults to the **isolated** linker for workspaces. Under isolated, cross-workspace deps appear in each member's local `node_modules/@nuxtinator/<id>/` (so a layer's own code can `import '@nuxtinator/core'`), but the **top-level** `node_modules/@nuxtinator/<id>/` symlinks **are not created**. Nuxt's `extends: [layer('@nuxtinator/core')]` resolves by package name from the project root — without the top-level symlink, the resolution fails and `nuxt prepare` errors with `Cannot find module '@nuxtinator/core'`. Hoisted mode restores the top-level symlinks and matches how the maintainer monorepo resolves. `bunfig.toml` is one of the few files this recipe genuinely needs at the project root.
 
 ```jsonc
 {
@@ -438,7 +438,6 @@ The scaffolded `.env.example` already contains the union of every layer's vars. 
 - Keep `OAUTH_*` only if `oauth` is selected.
 - Keep `MCP_*` only if `mcp` is selected.
 - Keep `S3_*` only if `apps/videos` or `apps/messages` is selected (or any other layer that uploads).
-- Keep `NUXT_GOOGLE_*` only if `apps/messages` is selected.
 - Leave the `NUXTINATOR_<ID>_PATH` block commented out — it's a per-layer local-override hint useful only to people hacking on a layer in a sibling checkout.
 - Add a commented `# NUXTINATOR_REF=master` line. The user can set it to a tag or SHA later for production pinning; the default if unset is `master`.
 
@@ -463,7 +462,7 @@ After setup, verify:
 
 - `_layers/` contains a folder per selected layer with its source (`nuxt.config.ts`, `package.json`, the layer's own dirs).
 - `_layers/<id>/node_modules/` is a directory of **symlinks** pointing into `../../../node_modules/.bun/<pkg>@<v>/...` — NOT a populated install. If you see real package directories with content here, something's off (probably the dot-prefix footgun or a stale lockfile from a previous failed run; delete `bun.lock` + `node_modules` and retry).
-- `node_modules/@nuxtinator/<id>/` is a symlink to `../../_layers/<id>/`. `readlink node_modules/@nuxtinator/core` should confirm.
+- `node_modules/@nuxtinator/<id>/` is a symlink to `../../_layers/<id>/`. `readlink node_modules/@nuxtinator/core` should confirm. **If this is missing**, `bunfig.toml` is wrong or absent — bun 1.3 defaults to isolated linker which doesn't create these top-level symlinks.
 - `bun pm ls` lists `@nuxtinator/<id>@workspace:_layers/<id>` for each layer.
 - `bun run dev` boots Nuxt on port 2080.
 
@@ -485,6 +484,7 @@ After scaffolding is verified, tell the user:
 - **Don't add layers to `extends:` (or to `SELECTED` in `sync-layers.ts`) that don't exist** in the available-layers table. If the user asks for something not on the list, say so and offer to scaffold a custom layer in their own repo (see [layers.md](documentation/layers.md)).
 - **Don't put `@nuxtinator/*` in the consumer's `package.json` `dependencies`** — not as `workspace:*` (only valid in this monorepo) and not as a `github:` URL (bun's `github:` dep protocol can't resolve a monorepo subpath; install will fail). Layers arrive as workspace members via the `_layers/*` glob in Step 6, not as npm deps.
 - **Don't use `.layers/*` for the workspaces glob.** Bun's minimatch doesn't match dot-prefixed dirs. Use `_layers/*` or any other non-dot name. There is no error if you get this wrong — `bun install` succeeds, no symlinks get made, nothing works.
+- **Don't skip `bunfig.toml`** with `linker = "hoisted"`. Bun 1.3+ defaults to the isolated linker, which doesn't create the top-level `node_modules/@nuxtinator/<id>` symlinks Nuxt needs to resolve `extends: [layer('@nuxtinator/core')]` by package name. Symptom: `nuxt prepare` errors with `Cannot find module '@nuxtinator/<id>'`. The fix is `linker = "hoisted"` in `bunfig.toml`.
 - **Don't leave `postinstall: nuxt prepare`** in the consumer's `package.json`. It runs before layers are fetched on the first install and errors trying to extend non-existent paths. The `setup` script orchestrates the right order; if the user wants `nuxt prepare` to run automatically after install, they need a real lifecycle hook that runs *after* `sync-layers`, not before.
 - **Don't pin to a SHA silently** — set `NUXTINATOR_REF` in `.env` for production pins and tell the user what they're pinned to so they can bump it deliberately.
 - **Don't commit `_layers/`** — it's a build-time artifact (re-fetched on every `sync-layers` run). Make sure `.gitignore` includes it.
