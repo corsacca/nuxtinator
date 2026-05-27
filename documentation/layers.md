@@ -258,22 +258,40 @@ const { data } = await useFetch('/api/tasks')
 
 The default layout (host) renders the launcher rail + per-app sidebar around your page. Internal `<NuxtLink>`s preserve the `/@<slug>/` prefix automatically via the tenancy router guard.
 
-### 7. Wire it into `extends:`
+### 7. Wire it into the host
+
+Three places to update (in this order):
 
 ```ts
-// dev/nuxt.config.ts
-extends: [
-  layer('@nuxtinator/core'),
-  layer('@nuxtinator/tenancy'),     // optional — omit for single-tenant
-  layer('@nuxtinator/oauth'),
-  layer('@nuxtinator/mcp'),
-  layer('@nuxtinator/calendar'),
-  layer('@nuxtinator/kanban'),
-  layer('@nuxtinator/tasks')        // new
-]
+// 1. dev/layers.ts — add the new entry to LAYERS (in load order: app layers go after core/tenancy/email/oauth/mcp and before dev)
+export const LAYERS = [
+  { id: 'core',     pkg: '@nuxtinator/core' },
+  { id: 'tenancy',  pkg: '@nuxtinator/tenancy' },
+  { id: 'oauth',    pkg: '@nuxtinator/oauth' },
+  { id: 'mcp',      pkg: '@nuxtinator/mcp' },
+  { id: 'calendar', pkg: '@nuxtinator/calendar' },
+  { id: 'kanban',   pkg: '@nuxtinator/kanban' },
+  { id: 'tasks',    pkg: '@nuxtinator/tasks' },   // new
+  { id: 'dev',      pkg: '@nuxtinator/dev' }
+] as const
 ```
 
-The `layer()` helper passes the package name through to node module resolution; set `NUXTINATOR_TASKS_PATH=…` in `dev/.env` to point this layer at a sibling checkout. Add `"@nuxtinator/tasks": "workspace:*"` to `dev/package.json` and the `layers/apps/tasks` path to the root workspaces array first.
+```jsonc
+// 2. dev/package.json — add the workspace dep so bun creates the symlink
+"dependencies": {
+  // ...
+  "@nuxtinator/tasks": "workspace:*"
+}
+```
+
+```jsonc
+// 3. package.json (root) — add to the workspaces array
+"workspaces": ["dev", ..., "layers/apps/tasks"]
+```
+
+`dev/nuxt.config.ts`'s `extends:` is derived from `LAYERS.map(l => layer(l.pkg))` — don't edit it directly. The `layer()` helper passes the package name through to node module resolution; set `NUXTINATOR_TASKS_PATH=…` in `dev/.env` to point this layer at a sibling checkout instead of the workspace symlink.
+
+For downstream consumers, also add a matching entry to [prod/layers.ts](../prod/layers.ts) — same `{ id, pkg }` plus a `url` field with the giget source.
 
 ### 8. Install + restart
 
@@ -456,11 +474,13 @@ Permission strings use `.` (one namespace shared with OAuth/MCP scopes). DB tabl
 
 **Install:**
 1. Add `"layers/apps/<id>"` to the `workspaces` array in the root [package.json](../package.json).
-2. Add `layer('apps/<id>')` to `extends:` in [dev/nuxt.config.ts](../dev/nuxt.config.ts).
-3. `bun install` from root, then `bun dev` (or restart). Migrations run, the layer's plugin registers permissions/default-grants/app meta/nav/admin sections/static roles.
+2. Add `"@nuxtinator/<id>": "workspace:*"` to `dev/package.json`'s `dependencies`.
+3. Add `{ id: '<id>', pkg: '@nuxtinator/<id>' }` to the `LAYERS` array in [dev/layers.ts](../dev/layers.ts) (in load order).
+4. `bun install` from root, then `bun dev` (or restart). Migrations run, the layer's plugin registers permissions/default-grants/app meta/nav/admin sections/static roles.
+5. For consumers, mirror step 3 in [prod/layers.ts](../prod/layers.ts) with a `url` field (giget source).
 
 **Uninstall:**
-1. Remove the entry from `extends:` and from the workspace list in root `package.json`.
+1. Remove the entry from `LAYERS` in `dev/layers.ts`, from `dev/package.json`'s deps, and from the workspace list in root `package.json`.
 2. Restart. Registrations evaporate; the app disappears from the launcher.
 3. **Migrations and tables are not auto-reverted.** Run a manual rollback if you want to fully tear down. Custom-role rows referencing the layer's permissions silently shed those strings (the runtime filters orphaned permissions through `isRegisteredPermission()`).
 

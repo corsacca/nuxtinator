@@ -127,7 +127,7 @@ If you start single and later want multi-tenant:
 
 1. Provision the `host_admin` and `app_user` Postgres roles (see [tenancy.md](tenancy.md) for the SQL).
 2. Set `APP_DATABASE_URL` and `NUXT_TENANT_FLOW_SECRET` env vars.
-3. Add `layer('tenancy')` to `extends:` in `dev/nuxt.config.ts` (must come **first** in the list, right after `layer('core')`). Also add `"layers/tenancy"` to the workspaces array in the root `package.json`.
+3. Add `{ id: 'tenancy', pkg: '@nuxtinator/tenancy' }` to the `LAYERS` array in `dev/layers.ts` (must come **second** in the list, right after `core`, so its multi-mode kernel overrides core's single-mode). Also add `"@nuxtinator/tenancy": "workspace:*"` to `dev/package.json`'s deps and `"layers/tenancy"` to the workspaces array in the root `package.json`. For a consumer project, add the matching entry to `prod/layers.ts` instead.
 4. Run `bun dev` once. The tenancy layer's migrations run, including retrofits that add `org_id` columns and RLS policies to existing tables. The first user becomes a member of a freshly-created default org.
 
 This is a forward-only migration. There's no automated path back from multi-tenant to single-tenant — once `org_id` columns and RLS policies are added, removing them needs manual SQL.

@@ -1,6 +1,6 @@
 # Dev setup
 
-How to get this repo running locally, and the moving parts that make it work.
+How to work on **this repo** (the nuxtinator monorepo) — develop layers, iterate on the maintainer host. If you instead want to start a new project that *consumes* nuxtinator layers, see [getting-started.md](getting-started.md).
 
 ## Quick start
 
@@ -8,7 +8,7 @@ How to get this repo running locally, and the moving parts that make it work.
 git clone <this repo>
 cd go-saas
 bun install                                          # installs the bun workspace
-cp dev/.env.example dev/.env                       # then fill in DATABASE_URL etc.
+cp dev/.env.example dev/.env                         # then fill in DATABASE_URL etc.
 cd dev && bun run dev
 ```
 
@@ -18,24 +18,31 @@ Dev server: <http://localhost:2080>.
 
 ```
 go-saas/
-├── package.json         ← workspace root (lists host + layers as workspaces)
+├── package.json         ← workspace root (lists dev + layers as workspaces)
 ├── bun.lock             ← single lockfile for the whole monorepo
-├── bunfig.toml          ← linker = "hoisted" so layers see host's peer deps
+├── bunfig.toml          ← linker = "hoisted" so layers see dev's peer deps
 ├── node_modules/        ← hoisted; layers resolve deps from here
-├── dev/                ← the Nuxt app shell. cwd for all dev/build commands.
-│   ├── nuxt.config.ts
-│   ├── package.json     ← host-only deps (nuxt, ui, kysely/postgres, tailwind)
+│
+├── dev/                 ← maintainer's dev host (was host/ — cwd for all dev/build commands)
+│   ├── layers.ts        ← LAYERS array (id + pkg per layer) — source of truth for extends:
+│   ├── nuxt.config.ts   ← imports LAYERS; extends: derived
+│   ├── package.json     ← dev-only deps (nuxt, ui, kysely/postgres, tailwind) + workspace:* refs
 │   └── .env, .env.example
-└── layers/              ← reusable layers (siblings of host)
+│
+├── prod/                ← consumer-starter template (copied by downstream projects via giget)
+│                          NOT used for dev-on-the-monorepo work; see getting-started.md
+│
+└── layers/              ← reusable layers (siblings of dev/ and prod/)
     ├── core/            ← always-on foundation
     │   └── package.json ← bcrypt, jsonwebtoken, s3-lite-client; nuxt/kit/ui/kysely peer
     ├── tenancy/         ← optional multi-tenant (peer-deps only)
     ├── email-mailgun/   ← optional email backend (nodemailer + mailgun transport)
-    ├── oauth/, mcp/, dev/
-    └── apps/calendar/, apps/kanban/, apps/messages/, apps/videos/
+    ├── oauth/, mcp/, dev/   (note: `layers/dev/` is the @nuxtinator/dev UI-sandbox layer —
+    │                         distinct from the top-level `dev/` host folder)
+    └── apps/calendar/, apps/kanban/, apps/messages/, apps/videos/, apps/feedback/, apps/list-of-100/
 ```
 
-Each layer has its own `package.json` declaring exactly what it imports — layer-private deps in `dependencies`, framework/DB singletons in `peerDependencies` so they resolve to the host's installed copy.
+Each layer has its own `package.json` declaring exactly what it imports — layer-private deps in `dependencies`, cross-layer deps as `workspace:*` (e.g. `"@nuxtinator/core": "workspace:*"`), and framework/DB singletons in `peerDependencies` so they resolve to dev's installed copy.
 
 Run all dev/build commands from `dev/`:
 
@@ -49,20 +56,33 @@ bun run typecheck    # vue-tsc / nuxt typecheck
 
 ## How layers are wired
 
-Each layer is a named workspace package — `@nuxtinator/<id>` with `exports: { ".": "./nuxt.config.ts" }`. [dev/nuxt.config.ts](../dev/nuxt.config.ts) lists each in `extends:` by package name; Nuxt resolves the name through standard node module resolution against `node_modules/`:
+Each layer is a named workspace package — `@nuxtinator/<id>` with `exports: { ".": "./nuxt.config.ts" }`. [dev/layers.ts](../dev/layers.ts) is the **single source of truth** for which layers `dev/` extends:
 
 ```ts
+// dev/layers.ts
+export const LAYERS = [
+  { id: 'core',     pkg: '@nuxtinator/core' },
+  { id: 'tenancy',  pkg: '@nuxtinator/tenancy' },
+  // ...one entry per layer dev/ uses, in load order...
+] as const
+```
+
+[dev/nuxt.config.ts](../dev/nuxt.config.ts) imports `LAYERS` and derives `extends:`:
+
+```ts
+import { LAYERS } from './layers'
+
 function layer(pkg: string): string {
   const envKey = pkg.replace(/^@/, '').replace(/[/-]/g, '_').toUpperCase() + '_PATH'
   return process.env[envKey] || pkg
 }
 
-extends: [layer('@nuxtinator/core'), layer('@nuxtinator/tenancy'), ...]
+extends: LAYERS.map(l => layer(l.pkg))
 ```
 
-In this repo, each `@nuxtinator/*` is declared as `workspace:*` in [dev/package.json](../dev/package.json), so bun symlinks `node_modules/@nuxtinator/<id>/` to `layers/<id>/`. The same `extends:` line also works when a package arrives via npm tarball or a `github:org/repo#ref` URL in a downstream consumer's deps — one resolution mode for all three sources.
+In this repo, each `@nuxtinator/*` is also declared as `workspace:*` in [dev/package.json](../dev/package.json), so bun symlinks `node_modules/@nuxtinator/<id>/` to `layers/<id>/`. **`dev/layers.ts` and `dev/package.json`'s deps block must agree** — bun needs the explicit dep entry to create the symlink, and Nuxt needs the `LAYERS` entry to extend. The same `extends:` line also works when a package arrives via npm tarball or a `github:org/repo#ref` URL in a downstream consumer's deps — one resolution mode for all three sources.
 
-Each layer's `package.json` declares its real cross-layer deps (`"@nuxtinator/core": "workspace:*"`) and its layer-private deps. Framework/DB singletons (`nuxt`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `vue`, `tailwindcss`) stay in `peerDependencies` so they resolve to host's single copy.
+Each layer's `package.json` declares its real cross-layer deps (`"@nuxtinator/core": "workspace:*"`) and its layer-private deps. Framework/DB singletons (`nuxt`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `vue`, `tailwindcss`) stay in `peerDependencies` so they resolve to dev's single copy.
 
 ### Per-layer local override
 
@@ -84,8 +104,10 @@ The `layer()` helper reads it and returns that path instead of the package name.
    - `peerDependencies` for shared singletons (`nuxt`, `vue`, `kysely`, etc.)
 2. Add `"layers/<id>"` to the `workspaces` array in the root [package.json](../package.json).
 3. Add `"@nuxtinator/<id>": "workspace:*"` to `dev/package.json` `dependencies`.
-4. Add `layer('@nuxtinator/<id>')` to `extends:` in [dev/nuxt.config.ts](../dev/nuxt.config.ts).
+4. Add `{ id: '<id>', pkg: '@nuxtinator/<id>' }` to the `LAYERS` array in [dev/layers.ts](../dev/layers.ts) (in load order). **Do not** edit `dev/nuxt.config.ts`'s `extends:` array directly — it's derived from `LAYERS`.
 5. `bun install` from root, then `cd dev && bun run dev`.
+
+For the consumer-side `prod/` template, also add a matching entry to [prod/layers.ts](../prod/layers.ts) so downstream projects can opt into the new layer. The shape there has an additional `url` field (the giget source URL).
 
 ## Common errors
 
