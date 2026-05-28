@@ -1,13 +1,13 @@
 import { sql } from 'kysely'
 import { randomUUID } from 'node:crypto'
 import type { Kysely } from 'kysely'
-import type { SeedContext } from '../../../core/seeds/types'
+import type { SeedContext } from '#core/seeds/types'
 import type {
   MessagesConversationsTable,
   MessagesConversationMembersTable,
   MessagesItemsTable
 } from '../server/database/schema'
-import type { NotificationsTable } from '../../../core/server/database/schema'
+import type { NotificationsTable } from '#core/server/database/schema'
 
 // Untyped pass-through: tenancy mode adds an `org_id` column at runtime
 // that isn't reflected in this layer's compile-time schema, so we widen

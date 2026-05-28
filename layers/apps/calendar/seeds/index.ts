@@ -1,4 +1,4 @@
-import type { SeedContext } from '../../../core/seeds/types'
+import type { SeedContext } from '#core/seeds/types'
 
 // Calendar layer has no DB tables (events come from connected sources at
 // runtime). Nothing to seed — keep this stub as the layer's seed contract

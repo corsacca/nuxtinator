@@ -12,6 +12,7 @@
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "typecheck": "nuxt typecheck",
+    "verify-layers": "bun run ../scripts/verify-layers.ts",
     "seed": "bun run scripts/seed.ts",
     "test": "nuxt prepare && node scripts/run-tests.mjs",
     "test:watch": "nuxt prepare && vitest",

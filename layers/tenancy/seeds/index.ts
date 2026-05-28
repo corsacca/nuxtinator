@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import type { SeedContext } from '../../core/seeds/types'
+import type { SeedContext } from '#core/seeds/types'
 import type { OrgsTable, MembershipsTable, OrgAppsTable } from '../server/database/schema'
-import type { CustomRolesTable, AppsTable } from '../../core/server/database/schema'
+import type { CustomRolesTable, AppsTable } from '#core/server/database/schema'
 
 interface TenancyDb {
   orgs: OrgsTable
