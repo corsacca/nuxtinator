@@ -28,6 +28,7 @@ logs
 .layers
 docs
 context
+!layers/apps/context
 
 # Test artifacts
 test-results/

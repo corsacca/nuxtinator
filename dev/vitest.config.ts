@@ -62,7 +62,8 @@ export default defineConfig({
       layerProject('messages', '../layers/apps/messages/tests'),
       layerProject('videos', '../layers/apps/videos/tests'),
       layerProject('feedback', '../layers/apps/feedback/tests'),
-      layerProject('list-of-100', '../layers/apps/list-of-100/tests')
+      layerProject('list-of-100', '../layers/apps/list-of-100/tests'),
+      layerProject('context', '../layers/apps/context/tests')
     ]
   }
 })
