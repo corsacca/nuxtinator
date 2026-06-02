@@ -5,7 +5,7 @@
     "": {
       "name": "Apps",
     },
-    "host": {
+    "dev": {
       "name": "go-saas",
       "dependencies": {
         "@iconify-json/lucide": "^1.2.104",
@@ -14,7 +14,7 @@
         "@nuxtinator/calendar": "workspace:*",
         "@nuxtinator/core": "workspace:*",
         "@nuxtinator/dev": "workspace:*",
-        "@nuxtinator/email-mailgun": "workspace:*",
+        "@nuxtinator/email-cloudflare": "workspace:*",
         "@nuxtinator/feedback": "workspace:*",
         "@nuxtinator/kanban": "workspace:*",
         "@nuxtinator/list-of-100": "workspace:*",
@@ -45,8 +45,8 @@
     },
     "layers/apps/calendar": {
       "name": "@nuxtinator/calendar",
-      "dependencies": {
-        "@nuxtinator/core": "workspace:*",
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "nuxt": "^4.0.0",
@@ -55,8 +55,8 @@
     },
     "layers/apps/feedback": {
       "name": "@nuxtinator/feedback",
-      "dependencies": {
-        "@nuxtinator/core": "workspace:*",
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "h3": "^1.0.0",
@@ -67,8 +67,8 @@
     },
     "layers/apps/kanban": {
       "name": "@nuxtinator/kanban",
-      "dependencies": {
-        "@nuxtinator/core": "workspace:*",
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "nuxt": "^4.0.0",
@@ -78,9 +78,11 @@
     "layers/apps/list-of-100": {
       "name": "@nuxtinator/list-of-100",
       "dependencies": {
-        "@nuxtinator/core": "workspace:*",
         "apexcharts": "^5.10.0",
         "vue3-apexcharts": "^1.11.0",
+      },
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "h3": "^1.0.0",
@@ -94,11 +96,13 @@
       "name": "@nuxtinator/messages",
       "dependencies": {
         "@emoji-mart/data": "^1.2.1",
-        "@nuxtinator/core": "workspace:*",
         "croner": "^9.0.0",
         "dompurify": "^3.2.0",
         "emoji-mart": "^5.6.0",
         "marked": "^14.1.0",
+      },
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "h3": "^1.0.0",
@@ -111,10 +115,12 @@
     "layers/apps/videos": {
       "name": "@nuxtinator/videos",
       "dependencies": {
-        "@nuxtinator/core": "workspace:*",
         "fix-webm-duration": "^1.0.6",
         "mediabunny": "^1.25.1",
         "uuid": "^12.0.0",
+      },
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "h3": "^1.0.0",
@@ -153,16 +159,35 @@
         "vue": "^3.0.0",
       },
     },
+    "layers/email-cloudflare": {
+      "name": "@nuxtinator/email-cloudflare",
+      "dependencies": {
+        "nodemailer": "^7.0.6",
+      },
+      "devDependencies": {
+        "@types/nodemailer": "^7.0.1",
+      },
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
+      },
+      "peerDependencies": {
+        "@nuxt/kit": "^4.0.0",
+        "h3": "^1.0.0",
+        "nuxt": "^4.0.0",
+      },
+    },
     "layers/email-mailgun": {
       "name": "@nuxtinator/email-mailgun",
       "dependencies": {
-        "@nuxtinator/core": "workspace:*",
         "nodemailer": "^7.0.6",
         "nodemailer-mailgun-transport": "^2.1.5",
       },
       "devDependencies": {
         "@types/nodemailer": "^7.0.1",
         "@types/nodemailer-mailgun-transport": "^1.4.6",
+      },
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "@nuxt/kit": "^4.0.0",
@@ -175,8 +200,6 @@
       "version": "0.1.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.20.0",
-        "@nuxtinator/core": "workspace:*",
-        "@nuxtinator/oauth": "workspace:*",
         "zod": "^3.23.0",
         "zod-to-json-schema": "^3.23.0",
       },
@@ -186,6 +209,10 @@
         "@vitest/ui": "^3.2.0",
         "supertest": "^7.2.2",
         "vitest": "^3.2.0",
+      },
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
+        "@nuxtinator/oauth": "*",
       },
       "peerDependencies": {
         "@nuxt/kit": "^4.0.0",
@@ -199,8 +226,8 @@
     "layers/oauth": {
       "name": "@nuxtinator/oauth",
       "version": "0.1.0",
-      "dependencies": {
-        "@nuxtinator/core": "workspace:*",
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "@nuxt/ui": "^4.0.0",
@@ -212,8 +239,8 @@
     },
     "layers/tenancy": {
       "name": "@nuxtinator/tenancy",
-      "dependencies": {
-        "@nuxtinator/core": "workspace:*",
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
       },
       "peerDependencies": {
         "@nuxt/kit": "^4.0.0",
@@ -498,6 +525,8 @@
     "@nuxtinator/core": ["@nuxtinator/core@workspace:layers/core"],
 
     "@nuxtinator/dev": ["@nuxtinator/dev@workspace:layers/dev"],
+
+    "@nuxtinator/email-cloudflare": ["@nuxtinator/email-cloudflare@workspace:layers/email-cloudflare"],
 
     "@nuxtinator/email-mailgun": ["@nuxtinator/email-mailgun@workspace:layers/email-mailgun"],
 
@@ -1565,7 +1594,7 @@
 
     "globby": ["globby@16.2.0", "", { "dependencies": { "@sindresorhus/merge-streams": "4.0.0", "fast-glob": "3.3.3", "ignore": "7.0.5", "is-path-inside": "4.0.0", "slash": "5.1.0", "unicorn-magic": "0.4.0" } }, "sha512-QrJia2qDf5BB/V6HYlDTs0I0lBahyjLzpGQg3KT7FnCdTonAyPy2RtY802m2k4ALx6Dp752f82WsOczEVr3l6Q=="],
 
-    "go-saas": ["go-saas@workspace:host"],
+    "go-saas": ["go-saas@workspace:dev"],
 
     "gopd": ["gopd@1.2.0", "", {}, "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg=="],
 

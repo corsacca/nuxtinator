@@ -23,7 +23,7 @@
 export const LAYERS = [
   { id: 'core',            pkg: '@nuxtinator/core' },
   { id: 'tenancy',         pkg: '@nuxtinator/tenancy' },
-  { id: 'email-mailgun',   pkg: '@nuxtinator/email-mailgun' },
+  { id: 'email-cloudflare', pkg: '@nuxtinator/email-cloudflare' }, // email backend — swap to '@nuxtinator/email-mailgun' for Mailgun
   { id: 'oauth',           pkg: '@nuxtinator/oauth' },
   { id: 'mcp',             pkg: '@nuxtinator/mcp' },
   { id: 'calendar',        pkg: '@nuxtinator/calendar' },
