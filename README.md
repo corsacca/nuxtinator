@@ -27,9 +27,11 @@ claude
 Point it at this repo and describe what you want:
 
 ```
-Build a Nuxt app from nuxtinator at
-https://github.com/corsacca/nuxtinator
+Read https://raw.githubusercontent.com/corsacca/nuxtinator/master/README.md and follow its assembly instructions to scaffold a new Nuxt app.
+```
 
+Optionally include which layers you want:
+```
 I want multi-tenant orgs, Mailgun email, OAuth + MCP,
 and the calendar and kanban apps.
 ```
@@ -42,7 +44,7 @@ Once Claude finishes, fill in your `.env` and start the dev server:
 
 ```bash
 cp .env.example .env   # then fill in real values (DATABASE_URL, JWT_SECRET, …)
-bun install
+bun run setup          # install deps + fetch layers into _layers/ (idempotent; safe to re-run)
 bun run dev
 ```
 
@@ -241,10 +243,10 @@ A few things to confirm:
 Pull the `prod/` directory from this repo into the user's project:
 
 ```bash
-bunx giget github:corsacca/nuxtinator/prod . --force
+bunx giget github:corsacca/nuxtinator/prod#master . --force
 ```
 
-Run from the user's project directory. `giget` is used here only as a one-shot file-copy tool — it extracts the `prod/` subtree. The extracted template is **already wired with the consumer recipe**:
+The `#master` ref is required: giget defaults to `main`, but this repo's default branch is `master`, so a bare command 404s. Run from the user's project directory. `giget` is used here only as a one-shot file-copy tool — it extracts the `prod/` subtree. The extracted template is **already wired with the consumer recipe**:
 
 - **`layers.ts`** — the **single source of truth for layer selection**. A `LAYERS` array with one entry per available layer. Both files below import from it. This is the only file Step 5 touches.
 - `nuxt.config.ts` — derives `extends:` from `LAYERS`; has the `layer()` helper + `stripLayerTsconfigs` hook.
@@ -252,6 +254,7 @@ Run from the user's project directory. `giget` is used here only as a one-shot f
 - `package.json` — `workspaces: ["_layers/*"]`, no `@nuxtinator/*` deps, `setup` + `sync-layers` scripts, `giget` devDep.
 - `bunfig.toml` — `linker = "hoisted"` (required for name-based extends to resolve).
 - `.env.example`, `.gitignore`, `tsconfig.json`, `eslint.config.mjs`, `public/favicon.ico`.
+- `CLAUDE.md` — a short host-author guide (cross-layer aliases, where the user's own code goes, "edit `layers.ts` not `extends:`"). Copied in as-is so future sessions in the project start oriented; leave it.
 
 You do NOT write any of these files from scratch. Steps 5–8 trim the template to what the user selected and customize branding.
 
@@ -316,6 +319,11 @@ After setup, verify:
 - `node_modules/@nuxtinator/<id>/` is a symlink to `../../_layers/<id>/`. `readlink node_modules/@nuxtinator/core` should confirm. **If this is missing**, `bunfig.toml` is wrong or absent — bun 1.3 defaults to isolated linker which doesn't create these top-level symlinks.
 - `bun pm ls` lists `@nuxtinator/<id>@workspace:_layers/<id>` for each layer.
 - `bun run dev` boots Nuxt on port 2080.
+
+**Expected benign output — don't treat these as failures:**
+
+- **`bun` blocks ~2 postinstalls** (`@parcel/watcher`, `unrs-resolver`) on the first install — that's bun's default for untrusted lifecycle scripts. Both ship prebuilt binaries, so dev still boots. Leave them blocked; only run `bun pm trust @parcel/watcher unrs-resolver` if you later hit a native-watcher error.
+- **Without a filled `.env`, boot logs warnings, not errors** — `DATABASE_URL not set, skipping migrations` and (if `oauth` is loaded) `[oauth-layer] NUXT_PUBLIC_SITE_URL not set — OAuth server disabled`. Both are expected pre-configuration; a `200` on `http://localhost:2080/` means the boot succeeded.
 
 **If migrations fail** because the user hasn't filled in `DATABASE_URL` yet, that's expected — note it in your wrap-up. Stop the dev server before reporting back (don't leave it running in the background).
 

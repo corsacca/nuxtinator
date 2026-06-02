@@ -12,7 +12,8 @@ If instead you want to work on the layers themselves, see [dev-setup.md](dev-set
 
 ```bash
 # 1. Pull the prod template from the nuxtinator repo into a new project
-bunx giget github:corsacca/nuxtinator/prod my-app
+#    (#master is required — giget defaults to main, but this repo uses master)
+bunx giget github:corsacca/nuxtinator/prod#master my-app
 cd my-app
 
 # 2. Pick which layers you want (the only file you edit for layer selection)
