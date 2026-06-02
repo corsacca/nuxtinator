@@ -184,6 +184,22 @@ export async function withProjectOrgContext<T>(
   return await db.transaction().execute(fn)
 }
 
+// Resolve the org that owns an arbitrary record and run `fn` in its context.
+// In single mode this is just `db.transaction()` — there is no org concept, so
+// the table/id/idColumn opts are ignored and `fn` queries the row itself. In
+// multi mode (overridden by the tenancy layer) the record's `org_id` is
+// resolved via BYPASSRLS and `SET LOCAL app.current_org` is run before
+// yielding. Used by operator-admin endpoints and public token routes (e.g.
+// the files layer's share-link reader) that must reach an RLS-protected row
+// without an authenticated tenant request.
+export async function withRecordOrgContext<T>(
+  _event: H3Event,
+  _opts: { table: string, id: string, idColumn?: string, notFoundMessage?: string },
+  fn: (tx: Transaction<Database>) => Promise<T>
+): Promise<T> {
+  return await db.transaction().execute(fn)
+}
+
 // Migration helper. In single mode this is a no-op — single deploys don't
 // have an `orgs` table to reference and don't need RLS. Per-app tenancy
 // migrations call this from inside `*_T<NNN>_*.ts` files; those files are

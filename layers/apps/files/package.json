@@ -1,0 +1,23 @@
+{
+  "name": "@nuxtinator/files",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./nuxt.config.ts",
+    "./test-helpers": "./tests/helpers/index.ts"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.0",
+    "marked": "^14.1.0"
+  },
+  "optionalDependencies": {
+    "@nuxtinator/core": "*"
+  },
+  "peerDependencies": {
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "nuxt": "^4.0.0",
+    "vue": "^3.0.0",
+    "zod": "^3.23.0"
+  }
+}
