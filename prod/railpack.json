@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "steps": {
+    "install": {
+      "inputs": [
+        { "step": "packages:mise" },
+        { "local": true, "include": ["package.json", "bun.lock"] }
+      ],
+      "commands": ["bun install"]
+    },
+    "build": {
+      "inputs": [
+        { "step": "install" },
+        { "local": true, "include": ["."] }
+      ],
+      "commands": [
+        "bun run sync-layers",
+        "bun install",
+        "bun run build"
+      ]
+    }
+  },
+  "deploy": {
+    "startCommand": "bun .output/server/index.mjs",
+    "aptPackages": ["libatomic1"]
+  }
+}
