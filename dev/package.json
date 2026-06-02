@@ -28,6 +28,7 @@
     "@nuxtinator/dev": "workspace:*",
     "@nuxtinator/email-mailgun": "workspace:*",
     "@nuxtinator/feedback": "workspace:*",
+    "@nuxtinator/files": "workspace:*",
     "@nuxtinator/kanban": "workspace:*",
     "@nuxtinator/list-of-100": "workspace:*",
     "@nuxtinator/mcp": "workspace:*",
