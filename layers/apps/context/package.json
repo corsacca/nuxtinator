@@ -1,0 +1,32 @@
+{
+  "name": "@nuxtinator/context",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./nuxt.config.ts",
+    "./test-helpers": "./tests/helpers/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "archiver": "^7.0.1",
+    "dompurify": "^3.2.0",
+    "marked": "^14.1.0"
+  },
+  "optionalDependencies": {
+    "@nuxtinator/core": "*",
+    "@nuxtinator/tenancy": "*",
+    "@nuxtinator/mcp": "*"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "jszip": "^3.10.1"
+  },
+  "peerDependencies": {
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "nuxt": "^4.0.0",
+    "postgres": "^3.4.0",
+    "vue": "^3.0.0",
+    "zod": "^3.23.0"
+  }
+}

@@ -33,5 +33,6 @@ export const LAYERS = [
   { id: 'feedback',        pkg: '@nuxtinator/feedback' },
   { id: 'list-of-100',     pkg: '@nuxtinator/list-of-100' },
   { id: 'files',           pkg: '@nuxtinator/files' },
+  { id: 'context',         pkg: '@nuxtinator/context' },
   { id: 'dev',             pkg: '@nuxtinator/dev' }
 ] as const

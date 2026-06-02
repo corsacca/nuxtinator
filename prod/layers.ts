@@ -33,6 +33,7 @@ export const LAYERS = [
   { id: 'messages',        pkg: '@nuxtinator/messages',       url: `github:corsacca/nuxtinator/layers/apps/messages#${REF}` },
   { id: 'videos',          pkg: '@nuxtinator/videos',         url: `github:corsacca/nuxtinator/layers/apps/videos#${REF}` },
   { id: 'files',           pkg: '@nuxtinator/files',          url: `github:corsacca/nuxtinator/layers/apps/files#${REF}` },
+  { id: 'context',         pkg: '@nuxtinator/context',        url: `github:corsacca/nuxtinator/layers/apps/context#${REF}` },
   { id: 'dev',             pkg: '@nuxtinator/dev',            url: `github:corsacca/nuxtinator/layers/dev#${REF}` }
 
   // Example third-party / sibling-checkout entries (uncomment + edit to use):
