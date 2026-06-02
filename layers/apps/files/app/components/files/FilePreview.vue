@@ -6,6 +6,7 @@ import { formatBytes, iconForItem, type FilesItemDetail } from '../../composable
 const props = defineProps<{ item: FilesItemDetail }>()
 
 const isImage = computed(() => (props.item.mime ?? '').startsWith('image/'))
+const lightboxOpen = ref(false)
 </script>
 
 <template>
@@ -14,8 +15,15 @@ const isImage = computed(() => (props.item.mime ?? '').startsWith('image/'))
       v-if="isImage && item.url"
       :src="item.url"
       :alt="item.title"
-      class="max-w-full max-h-[85vh] rounded-lg border border-(--ui-border)"
+      class="max-w-full max-h-[85vh] rounded-lg border border-(--ui-border) cursor-zoom-in"
+      @click="lightboxOpen = true"
     >
+    <FilesImageLightbox
+      v-if="isImage && item.url"
+      v-model:open="lightboxOpen"
+      :src="item.url"
+      :alt="item.title"
+    />
 
     <div
       v-else

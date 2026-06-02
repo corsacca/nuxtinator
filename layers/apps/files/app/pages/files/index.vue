@@ -82,23 +82,41 @@ async function createNewDoc() {
 const dropFiles = ref<File[] | null>(null)
 const uploading = ref(false)
 
+// Markdown files are imported as editable docs rather than stored uploads.
+function isMarkdown(file: File): boolean {
+  return /\.(md|markdown)$/i.test(file.name) || file.type === 'text/markdown'
+}
+
 async function uploadFiles(files: File[]) {
   uploading.value = true
   let ok = 0
+  let lastDocId: string | null = null
   try {
     for (const file of files) {
-      const fd = new FormData()
-      fd.append('file', file)
       try {
-        await $fetch('/api/files/uploads', { method: 'POST', body: fd })
+        if (isMarkdown(file)) {
+          const body_md = await file.text()
+          const title = file.name.replace(/\.(md|markdown)$/i, '') || file.name
+          const res = await createDoc({ title, body_md })
+          lastDocId = res.item.id
+        } else {
+          const fd = new FormData()
+          fd.append('file', file)
+          await $fetch('/api/files/uploads', { method: 'POST', body: fd })
+        }
         ok++
       } catch (e) {
         toast.add({ title: `${file.name}: ${errMsg(e)}`, color: 'error' })
       }
     }
+    // A lone markdown drop lands straight in the editor.
+    if (ok === 1 && files.length === 1 && lastDocId) {
+      await navigateTo(`/files/${lastDocId}`)
+      return
+    }
     if (ok > 0) {
       await load()
-      toast.add({ title: ok === 1 ? 'File uploaded' : `${ok} files uploaded`, color: 'success' })
+      toast.add({ title: ok === 1 ? 'Added' : `${ok} files added`, color: 'success' })
     }
   } finally {
     uploading.value = false

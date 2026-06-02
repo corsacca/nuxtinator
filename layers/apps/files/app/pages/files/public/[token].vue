@@ -21,6 +21,7 @@ const error = ref<string | null>(null)
 const isImage = computed(() =>
   item.value?.kind === 'file' && (item.value.mime ?? '').startsWith('image/')
 )
+const lightboxOpen = ref(false)
 
 onMounted(async () => {
   try {
@@ -62,8 +63,15 @@ useHead({ title: 'Shared file' })
             v-if="isImage && item.url"
             :src="item.url"
             :alt="item.title"
-            class="max-w-full max-h-[75vh] rounded-lg border border-(--ui-border)"
+            class="max-w-full max-h-[75vh] rounded-lg border border-(--ui-border) cursor-zoom-in"
+            @click="lightboxOpen = true"
           >
+          <FilesImageLightbox
+            v-if="isImage && item.url"
+            v-model:open="lightboxOpen"
+            :src="item.url"
+            :alt="item.title"
+          />
           <UButton
             v-if="item.url"
             :href="item.url"
