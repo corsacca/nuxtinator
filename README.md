@@ -61,7 +61,7 @@ Dev server: <http://localhost:2080>.
 | [mcp](layers/mcp/) | Optional | MCP server transport. Depends on `oauth`. | — |
 | [apps/calendar](layers/apps/calendar/) | Optional | Calendar app (events, reminders). | — |
 | [apps/kanban](layers/apps/kanban/) | Optional | Kanban boards app. | — |
-| [apps/messages](layers/apps/messages/) | Optional | Messaging / Gmail integration app. | — |
+| [apps/messages](layers/apps/messages/) | Optional | Team messaging app (channels, DMs, comments, reactions). | — |
 | [apps/videos](layers/apps/videos/) | Optional | Video recording + playback app. | — |
 | [dev](layers/dev/) | Optional | UI sandbox at `/kitchen`. Useful in dev, comment out for prod. | — |
 
@@ -71,7 +71,7 @@ Dev server: <http://localhost:2080>.
 - **Choice** — pick at most one from a group. Currently the only choice group is **email backend** (`email-mailgun`; `email-smtp` and `email-ses` are planned). Skip the group entirely if your app doesn't send mail — code that imports `#email` will throw a clear error if no backend is loaded.
 - **Optional** — included only if you ask for it.
 
-Dependencies are resolved automatically: asking for `mcp` pulls in `oauth`; asking for `apps/messages` with Gmail support pulls in `oauth`.
+Dependencies are resolved automatically: asking for `mcp` pulls in `oauth`.
 
 ---
 
@@ -195,7 +195,7 @@ Read the **Available layers** table above. Map casual language to layer names:
 - "MCP" / "Model Context Protocol" → `mcp` (and `oauth`, automatically)
 - "calendar" → `apps/calendar`
 - "kanban" / "boards" → `apps/kanban`
-- "messages" / "mail app" / "gmail" / "messaging" → `apps/messages`
+- "messages" / "messaging" / "chat" / "channels" → `apps/messages`
 - "videos" / "video recording" / "screen recording" → `apps/videos`
 - "kitchen sink" / "UI sandbox" / "component showcase" → `dev`
 
@@ -203,7 +203,7 @@ Read the **Available layers** table above. Map casual language to layer names:
 
 1. Always include `core`.
 2. Add every layer the user asked for.
-3. Resolve dependencies — if the user asked for `mcp`, also include `oauth`. If they asked for `apps/messages` with Gmail features, also include `oauth`.
+3. Resolve dependencies — if the user asked for `mcp`, also include `oauth`.
 4. **Choice groups (email backend)**: if the user mentioned a provider, use it. If they mentioned email but no provider, default to `email-mailgun`. If they didn't mention email at all, **ask** before deciding — apps that send mail (auth flows, notifications) need a backend.
 5. Default to including `dev` unless the user is scaffolding for production. Always mention you'll comment it out before prod build.
 
@@ -289,7 +289,6 @@ The scaffolded `.env.example` contains the union of every layer's vars. Trim it 
 - Keep `OAUTH_*` only if `oauth` is selected.
 - Keep `MCP_*` only if `mcp` is selected.
 - Keep `S3_*` only if a layer that uploads is selected (`videos`, `messages`, etc.).
-- Keep `NUXT_GOOGLE_*` only if `messages` (with Gmail) is selected.
 - Keep `NUXT_PUBLIC_FEEDBACK_PROJECT_ID` only if `feedback` is selected.
 - Leave the `# NUXTINATOR_REF=master` and `# NUXTINATOR_<ID>_PATH=...` blocks commented as scaffolded — both are advanced opt-ins (production ref pinning; per-layer sibling-checkout override).
 

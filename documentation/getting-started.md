@@ -111,7 +111,6 @@ Add more depending on which layers you enabled:
 | `tenancy` | `APP_DATABASE_URL` (the `app_user` role; falls back to `DATABASE_URL` in single-deployment) |
 | `email-mailgun` | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `SMTP_FROM`, `SMTP_FROM_NAME` |
 | `oauth` | `OAUTH_CONSENT_COOKIE_SECRET` |
-| `messages` (Gmail) | `NUXT_GOOGLE_CLIENT_ID`, `NUXT_GOOGLE_CLIENT_SECRET`, `NUXT_GOOGLE_OAUTH_REDIRECT_URI` |
 | `feedback` | `NUXT_PUBLIC_FEEDBACK_PROJECT_ID` |
 | Anything that uploads (videos, attachments) | `S3_*` vars |
 
