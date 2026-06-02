@@ -32,6 +32,7 @@ export const LAYERS = [
   { id: 'list-of-100',     pkg: '@nuxtinator/list-of-100',    url: `github:corsacca/nuxtinator/layers/apps/list-of-100#${REF}` },
   { id: 'messages',        pkg: '@nuxtinator/messages',       url: `github:corsacca/nuxtinator/layers/apps/messages#${REF}` },
   { id: 'videos',          pkg: '@nuxtinator/videos',         url: `github:corsacca/nuxtinator/layers/apps/videos#${REF}` },
+  { id: 'files',           pkg: '@nuxtinator/files',          url: `github:corsacca/nuxtinator/layers/apps/files#${REF}` },
   { id: 'context',         pkg: '@nuxtinator/context',        url: `github:corsacca/nuxtinator/layers/apps/context#${REF}` },
   { id: 'dev',             pkg: '@nuxtinator/dev',            url: `github:corsacca/nuxtinator/layers/dev#${REF}` }
 

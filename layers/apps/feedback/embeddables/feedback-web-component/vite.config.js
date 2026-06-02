@@ -3,12 +3,16 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 import { fileURLToPath, URL } from 'node:url'
 
-// Primary build output: the host Nuxt app's public/js/ folder (CDN-ready IIFE),
-// served at: http://localhost:2080/js/feedback-web-component.iife.js
+// Build output: the feedback LAYER's own public/js/ folder. Nuxt serves every
+// extended layer's public/ at the site root, so this committed bundle is served
+// at /js/feedback-web-component.iife.js by ANY host that loads the layer — the
+// monorepo dev host AND every scaffolded consumer app — with no host-side build
+// step. The bundle ships with the layer via sync-layers; rebuild it with
+// `bun run build:widgets` (from the layer root) whenever the widget source changes.
 //
 // Path:  layers/apps/feedback/embeddables/feedback-web-component/vite.config.js
-//        → ../../../../../dev/public/js
-const PUBLIC_JS_DIR = fileURLToPath(new URL('../../../../../dev/public/js', import.meta.url))
+//        → ../../public/js   (= layers/apps/feedback/public/js)
+const PUBLIC_JS_DIR = fileURLToPath(new URL('../../public/js', import.meta.url))
 
 export default defineConfig({
   plugins: [

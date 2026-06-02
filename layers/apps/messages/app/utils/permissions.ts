@@ -31,17 +31,11 @@ export const MESSAGES_PERMISSION_META: Record<string, { title: string, descripti
   }
 }
 
-export const MESSAGES_DEFAULT_GRANTS = {
+export const MESSAGES_DEFAULT_GRANTS: Record<'member' | 'admin', MessagesPermission[]> = {
   member: ['messages.access', 'messages.read', 'messages.write', 'messages.channel.create'],
   admin: [...MESSAGES_PERMISSIONS]
-} as const
+}
 
 declare module '#permissions' {
-  interface PermissionRegistry {
-    'messages.access': true
-    'messages.read': true
-    'messages.write': true
-    'messages.channel.create': true
-    'messages.channel.archive': true
-  }
+  interface PermissionRegistry extends Record<MessagesPermission, true> {}
 }

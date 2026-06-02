@@ -16,17 +16,6 @@ import { PostgresJSDialect } from 'kysely-postgres-js'
 import postgres from 'postgres'
 import type { SeedContext } from './types'
 
-// Mirror of dev/nuxt.config.ts `extends:` order, minus dev (no demo data
-// to seed there). Tenancy is auto-skipped at runtime if its tables don't
-// exist — listing it here is harmless in single-tenant deploys.
-const SEED_LAYERS = [
-  '@nuxtinator/core',
-  '@nuxtinator/tenancy',
-  '@nuxtinator/calendar',
-  '@nuxtinator/kanban',
-  '@nuxtinator/messages'
-]
-
 function resolveLayerRoot(pkg: string): string | null {
   try {
     const url = import.meta.resolve(pkg)
@@ -65,7 +54,11 @@ async function detectTenancy(db: Kysely<any>): Promise<boolean> {
   return result.rows[0]?.exists === true
 }
 
-export async function runSeeds(): Promise<void> {
+// `layerPkgs` is the host's layer roster (package names) in extends: order,
+// passed in by the caller (dev/scripts/seed.ts reads it from dev/layers.ts) so
+// the runner stays decoupled from any specific host. Layers without a
+// seeds/index.ts are skipped; tenancy is auto-skipped when its tables are absent.
+export async function runSeeds(layerPkgs: string[]): Promise<void> {
   const db = buildDb()
   try {
     const tenancyEnabled = await detectTenancy(db)
@@ -81,7 +74,7 @@ export async function runSeeds(): Promise<void> {
 
     console.log(`[seed] tenancy mode: ${tenancyEnabled ? 'multi' : 'single'}`)
 
-    for (const layer of SEED_LAYERS) {
+    for (const layer of layerPkgs) {
       if (layer === '@nuxtinator/tenancy' && !tenancyEnabled) {
         console.log(`[seed] skip ${layer} (tables not present)`)
         continue

@@ -1,4 +1,5 @@
 import { defineNuxtModule, createResolver } from '@nuxt/kit'
+import { defineAlias } from '../kit/alias'
 
 // Registers the `#tenant` and `#tenant/server` aliases with the host's
 // single-mode kernel — but ONLY if no other module (the tenancy layer) has
@@ -20,18 +21,9 @@ export default defineNuxtModule({
     const clientPath = resolver.resolve('../tenant-kernel/client.ts')
     const serverPath = resolver.resolve('../tenant-kernel/server.ts')
 
-    nuxt.options.alias['#tenant'] = clientPath
-    nuxt.options.alias['#tenant/server'] = serverPath
-
-    // Mirror into Nitro's tsconfig paths so server-side type resolution works.
-    nuxt.options.nitro = nuxt.options.nitro || {}
-    const ts = nuxt.options.nitro.typescript = nuxt.options.nitro.typescript || {}
-    const tsConfig = ts.tsConfig = ts.tsConfig || {}
-    const compilerOptions = tsConfig.compilerOptions = tsConfig.compilerOptions || {}
-    const paths = compilerOptions.paths = compilerOptions.paths || {}
-    Object.assign(paths, {
-      '#tenant': [clientPath],
-      '#tenant/server': [serverPath]
+    defineAlias(nuxt, {
+      '#tenant': clientPath,
+      '#tenant/server': serverPath
     })
   }
 })

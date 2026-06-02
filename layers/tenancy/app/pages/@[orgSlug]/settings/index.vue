@@ -14,7 +14,7 @@ const { data: org, pending } = await useFetch<{
   perms: string[]
 }>(() => `/api/o/${orgSlug.value}`, {
   watch: [orgSlug],
-  key: 'org-settings-detail'
+  key: () => `org-settings-detail-${orgSlug.value}`
 })
 
 const formName = ref('')

@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./nuxt.config.ts",
+    "./kit": "./kit/alias.ts",
     "./test-helpers": "./tests/helpers/index.ts"
   },
   "dependencies": {

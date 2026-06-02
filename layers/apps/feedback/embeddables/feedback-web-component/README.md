@@ -2,23 +2,22 @@
 
 A single-file Vue IIFE web component. One `<script>` tag on any site drops a feedback capture widget in the corner; every submission lands as a Kanban card in a central project.
 
-This is the first widget built on the **monorepo + self-hosted CDN** pattern used across `TOOL-kanban-nuxt`. If you're adding a second web component, this folder is the reference implementation.
+This is the first widget built on the **layer-served bundle** pattern in this monorepo — a layer ships its own built web-component and Nuxt serves it from the layer's `public/`. If you're adding a second web component, this folder is the reference implementation.
 
 ![Feedback Web Component Architecture](docs/feedback-web-component-architecture.svg)
 
 ## The big picture
 
 ```
-TOOL-kanban-nuxt/                              ← Nuxt app (Railway-hosted)
-├── embeddables/
-│   └── web-components/
-│       └── feedback-web-component/            ← you are here (self-contained sub-project)
-│           ├── src/                           ← Vue source (entry.js, stores, composables, profiles)
-│           ├── vite.config.js                 ← builds to ../../../public/js/ + ./app/
-│           ├── index.html                     ← local dev tester
-│           └── app/feedback-web-component.iife.js    ← build output #1 (for the tester)
-└── public/
-    └── js/feedback-web-component.iife.js     ← build output #2 (served by Nuxt → CDN URL)
+layers/apps/feedback/                           ← the feedback layer (extended by any host)
+├── public/
+│   └── js/feedback-web-component.iife.js       ← build output (committed; Nuxt serves it at /js/…)
+├── app/plugins/feedback-widget.client.ts       ← injects <script> + <feedback-web-component> per page
+└── embeddables/
+    └── feedback-web-component/                 ← you are here (self-contained sub-project)
+        ├── src/                                ← Vue source (entry.js, stores, composables, profiles)
+        ├── vite.config.js                      ← builds to ../../public/js/ (the layer's own public dir)
+        └── index.html                          ← local dev tester (loads bundle from a running host's /js URL)
 ```
 
 Consumers anywhere on the internet embed the widget with a single `<script src="https://<your-nuxt-host>/js/feedback-web-component.iife.js">`. See [docs/EMBEDDING.md](docs/EMBEDDING.md) for the full consumer-facing guide.
@@ -27,7 +26,7 @@ Consumers anywhere on the internet embed the widget with a single `<script src="
 
 **Monorepo sub-project.** Each web component is a self-contained folder (own `package.json`, own `vite.config.js`, own `node_modules`) nested inside the Nuxt app that serves it. Source + build config live next to the thing that hosts them, but the build toolchain stays isolated.
 
-**Self-hosted CDN.** The Vite config's `outDir` points at the parent Nuxt's `public/js/` folder. When Railway rebuilds the Nuxt app, the widget rebuilds too (via the root `bun run build` chain), and the fresh bundle is served at `https://<host>/js/feedback-web-component.iife.js`. No S3, no third-party CDN, no separate deploy pipeline.
+**Self-hosted, layer-served.** The Vite config's `outDir` points at the feedback **layer's own** `public/js/` folder, and the built bundle is committed with the layer. Nuxt serves every extended layer's `public/` at the site root, so the bundle is available at `https://<host>/js/feedback-web-component.iife.js` on **any** host that loads the layer — the monorepo dev host and every scaffolded consumer app alike — with no host-side build step or copy. Rebuild with `bun run build:widgets` from the layer root and commit the result whenever the widget source changes. No S3, no third-party CDN, no separate deploy pipeline.
 
 **Module federation via script tag.** Every external site that embeds the widget loads the same live URL. When you push a change to the monorepo, every consumer picks up the new bundle on the next cache revalidation. One source of truth, zero-touch propagation — the core benefit other teams reach for Webpack Module Federation or React Server Components to get, achieved with a `<script>` tag + custom element.
 
@@ -38,17 +37,15 @@ Consumers anywhere on the internet embed the widget with a single `<script src="
 ```bash
 # from this folder
 bun install
-bun run build           # builds to ./app/ AND ../../../public/js/
+bun run build           # builds to ../../public/js/feedback-web-component.iife.js (the layer's public dir)
 bun run build:watch     # rebuilds on every src/ change
 ```
 
-Then open [index.html](index.html) in a browser — it's a self-contained tester that loads the bundle from `./app/feedback-web-component.iife.js` and lets you paste any `apiBase` URL to test against a real Kanban backend.
+Or, from the layer root, `bun run build:widgets` runs the two commands above for you.
 
-**Two build outputs, same bytes:**
-- `./app/feedback-web-component.iife.js` — for the local tester above
-- `../../../public/js/feedback-web-component.iife.js` — served by the parent Nuxt app (the "real" public URL)
+**One build output:** `../../public/js/feedback-web-component.iife.js` — the feedback layer's own `public/js/` bundle. It's committed with the layer and served by Nuxt at `/js/feedback-web-component.iife.js` on any host that loads the layer (see *Why this pattern* above). There's no separate tester copy.
 
-The `public/js/` output is what makes the CDN pattern work. The `./app/` output is an optional local-dev convenience — if you removed the `copy-to-app-dir` plugin in `vite.config.js` and pointed `index.html` at the `public/js/` path instead, nothing would break.
+Then open [index.html](index.html) in a browser — a self-contained tester that loads the bundle from a **running host's** `/js/` URL: paste the host's base URL (e.g. `http://localhost:2080`) and a real project UUID into the form, and it renders `<feedback-web-component>` exactly the way a customer site embeds it.
 
 ## Inside the bundle
 
@@ -68,7 +65,7 @@ Copy this folder, rename, update three things:
 2. `vite.config.js` `lib.name` (IIFE global) and `lib.fileName` (output filename)
 3. `src/entry.js` `customElements.define('<your-tag>', ...)`
 
-Then wire the build into the root [../../../package.json](../../../package.json) scripts alongside `build:feedback-web-component`. The root `build:widgets` script chains all web-component builds before `nuxt build` runs.
+Then wire the build into the layer's [package.json](../../package.json) `build:widgets` script (it `cd`s into each embeddable and runs its build). The dev host's own `build:widgets` chains to the layer's, so `bun run build:widgets` from `dev/` rebuilds every widget before `nuxt build`.
 
 ## Where feedback lands
 

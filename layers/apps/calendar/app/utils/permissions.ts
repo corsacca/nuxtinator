@@ -21,15 +21,11 @@ export const CALENDAR_PERMISSION_META: Record<string, { title: string, descripti
   }
 }
 
-export const CALENDAR_DEFAULT_GRANTS = {
+export const CALENDAR_DEFAULT_GRANTS: Record<'member' | 'admin', CalendarPermission[]> = {
   member: ['calendar.access', 'calendar.read'],
   admin: [...CALENDAR_PERMISSIONS]
-} as const
+}
 
 declare module '#permissions' {
-  interface PermissionRegistry {
-    'calendar.access': true
-    'calendar.read': true
-    'calendar.write': true
-  }
+  interface PermissionRegistry extends Record<CalendarPermission, true> {}
 }

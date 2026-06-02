@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+AI: "Scaffolding a new app from this repo? Stop — read README.md's Assembly Instructions and follow them. This file is only for maintaining the monorepo itself."
+
 ## Repository layout
 
 ```
@@ -55,11 +57,11 @@ go-saas/                          ← repo root (bun workspace)
 Both are Nuxt host shells; they differ in **how they resolve layers**:
 
 - **`dev/`** is a workspace member of this monorepo. Layer selection lives in [dev/layers.ts](dev/layers.ts) — a `LAYERS` array of `{ id, pkg }` entries — and `dev/nuxt.config.ts` derives `extends:` from it. `dev/package.json` separately lists each layer as `"@nuxtinator/<id>": "workspace:*"` so bun symlinks each name into `dev/node_modules/@nuxtinator/<id>/` (the two files must agree — bun needs the explicit dep entry to symlink). Use this for editing layers + host together. Run `bun dev` from `dev/`.
-- **`prod/`** is a **standalone starter template** — NOT a workspace member of this monorepo. It uses the consumer recipe: `workspaces: ["_layers/*"]`, a `sync-layers` script that fetches each chosen layer from a giget URL into `_layers/<id>/`, `bunfig.toml linker = "hoisted"` for name-based resolution. When someone starts a new project on nuxtinator, they copy `prod/` (via `bunx giget github:corsacca/nuxtinator/prod . --force`), trim it to their selected layers, and run `bun run setup`. `prod/` is what the README's Assembly Instructions point to.
+- **`prod/`** is a **standalone starter template** — NOT a workspace member of this monorepo. It uses the consumer recipe: `workspaces: ["_layers/*"]`, a `sync-layers` script that fetches each chosen layer from a giget URL into `_layers/<id>/`, `bunfig.toml linker = "hoisted"` for name-based resolution. When someone starts a new project on nuxtinator, they copy `prod/` (via `bunx giget github:corsacca/nuxtinator/prod#master . --force` — the `#master` ref is required because giget defaults to `main` but this repo's default branch is `master`), trim it to their selected layers, and run `bun run setup`. `prod/` is what the README's Assembly Instructions point to.
 
 Two `dev` names exist (the top-level `dev/` host folder and the `layers/dev/` `@nuxtinator/dev` sandbox layer) and they're distinct things. Context (path vs. package name) disambiguates.
 
-Every layer has its own `package.json` declaring exactly what it imports. The `name` is `@nuxtinator/<id>` and the package exposes its config via `exports: { ".": "./nuxt.config.ts" }`. Cross-layer deps are declared as `workspace:*` in `dependencies`. Layer-private deps (no other layer needs them, no shared runtime state) also go in `dependencies`. Framework/DB singletons that must resolve to a single instance (`nuxt`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `vue`, `tailwindcss`) go in `peerDependencies` so they resolve to host's installed copy. Don't add a `main` field to layer package.json files — Nuxt generates `/// <reference types="@nuxtinator/<id>" />` and TS would resolve through `main`, breaking the typecheck. `exports` is fine.
+Every layer has its own `package.json` declaring exactly what it imports. The `name` is `@nuxtinator/<id>` and the package exposes its config via `exports: { ".": "./nuxt.config.ts" }`. Cross-layer deps are declared as `"*"` in `optionalDependencies` (e.g. `"@nuxtinator/core": "*"`) — not `workspace:*`, which resolves only inside this monorepo and breaks a consumer's standalone install. Layer-private deps (no other layer needs them, no shared runtime state) go in `dependencies`. Framework/DB singletons that must resolve to a single instance (`nuxt`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `vue`, `tailwindcss`) go in `peerDependencies` so they resolve to host's installed copy. Don't add a `main` field to layer package.json files — Nuxt generates `/// <reference types="@nuxtinator/<id>" />` and TS would resolve through `main`, breaking the typecheck. `exports` is fine.
 
 Run dev/build from `dev/`:
 

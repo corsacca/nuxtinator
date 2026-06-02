@@ -1,4 +1,5 @@
 import { defineNuxtModule, createResolver } from '@nuxt/kit'
+import { defineAlias } from '@nuxtinator/core/kit'
 
 // The tenancy layer's `#tenant` registration. Runs before the host's
 // `tenant-kernel` module (layers in `extends:` initialize before the host).
@@ -11,8 +12,10 @@ export default defineNuxtModule({
     const clientPath = resolver.resolve('../app/utils/tenant.ts')
     const serverPath = resolver.resolve('../server/utils/tenant.ts')
 
-    nuxt.options.alias['#tenant'] = clientPath
-    nuxt.options.alias['#tenant/server'] = serverPath
+    defineAlias(nuxt, {
+      '#tenant': clientPath,
+      '#tenant/server': serverPath
+    })
 
     // Feature flag for code in core that conditionally exposes tenancy-only
     // data/endpoints (org-membership joins on /admin/users, /api/admin/orgs/*,
@@ -21,15 +24,5 @@ export default defineNuxtModule({
     // by whether this layer is in `extends:`.
     nuxt.options.runtimeConfig.public = nuxt.options.runtimeConfig.public || {}
     ;(nuxt.options.runtimeConfig.public as Record<string, unknown>).tenancy = true
-
-    nuxt.options.nitro = nuxt.options.nitro || {}
-    const ts = nuxt.options.nitro.typescript = nuxt.options.nitro.typescript || {}
-    const tsConfig = ts.tsConfig = ts.tsConfig || {}
-    const compilerOptions = tsConfig.compilerOptions = tsConfig.compilerOptions || {}
-    const paths = compilerOptions.paths = compilerOptions.paths || {}
-    Object.assign(paths, {
-      '#tenant': [clientPath],
-      '#tenant/server': [serverPath]
-    })
   }
 })

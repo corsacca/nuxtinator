@@ -63,22 +63,11 @@ export const ORG_PERMISSION_META: Record<string, { title: string, description: s
 
 // Members can see who's in the org. Everything else is admin-only by default.
 // Org admins get the full set via the `admin` special-case in rbac.ts.
-export const ORG_DEFAULT_GRANTS = {
+export const ORG_DEFAULT_GRANTS: Record<'member' | 'admin', OrgPermission[]> = {
   member: ['org.members.read'],
   admin: []
-} as const
+}
 
 declare module '#permissions' {
-  interface PermissionRegistry {
-    'org.settings.access': true
-    'org.members.read': true
-    'org.members.invite': true
-    'org.members.remove': true
-    'org.members.manage_roles': true
-    'org.roles.read': true
-    'org.roles.write': true
-    'org.roles.delete': true
-    'org.settings.write': true
-    'org.apps.manage': true
-  }
+  interface PermissionRegistry extends Record<OrgPermission, true> {}
 }

@@ -12,7 +12,8 @@ If instead you want to work on the layers themselves, see [dev-setup.md](dev-set
 
 ```bash
 # 1. Pull the prod template from the nuxtinator repo into a new project
-bunx giget github:corsacca/nuxtinator/prod my-app
+#    (#master is required — giget defaults to main, but this repo uses master)
+bunx giget github:corsacca/nuxtinator/prod#master my-app
 cd my-app
 
 # 2. Pick which layers you want (the only file you edit for layer selection)
@@ -111,7 +112,6 @@ Add more depending on which layers you enabled:
 | `tenancy` | `APP_DATABASE_URL` (the `app_user` role; falls back to `DATABASE_URL` in single-deployment) |
 | `email-mailgun` | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `SMTP_FROM`, `SMTP_FROM_NAME` |
 | `oauth` | `OAUTH_CONSENT_COOKIE_SECRET` |
-| `messages` (Gmail) | `NUXT_GOOGLE_CLIENT_ID`, `NUXT_GOOGLE_CLIENT_SECRET`, `NUXT_GOOGLE_OAUTH_REDIRECT_URI` |
 | `feedback` | `NUXT_PUBLIC_FEEDBACK_PROJECT_ID` |
 | Anything that uploads (videos, attachments) | `S3_*` vars |
 

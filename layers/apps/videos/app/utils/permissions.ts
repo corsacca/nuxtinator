@@ -26,16 +26,11 @@ export const VIDEOS_PERMISSION_META: Record<string, { title: string, description
   }
 }
 
-export const VIDEOS_DEFAULT_GRANTS = {
+export const VIDEOS_DEFAULT_GRANTS: Record<'member' | 'admin', VideosPermission[]> = {
   member: ['videos.access', 'videos.read', 'videos.write'],
   admin: [...VIDEOS_PERMISSIONS]
-} as const
+}
 
 declare module '#permissions' {
-  interface PermissionRegistry {
-    'videos.access': true
-    'videos.read': true
-    'videos.write': true
-    'videos.moderate': true
-  }
+  interface PermissionRegistry extends Record<VideosPermission, true> {}
 }

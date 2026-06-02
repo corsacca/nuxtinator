@@ -21,15 +21,11 @@ export const KANBAN_PERMISSION_META: Record<string, { title: string, description
   }
 }
 
-export const KANBAN_DEFAULT_GRANTS = {
+export const KANBAN_DEFAULT_GRANTS: Record<'member' | 'admin', KanbanPermission[]> = {
   member: ['kanban.access', 'kanban.read'],
   admin: [...KANBAN_PERMISSIONS]
-} as const
+}
 
 declare module '#permissions' {
-  interface PermissionRegistry {
-    'kanban.access': true
-    'kanban.read': true
-    'kanban.write': true
-  }
+  interface PermissionRegistry extends Record<KanbanPermission, true> {}
 }

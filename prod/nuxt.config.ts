@@ -31,9 +31,12 @@ function layer(pkg: string): string {
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 //
-// Layer selection lives in ./layers.ts — this file just consumes it.
-// The `extends:` array is derived from LAYERS in the same order, so reordering
-// or trimming the LAYERS array in layers.ts is the only place to do it.
+// Standalone starter config — copy this whole prod/ folder to begin a project,
+// then edit this file freely. Layer selection lives in ./layers.ts. Only
+// HOST-authoritative config (branding + infra secrets) lives here; each layer
+// declares its own runtimeConfig (mailgun*/smtp* in @nuxtinator/email-mailgun,
+// mcpServer* in @nuxtinator/mcp, public.feedbackProjectId in @nuxtinator/feedback,
+// public.tenancy in @nuxtinator/core).
 export default defineNuxtConfig({
 
   extends: LAYERS.map(l => layer(l.pkg)),
@@ -70,28 +73,17 @@ export default defineNuxtConfig({
     databaseUrl: process.env.DATABASE_URL || '',
     appDatabaseUrl: process.env.APP_DATABASE_URL || '',
     jwtSecret: process.env.JWT_SECRET || '',
-    mailgunApiKey: process.env.MAILGUN_API_KEY || '',
-    mailgunDomain: process.env.MAILGUN_DOMAIN || '',
-    mailgunHost: process.env.MAILGUN_HOST || '',
-    smtpFrom: process.env.SMTP_FROM || '',
-    smtpFromName: process.env.SMTP_FROM_NAME || '',
     s3Endpoint: process.env.S3_ENDPOINT || '',
     s3Region: process.env.S3_REGION || '',
     s3AccessKeyId: process.env.S3_ACCESS_KEY_ID || '',
     s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
     s3BucketName: process.env.S3_BUCKET_NAME || '',
     s3PublicBaseUrl: process.env.S3_PUBLIC_BASE_URL || '',
-    mcpServerName: process.env.MCP_SERVER_NAME || 'My App',
-    mcpServerVersion: process.env.MCP_SERVER_VERSION || '1.0.0',
     secretEncryptionKey: process.env.NUXT_SECRET_ENCRYPTION_KEY || '',
-    googleClientId: process.env.NUXT_GOOGLE_CLIENT_ID || '',
-    googleClientSecret: process.env.NUXT_GOOGLE_CLIENT_SECRET || '',
-    googleOauthRedirectUri: process.env.NUXT_GOOGLE_OAUTH_REDIRECT_URI || '',
     public: {
       appName: process.env.APP_TITLE || 'My App',
       nodeEnv: process.env.NODE_ENV || '',
-      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || '',
-      feedbackProjectId: process.env.NUXT_PUBLIC_FEEDBACK_PROJECT_ID || ''
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || ''
     }
   },
 
