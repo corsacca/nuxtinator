@@ -4,7 +4,7 @@
     "install": {
       "inputs": [
         { "step": "packages:mise" },
-        { "local": true, "include": ["package.json", "bun.lock"] }
+        { "local": true, "include": ["package.json"] }
       ],
       "commands": ["bun install"]
     },
