@@ -16,7 +16,7 @@ function errMsg(e: unknown): string {
 }
 
 const {
-  get, update, remove, listVersions, restoreVersion, issueLink, revokeLink, publicUrl
+  get, update, remove, replaceFile, listVersions, restoreVersion, issueLink, revokeLink, publicUrl
 } = useFiles()
 
 const item = ref<FilesItemDetail | null>(null)
@@ -62,6 +62,27 @@ async function saveEdit() {
     toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     saving.value = false
+  }
+}
+
+// ── Replace (uploaded files) ───────────────────────────────────────────────
+const replaceInput = ref<HTMLInputElement | null>(null)
+const replacing = ref(false)
+
+async function onReplaceChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  replacing.value = true
+  try {
+    await replaceFile(id.value, file)
+    await load()
+    toast.add({ title: 'File replaced', color: 'success' })
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
+  } finally {
+    replacing.value = false
+    input.value = ''
   }
 }
 
@@ -215,7 +236,7 @@ onMounted(async () => {
 <template>
   <div
     class="flex flex-col w-full"
-    :class="docEditing ? '' : 'max-w-5xl mx-auto'"
+    :class="docEditing ? '' : (item?.kind === 'file' ? 'max-w-7xl mx-auto' : 'max-w-5xl mx-auto')"
   >
     <div v-if="loading" class="text-center py-16 text-(--ui-text-muted)">
       <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin" />
@@ -282,6 +303,18 @@ onMounted(async () => {
           </UButton>
         </template>
 
+        <!-- File mode controls -->
+        <UButton
+          v-if="item.kind === 'file'"
+          icon="i-lucide-replace"
+          variant="outline"
+          color="neutral"
+          :loading="replacing"
+          @click="replaceInput?.click()"
+        >
+          Replace
+        </UButton>
+
         <!-- Always available -->
         <UButton
           icon="i-lucide-settings-2"
@@ -310,6 +343,17 @@ onMounted(async () => {
           variant="soft"
         />
         <div class="flex-1" />
+        <UButton
+          v-if="item.kind === 'file' && item.url"
+          size="sm"
+          variant="soft"
+          icon="i-lucide-download"
+          :href="item.url"
+          target="_blank"
+          external
+        >
+          Download
+        </UButton>
         <template v-if="item.share_token">
           <UButton size="sm" variant="soft" icon="i-lucide-link" @click="copyLink">
             Copy link
@@ -352,6 +396,14 @@ onMounted(async () => {
         </div>
         <FilesFilePreview v-else :item="item" />
       </div>
+
+      <!-- Hidden picker for "Replace" on uploaded files -->
+      <input
+        ref="replaceInput"
+        type="file"
+        class="hidden"
+        @change="onReplaceChange"
+      >
     </template>
 
     <!-- Versions slideover -->

@@ -14,7 +14,7 @@ const isImage = computed(() => (props.item.mime ?? '').startsWith('image/'))
       v-if="isImage && item.url"
       :src="item.url"
       :alt="item.title"
-      class="max-w-full max-h-[70vh] rounded-lg border border-(--ui-border)"
+      class="max-w-full max-h-[85vh] rounded-lg border border-(--ui-border)"
     >
 
     <div
@@ -29,15 +29,5 @@ const isImage = computed(() => (props.item.mime ?? '').startsWith('image/'))
         </p>
       </div>
     </div>
-
-    <UButton
-      v-if="item.url"
-      :href="item.url"
-      target="_blank"
-      external
-      icon="i-lucide-download"
-    >
-      Download
-    </UButton>
   </div>
 </template>

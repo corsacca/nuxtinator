@@ -66,6 +66,16 @@ export function useFiles() {
     return await $fetch(`/api/files/items/${id}`, { method: 'DELETE' })
   }
 
+  // Swap the binary on an uploaded (kind='file') item, keeping its id + share link.
+  async function replaceFile(id: string, file: File) {
+    const fd = new FormData()
+    fd.append('file', file)
+    return await $fetch<{ item: FilesItemSummary }>(`/api/files/items/${id}/replace`, {
+      method: 'POST',
+      body: fd
+    })
+  }
+
   async function listVersions(id: string): Promise<FilesVersion[]> {
     const res = await $fetch<{ versions: FilesVersion[] }>(`/api/files/items/${id}/versions`)
     return res.versions
@@ -97,7 +107,7 @@ export function useFiles() {
   }
 
   return {
-    list, get, createDoc, update, remove,
+    list, get, createDoc, update, remove, replaceFile,
     listVersions, restoreVersion, issueLink, revokeLink, search, publicUrl
   }
 }

@@ -77,27 +77,40 @@ async function createNewDoc() {
   }
 }
 
-// Upload
-const uploadInput = ref<HTMLInputElement | null>(null)
+// Upload — UFileUpload feeds dropped/picked files here; we upload each one
+// (the endpoint takes one file per request) and clear the model when done.
+const dropFiles = ref<File[] | null>(null)
 const uploading = ref(false)
 
-async function onUploadChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  const fd = new FormData()
-  fd.append('file', file)
+async function uploadFiles(files: File[]) {
   uploading.value = true
+  let ok = 0
   try {
-    await $fetch('/api/files/uploads', { method: 'POST', body: fd })
-    await load()
-  } catch (e) {
-    toast.add({ title: errMsg(e), color: 'error' })
+    for (const file of files) {
+      const fd = new FormData()
+      fd.append('file', file)
+      try {
+        await $fetch('/api/files/uploads', { method: 'POST', body: fd })
+        ok++
+      } catch (e) {
+        toast.add({ title: `${file.name}: ${errMsg(e)}`, color: 'error' })
+      }
+    }
+    if (ok > 0) {
+      await load()
+      toast.add({ title: ok === 1 ? 'File uploaded' : `${ok} files uploaded`, color: 'success' })
+    }
   } finally {
     uploading.value = false
-    input.value = ''
   }
 }
+
+watch(dropFiles, async (files) => {
+  const list = Array.isArray(files) ? files : files ? [files] : []
+  if (!list.length) return
+  await uploadFiles(list)
+  dropFiles.value = null
+})
 
 function fmtDate(ts: string): string {
   return new Date(ts).toLocaleDateString()
@@ -119,21 +132,6 @@ onMounted(load)
       <UButton icon="i-lucide-file-plus" @click="newDocOpen = true">
         New document
       </UButton>
-      <UButton
-        icon="i-lucide-upload"
-        variant="outline"
-        color="neutral"
-        :loading="uploading"
-        @click="uploadInput?.click()"
-      >
-        Upload
-      </UButton>
-      <input
-        ref="uploadInput"
-        type="file"
-        class="hidden"
-        @change="onUploadChange"
-      >
     </div>
 
     <!-- Tag filter -->
@@ -158,6 +156,19 @@ onMounted(load)
         {{ t }}
       </UButton>
     </div>
+
+    <!-- Drag-and-drop upload -->
+    <UFileUpload
+      v-model="dropFiles"
+      multiple
+      variant="area"
+      icon="i-lucide-upload"
+      label="Drop files here or click to upload"
+      description="Up to 50 MB each"
+      :preview="false"
+      :disabled="uploading"
+      class="mb-6 w-full"
+    />
 
     <!-- Loading -->
     <div v-if="loading" class="text-center py-16 text-(--ui-text-muted)">
