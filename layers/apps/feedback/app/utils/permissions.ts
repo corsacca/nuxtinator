@@ -26,16 +26,11 @@ export const FEEDBACK_PERMISSION_META: Record<string, { title: string, descripti
   }
 }
 
-export const FEEDBACK_DEFAULT_GRANTS = {
+export const FEEDBACK_DEFAULT_GRANTS: Record<'member' | 'admin', FeedbackPermission[]> = {
   member: ['feedback.access', 'feedback.read', 'feedback.write'],
   admin: [...FEEDBACK_PERMISSIONS]
-} as const
+}
 
 declare module '#permissions' {
-  interface PermissionRegistry {
-    'feedback.access': true
-    'feedback.read': true
-    'feedback.write': true
-    'feedback.triage': true
-  }
+  interface PermissionRegistry extends Record<FeedbackPermission, true> {}
 }

@@ -11,9 +11,12 @@
 // in layers/core/seeds/runner.ts walks the layers in `extends:` order and
 // invokes whichever it finds.
 
+import { LAYERS } from '../layers'
 import { runSeeds } from '../../layers/core/seeds/runner'
 
-runSeeds().catch((err) => {
+// Drive the seed order off the host roster (single source of truth). The runner
+// skips any layer without a seeds/index.ts, so listing every layer is safe.
+runSeeds(LAYERS.map(l => l.pkg)).catch((err) => {
   console.error('[seed] failed:', err)
   process.exit(1)
 })

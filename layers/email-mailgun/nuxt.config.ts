@@ -15,5 +15,14 @@ import { fileURLToPath } from 'node:url'
 export default defineNuxtConfig({
   modules: [
     fileURLToPath(new URL('./modules/email-alias.ts', import.meta.url))
-  ]
+  ],
+
+  // This layer owns its own config — the host no longer declares these.
+  runtimeConfig: {
+    mailgunApiKey: process.env.MAILGUN_API_KEY || '',
+    mailgunDomain: process.env.MAILGUN_DOMAIN || '',
+    mailgunHost: process.env.MAILGUN_HOST || '',
+    smtpFrom: process.env.SMTP_FROM || '',
+    smtpFromName: process.env.SMTP_FROM_NAME || ''
+  }
 })

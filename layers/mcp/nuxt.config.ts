@@ -55,7 +55,7 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    mcpServerName: process.env.MCP_SERVER_NAME || '',
+    mcpServerName: process.env.MCP_SERVER_NAME || 'My App',
     mcpServerVersion: process.env.MCP_SERVER_VERSION || '1.0.0',
     mcpReadScopes: [] as string[],
     // Empty default; consumers override via their own runtimeConfig.mcpRateLimits.

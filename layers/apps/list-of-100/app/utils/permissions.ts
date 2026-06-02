@@ -31,15 +31,11 @@ export const LIST_OF_100_PERMISSION_META: Record<string, { title: string, descri
   }
 }
 
-export const LIST_OF_100_DEFAULT_GRANTS = {
+export const LIST_OF_100_DEFAULT_GRANTS: Record<'member' | 'admin', ListOf100Permission[]> = {
   member: ['list-of-100.access', 'list-of-100.read', 'list-of-100.write'],
   admin: [...LIST_OF_100_PERMISSIONS]
-} as const
+}
 
 declare module '#permissions' {
-  interface PermissionRegistry {
-    'list-of-100.access': true
-    'list-of-100.read': true
-    'list-of-100.write': true
-  }
+  interface PermissionRegistry extends Record<ListOf100Permission, true> {}
 }
