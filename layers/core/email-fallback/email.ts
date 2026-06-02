@@ -25,7 +25,7 @@ export interface TemplateEmailOptions {
 
 function notConfigured(): never {
   throw new Error(
-    'No email backend is configured. Add an email layer (e.g. `\'./layers/email-mailgun\'`) '
+    'No email backend is configured. Add an email layer (e.g. `\'./layers/email-cloudflare\'`) '
     + 'to `extends:` in nuxt.config.ts.'
   )
 }

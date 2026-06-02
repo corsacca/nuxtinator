@@ -14,7 +14,7 @@
         "@nuxtinator/calendar": "workspace:*",
         "@nuxtinator/core": "workspace:*",
         "@nuxtinator/dev": "workspace:*",
-        "@nuxtinator/email-mailgun": "workspace:*",
+        "@nuxtinator/email-cloudflare": "workspace:*",
         "@nuxtinator/feedback": "workspace:*",
         "@nuxtinator/files": "workspace:*",
         "@nuxtinator/kanban": "workspace:*",
@@ -175,6 +175,23 @@
       "peerDependencies": {
         "nuxt": "^4.0.0",
         "vue": "^3.0.0",
+      },
+    },
+    "layers/email-cloudflare": {
+      "name": "@nuxtinator/email-cloudflare",
+      "dependencies": {
+        "nodemailer": "^7.0.6",
+      },
+      "devDependencies": {
+        "@types/nodemailer": "^7.0.1",
+      },
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
+      },
+      "peerDependencies": {
+        "@nuxt/kit": "^4.0.0",
+        "h3": "^1.0.0",
+        "nuxt": "^4.0.0",
       },
     },
     "layers/email-mailgun": {
@@ -526,6 +543,8 @@
     "@nuxtinator/core": ["@nuxtinator/core@workspace:layers/core"],
 
     "@nuxtinator/dev": ["@nuxtinator/dev@workspace:layers/dev"],
+
+    "@nuxtinator/email-cloudflare": ["@nuxtinator/email-cloudflare@workspace:layers/email-cloudflare"],
 
     "@nuxtinator/email-mailgun": ["@nuxtinator/email-mailgun@workspace:layers/email-mailgun"],
 

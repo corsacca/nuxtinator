@@ -38,7 +38,10 @@ go-saas/                          ← repo root (bun workspace)
     │                                peer: nuxt, @nuxt/kit, @nuxt/ui, kysely, postgres, h3, vue
     ├── tenancy/                  ← OPTIONAL multi-tenant: orgs, memberships, RLS,
     │   └── package.json             multi-mode #tenant kernel. peer-deps only.
-    ├── email-mailgun/            ← OPTIONAL email backend (provides #email).
+    ├── email-cloudflare/         ← OPTIONAL default email backend (provides #email).
+    │   └── package.json             Cloudflare Email Sending REST API; dev→MailHog.
+    │                                deps: nodemailer (dev MailHog path)
+    ├── email-mailgun/            ← OPTIONAL alternate email backend (provides #email).
     │   └── package.json             deps: nodemailer, nodemailer-mailgun-transport
     ├── oauth/                    ← OPTIONAL OAuth 2.1 server (peer-deps only)
     ├── mcp/                      ← OPTIONAL MCP transport
@@ -111,7 +114,8 @@ This repo is **a host shell + a stack of layers** wired through Nuxt's `extends:
 |---|---|---|
 | `core` | Auth, admin, profile pages; 6 runtime registries; #tenant single-mode kernel; RBAC; activity logger; rate limiter; secret crypto; storage; slug; migrations runner; bootstrap-admin script; launcher chrome (AppRail, AppSidebar, layouts, composables). | yes |
 | `tenancy` | Multi-tenant: orgs, memberships, org_apps, org_role_overrides, RLS, BYPASSRLS adminDb, OrgSwitcher, /admin/orgs UI, multi-mode #tenant kernel that overrides core's. | optional |
-| `email-mailgun` | Mailgun (HTTP API in prod, MailHog locally). Provides `#email` alias. | optional* |
+| `email-cloudflare` | Cloudflare Email Sending (REST API in prod, MailHog locally). Default email backend. Provides `#email` alias. | optional* |
+| `email-mailgun` | Mailgun (HTTP API in prod, MailHog locally). Alternate email backend. Provides `#email` alias. | optional* |
 | `email-smtp` | (planned) Plain SMTP via nodemailer. | optional* |
 | `email-ses` | (planned) AWS SES. | optional* |
 | `oauth` | OAuth 2.1 issuer (token, consent, admin endpoints). | optional |
@@ -155,7 +159,7 @@ Auth/notification code imports email helpers from `#email`:
 import { sendTemplateEmail } from '#email'
 ```
 
-Each email backend layer (`email-mailgun`, future `email-smtp`/`email-ses`) provides its own implementation and registers `#email` to point at it. Core ships a throwing fallback at [layers/core/email-fallback/email.ts](layers/core/email-fallback/email.ts) that surfaces a clear error if no email layer is loaded.
+Each email backend layer (`email-cloudflare` (default), `email-mailgun`, future `email-smtp`/`email-ses`) provides its own implementation and registers `#email` to point at it. Core ships a throwing fallback at [layers/core/email-fallback/email.ts](layers/core/email-fallback/email.ts) that surfaces a clear error if no email layer is loaded.
 
 ### Layer wiring (dev/nuxt.config.ts)
 

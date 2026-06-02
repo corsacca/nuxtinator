@@ -115,7 +115,7 @@ Each test calls the appropriate cleanup in `afterEach`. The global-setup teardow
 
 ### NODE_ENV at build time
 
-`@nuxt/test-utils` defaults the spawned Nuxt server to `NODE_ENV='test'`. The email layer's `isDevelopment` check is `=== 'development'` and is **inlined** into the bundle by Vite/Nitro at build time — so a `NODE_ENV='test'` build hardcodes `isDevelopment = false` forever, and emails attempt to go through real Mailgun.
+`@nuxt/test-utils` defaults the spawned Nuxt server to `NODE_ENV='test'`. The email layer's `isDevelopment` check is `=== 'development'` and is **inlined** into the bundle by Vite/Nitro at build time — so a `NODE_ENV='test'` build hardcodes `isDevelopment = false` forever, and emails attempt to go through the real provider (Cloudflare Email Sending).
 
 The fix is in [dev/vitest.config.ts](../dev/vitest.config.ts) (`process.env.NODE_ENV = 'development'` at the top) and in each layer's `global-setup.ts` (`nuxtConfig.vite.define` + `nuxtConfig.nitro.replace` overrides). If you ever see "Failed to send verification email" in test output, this is what's broken.
 

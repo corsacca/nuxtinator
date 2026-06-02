@@ -19,7 +19,7 @@ function layer(pkg: string): string {
 // This is the maintainer dev host shell. Layer selection lives in ./layers.ts.
 // Kept intentionally close to prod/nuxt.config.ts (two hosts, one shape). Only
 // HOST-authoritative config lives here; each layer declares its own
-// runtimeConfig (mailgun*/smtp* in @nuxtinator/email-mailgun, mcpServer* in
+// runtimeConfig (cloudflare*/smtp* in @nuxtinator/email-cloudflare, mcpServer* in
 // @nuxtinator/mcp, public.feedbackProjectId in @nuxtinator/feedback).
 export default defineNuxtConfig({
 

@@ -7,8 +7,8 @@
 
 // MUST be set before vitest defaults NODE_ENV to 'test'. The Nuxt/Nitro
 // build inlines `process.env.NODE_ENV` into the bundle, and the email layer
-// switches Mailpit vs. Mailgun on `=== 'development'`. With NODE_ENV='test'
-// at build time, the bundled `isDevelopment` is forever false → real Mailgun
+// switches Mailpit vs. the real provider on `=== 'development'`. With NODE_ENV='test'
+// at build time, the bundled `isDevelopment` is forever false → real Cloudflare send
 // → tests fail. Setting it here pins it through the build.
 process.env.NODE_ENV = 'development'
 
