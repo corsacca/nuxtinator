@@ -5,12 +5,6 @@
 // assistant text. Anything richer (streaming, citations) can be added
 // behind the same surface without callers changing.
 
-// Explicit node-shim import before the main SDK. The default entry uses an
-// auto-detect path (`_shims/auto/runtime`) whose conditional `exports`-map
-// resolution to `runtime-node.mjs` is not honored by Bun in the Nitro
-// production bundle, so the SDK throws `Cannot find module '.../auto/runtime'`
-// at first call. Loading the node shim first short-circuits the auto path.
-import '@anthropic-ai/sdk/shims/node'
 import Anthropic from '@anthropic-ai/sdk'
 
 const ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250929'
