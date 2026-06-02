@@ -1,6 +1,7 @@
 // GET /api/files/items?tag=
 // Lists the org's files (docs + uploads), newest first. Optional ?tag= filter.
 
+import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
 
 export default defineEventHandler(async (event) => {
@@ -28,7 +29,8 @@ export default defineEventHandler(async (event) => {
       .where('f.deleted_at', 'is', null)
       .orderBy('f.created_at', 'desc')
 
-    if (tag) qb = qb.where(eb => eb(eb.val(tag), '=', eb.fn.any('f.tags')))
+    // Containment (`@>`) so the files_items_tags_idx GIN index can serve it.
+    if (tag) qb = qb.where(sql<boolean>`f.tags @> ARRAY[${tag}]`)
 
     const rows = await qb.execute()
     return { items: rows }

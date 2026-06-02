@@ -40,9 +40,13 @@ export default defineEventHandler(async (event) => {
         'f.title',
         'f.filename',
         'f.mime',
+        'f.size_bytes',
         'f.tags',
         'f.created_at',
+        'f.last_edited_at',
+        'f.created_by',
         'u.display_name as created_by_name',
+        sql<boolean>`f.share_token is not null`.as('has_link'),
         sql<string>`ts_headline('english', ${ESCAPED_BODY}, ${tsQuery}, 'MaxWords=30,MinWords=10')`.as('headline')
       ])
       .where('f.deleted_at', 'is', null)

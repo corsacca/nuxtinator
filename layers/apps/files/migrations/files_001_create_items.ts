@@ -17,7 +17,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('size_bytes', 'bigint')
     .addColumn('tags', sql`text[]`, col => col.notNull().defaultTo(sql`'{}'::text[]`))
     .addColumn('share_token', 'uuid')
-    .addColumn('created_by', 'uuid', col => col.notNull().references('users.id').onDelete('set null'))
+    .addColumn('created_by', 'uuid', col => col.references('users.id').onDelete('set null'))
     .addColumn('created_at', 'timestamptz', col => col.notNull().defaultTo(sql`now()`))
     .addColumn('last_edited_by', 'uuid', col => col.references('users.id').onDelete('set null'))
     .addColumn('last_edited_at', 'timestamptz')

@@ -25,7 +25,9 @@ export interface FilesItemsTable {
   // Public share link. null = no active link; revoke = null it; reissue =
   // overwrite. A UUID so the public route can resolve it via withRecordOrgContext.
   share_token: ColumnType<string | null, string | null | undefined, string | null>
-  created_by: string
+  // Nullable + ON DELETE SET NULL: a library doc/file outlives its creator's
+  // account (read paths render `created_by_name ?? 'Unknown'`).
+  created_by: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   last_edited_by: string | null
   last_edited_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>

@@ -63,7 +63,7 @@ export const listFilesTool = defineMcpTool({
           filename: r.filename,
           mime: r.mime,
           tags: r.tags,
-          created_by: r.created_by_name,
+          created_by_name: r.created_by_name,
           created_at: (r.created_at as Date).toISOString()
         }))
       })
@@ -108,6 +108,11 @@ export const createDocTool = defineMcpTool({
     try {
       const result = await runInOrgTransaction(ctx.event, async (tx) => {
         const bodyMd = input.body_md ?? ''
+        // z.string().max() caps UTF-16 units, not bytes — enforce the real
+        // byte cap here so MCP matches the REST create + saveDocContent paths.
+        if (Buffer.byteLength(bodyMd, 'utf8') > MAX_DOC_BYTES) {
+          throw createError({ statusCode: 413, statusMessage: 'Document content exceeds 100KB limit.' })
+        }
         const tags = [...new Set((input.tags ?? []).map(t => t.trim()).filter(Boolean))]
         const item = await tx
           .insertInto('files_items')

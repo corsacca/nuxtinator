@@ -7,6 +7,25 @@ import type { Database } from '#core/server/database/schema'
 
 export const MAX_DOC_BYTES = 100 * 1024
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Guard a path-param id before it hits a uuid column (a non-UUID would throw a
+// 22P02 cast error → 500). Returns 404 instead.
+export function requireUuid(id: string, message = 'Not found.'): void {
+  if (!UUID_RE.test(id)) {
+    throw createError({ statusCode: 404, statusMessage: message })
+  }
+}
+
+// Normalize a free-form tags input into a trimmed, de-duplicated string[].
+// Shared by the create/patch routes and the multipart upload parser.
+export function normalizeTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return []
+  return [...new Set(
+    tags.filter(t => typeof t === 'string').map(t => (t as string).trim()).filter(Boolean)
+  )]
+}
+
 export interface FilesItemRow {
   id: string
   kind: 'doc' | 'file'
@@ -18,7 +37,7 @@ export interface FilesItemRow {
   size_bytes: string | null
   tags: string[]
   share_token: string | null
-  created_by: string
+  created_by: string | null
   created_at: Date
   last_edited_by: string | null
   last_edited_at: Date | null
@@ -36,6 +55,7 @@ export async function loadItem(
   tx: Transaction<Database>,
   id: string
 ): Promise<FilesItemRow | null> {
+  requireUuid(id)
   const row = await tx
     .selectFrom('files_items')
     .select(ITEM_COLS)

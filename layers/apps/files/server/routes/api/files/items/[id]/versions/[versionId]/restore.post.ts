@@ -4,7 +4,7 @@
 
 import { withOrgPermission } from '#tenant/server'
 import { logUpdate } from '#core/server/utils/activity-logger'
-import { loadItem, saveDocContent } from '../../../../../../../utils/file-helpers'
+import { loadItem, saveDocContent, requireUuid } from '../../../../../../../utils/file-helpers'
 
 export default defineEventHandler(async (event) => {
   return await withOrgPermission(event, { appId: 'files' }, 'files.write', async (tx, ctx) => {
@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
     if (item.kind !== 'doc') {
       throw createError({ statusCode: 400, statusMessage: 'Only documents have versions.' })
     }
+    requireUuid(versionId, 'Version not found.')
 
     const v = await tx
       .selectFrom('files_versions')

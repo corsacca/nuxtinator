@@ -4,7 +4,7 @@
 
 import { withOrgPermission } from '#tenant/server'
 import { logUpdate } from '#core/server/utils/activity-logger'
-import { loadItem, saveDocContent } from '../../../../utils/file-helpers'
+import { loadItem, saveDocContent, normalizeTags } from '../../../../utils/file-helpers'
 
 export default defineEventHandler(async (event) => {
   return await withOrgPermission(event, { appId: 'files' }, 'files.write', async (tx, ctx) => {
@@ -49,10 +49,3 @@ export default defineEventHandler(async (event) => {
     return { item: updated }
   })
 })
-
-function normalizeTags(tags: unknown): string[] {
-  if (!Array.isArray(tags)) return []
-  return [...new Set(
-    tags.filter(t => typeof t === 'string').map(t => (t as string).trim()).filter(Boolean)
-  )]
-}

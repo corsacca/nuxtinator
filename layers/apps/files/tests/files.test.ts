@@ -166,4 +166,27 @@ describe('files layer', () => {
     const res = await fetch('/api/files/uploads', { method: 'POST', ...withOrgHeader(auth, org.slug) })
     expect(res.status).toBe(400)
   })
+
+  it('returns 404 (not 500) for a non-UUID item id', async () => {
+    const { org, auth } = await createFilesOrgWith(sql)
+    const res = await fetch('/api/files/items/not-a-uuid', { ...withOrgHeader(auth, org.slug) })
+    expect(res.status).toBe(404)
+  })
+
+  it('public route 404s on a malformed token (no auth)', async () => {
+    const res = await fetch('/api/files/public/not-a-uuid')
+    expect(res.status).toBe(404)
+  })
+
+  it('nulls created_by when the creator is deleted (item survives)', async () => {
+    const { org, user } = await createFilesOrgWith(sql)
+    const { id } = await createTestDoc(sql, { org_id: org.id, created_by: user.id })
+
+    // Must not throw (the old NOT NULL + SET NULL combo aborted this).
+    await sql`DELETE FROM users WHERE id = ${user.id}`
+
+    const rows = await sql`SELECT created_by FROM files_items WHERE id = ${id}`
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.created_by).toBeNull()
+  })
 })

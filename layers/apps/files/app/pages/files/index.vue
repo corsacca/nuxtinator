@@ -1,18 +1,29 @@
 <script setup lang="ts">
 import type { FilesItemSummary } from '../../composables/useFiles'
 
+// List rows are plain summaries; search rows additionally carry a `headline`
+// snippet (server-escaped — only <b> markers — so v-html is safe).
+type FilesRow = FilesItemSummary & { headline?: string }
+
 definePageMeta({
   middleware: 'auth'
 })
 
 const { list, createDoc, search: searchApi } = useFiles()
+const toast = useToast()
 
-const items = ref<FilesItemSummary[]>([])
+// Pull a human message out of an $fetch/h3 error (body statusMessage first).
+function errMsg(e: unknown): string {
+  const err = e as { statusMessage?: string, data?: { statusMessage?: string, message?: string }, message?: string }
+  return err?.data?.statusMessage || err?.statusMessage || err?.data?.message || err?.message || 'Something went wrong.'
+}
+
+const items = ref<FilesRow[]>([])
 const loading = ref(true)
 const activeTag = ref<string | null>(null)
 
 const q = ref('')
-const searchResults = ref<FilesItemSummary[] | null>(null)
+const searchResults = ref<FilesRow[] | null>(null)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 async function load() {
@@ -59,6 +70,8 @@ async function createNewDoc() {
     newDocOpen.value = false
     newTitle.value = ''
     await navigateTo(`/files/${res.item.id}`)
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     creating.value = false
   }
@@ -78,6 +91,8 @@ async function onUploadChange(e: Event) {
   try {
     await $fetch('/api/files/uploads', { method: 'POST', body: fd })
     await load()
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     uploading.value = false
     input.value = ''
@@ -183,6 +198,14 @@ onMounted(load)
             title="Has a public share link"
           />
         </div>
+
+        <!-- Search-result snippet (server-escaped; only <b> markers) -->
+        <!-- eslint-disable-next-line vue/no-v-html -->
+        <p
+          v-if="item.headline"
+          class="files-snippet text-xs text-(--ui-text-muted) line-clamp-2"
+          v-html="item.headline"
+        />
 
         <div v-if="item.tags.length" class="flex flex-wrap gap-1">
           <UBadge

@@ -4,7 +4,7 @@
 import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
 import { logCreate } from '#core/server/utils/activity-logger'
-import { MAX_DOC_BYTES } from '../../../../utils/file-helpers'
+import { MAX_DOC_BYTES, normalizeTags } from '../../../../utils/file-helpers'
 
 export default defineEventHandler(async (event) => {
   return await withOrgPermission(event, { appId: 'files' }, 'files.write', async (tx, ctx) => {
@@ -44,10 +44,3 @@ export default defineEventHandler(async (event) => {
     return { item }
   })
 })
-
-function normalizeTags(tags: unknown): string[] {
-  if (!Array.isArray(tags)) return []
-  return [...new Set(
-    tags.filter(t => typeof t === 'string').map(t => (t as string).trim()).filter(Boolean)
-  )]
-}

@@ -8,8 +8,18 @@
 import { withRecordOrgContext } from '#tenant/server'
 import { generateSignedUrl } from '#core/server/utils/storage'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export default defineEventHandler(async (event) => {
   const token = getRouterParam(event, 'token') ?? ''
+
+  // Guard the token shape before the query. share_token is a uuid column, so a
+  // non-UUID would otherwise throw a 22P02 cast error → 500 in single mode
+  // (the multi-mode withRecordOrgContext validates this internally; single
+  // mode is a passthrough).
+  if (!UUID_RE.test(token)) {
+    throw createError({ statusCode: 404, statusMessage: 'Link not found.' })
+  }
 
   return await withRecordOrgContext(
     event,

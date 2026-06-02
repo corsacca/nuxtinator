@@ -9,6 +9,12 @@ const route = useRoute()
 const toast = useToast()
 const id = computed(() => route.params.id as string)
 
+// Pull a human message out of an $fetch/h3 error (body statusMessage first).
+function errMsg(e: unknown): string {
+  const err = e as { statusMessage?: string, data?: { statusMessage?: string, message?: string }, message?: string }
+  return err?.data?.statusMessage || err?.statusMessage || err?.data?.message || err?.message || 'Something went wrong.'
+}
+
 const {
   get, update, remove, listVersions, restoreVersion, issueLink, revokeLink, publicUrl
 } = useFiles()
@@ -52,6 +58,8 @@ async function saveEdit() {
     await update(id.value, { title: editTitle.value.trim(), body_md: editBody.value })
     await load()
     toast.add({ title: 'Saved', color: 'success' })
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     saving.value = false
   }
@@ -74,6 +82,8 @@ async function onRestore(versionId: string) {
     versions.value = await listVersions(id.value)
     await load()
     toast.add({ title: 'Version restored', color: 'success' })
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     restoring.value = false
   }
@@ -98,6 +108,8 @@ async function saveDetails() {
     await update(id.value, { title: detailsTitle.value.trim(), tags: detailsTags.value })
     detailsOpen.value = false
     await load()
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     savingDetails.value = false
   }
@@ -112,6 +124,8 @@ async function onShare() {
     await issueLink(id.value)
     await load()
     toast.add({ title: 'Share link created', color: 'success' })
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     sharing.value = false
   }
@@ -123,6 +137,8 @@ async function onRevoke() {
     await revokeLink(id.value)
     await load()
     toast.add({ title: 'Share link revoked', color: 'neutral' })
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     sharing.value = false
   }
@@ -148,6 +164,8 @@ async function onDelete() {
   try {
     await remove(id.value)
     await navigateTo('/files')
+  } catch (e) {
+    toast.add({ title: errMsg(e), color: 'error' })
   } finally {
     deleting.value = false
     deleteOpen.value = false

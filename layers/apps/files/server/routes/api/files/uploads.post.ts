@@ -5,6 +5,7 @@
 import { withOrgPermission } from '#tenant/server'
 import { uploadToS3, validateFileSize } from '#core/server/utils/storage'
 import { logCreate } from '#core/server/utils/activity-logger'
+import { normalizeTags } from '../../../utils/file-helpers'
 
 const MAX_SIZE_MB = 50
 
@@ -59,11 +60,9 @@ export default defineEventHandler(async (event) => {
 function parseTags(raw: string): string[] {
   try {
     const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) {
-      return [...new Set(parsed.filter(t => typeof t === 'string').map(t => t.trim()).filter(Boolean))]
-    }
+    if (Array.isArray(parsed)) return normalizeTags(parsed)
   } catch {
     // not JSON — fall through to comma-split
   }
-  return [...new Set(raw.split(',').map(t => t.trim()).filter(Boolean))]
+  return normalizeTags(raw.split(','))
 }

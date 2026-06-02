@@ -3,10 +3,12 @@
 
 import { withOrgPermission } from '#tenant/server'
 import { generateSignedUrl } from '#core/server/utils/storage'
+import { requireUuid } from '../../../../utils/file-helpers'
 
 export default defineEventHandler(async (event) => {
   return await withOrgPermission(event, { appId: 'files' }, 'files.read', async (tx) => {
     const id = getRouterParam(event, 'id') ?? ''
+    requireUuid(id)
 
     const item = await tx
       .selectFrom('files_items as f')
@@ -39,6 +41,6 @@ export default defineEventHandler(async (event) => {
 
     // storage_key is internal — don't leak it to the client.
     const { storage_key: _omit, ...rest } = item
-    return { item: { ...rest, url } }
+    return { item: { ...rest, url, has_link: rest.share_token != null } }
   })
 })

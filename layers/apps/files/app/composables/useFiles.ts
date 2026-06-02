@@ -15,7 +15,7 @@ export interface FilesItemSummary {
   tags: string[]
   created_at: string
   last_edited_at: string | null
-  created_by: string
+  created_by: string | null
   created_by_name: string | null
   has_link: boolean
 }
