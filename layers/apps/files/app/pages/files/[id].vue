@@ -118,12 +118,47 @@ async function saveDetails() {
 // ── Share ────────────────────────────────────────────────────────────────
 const sharing = ref(false)
 
+// Robust copy: the async Clipboard API silently no-ops in some browsers when
+// the document isn't focused (e.g. a toast overlay is up), so guard on
+// document.hasFocus() and otherwise fall back to the synchronous, focus-
+// independent execCommand path.
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext && document.hasFocus()) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // fall through to legacy
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 async function onShare() {
   sharing.value = true
   try {
-    await issueLink(id.value)
+    // Create + copy in one action (copy before the reload/toast, while the
+    // click gesture is fresh and no toast overlay is up yet).
+    const token = await issueLink(id.value)
+    const copied = await copyToClipboard(publicUrl(token))
     await load()
-    toast.add({ title: 'Share link created', color: 'success' })
+    toast.add({
+      title: copied ? 'Share link created and copied' : 'Share link created',
+      color: 'success'
+    })
   } catch (e) {
     toast.add({ title: errMsg(e), color: 'error' })
   } finally {
@@ -147,12 +182,10 @@ async function onRevoke() {
 async function copyLink() {
   if (!item.value?.share_token) return
   const url = publicUrl(item.value.share_token)
-  try {
-    await navigator.clipboard.writeText(url)
-    toast.add({ title: 'Link copied', color: 'success' })
-  } catch {
-    toast.add({ title: url, color: 'neutral' })
-  }
+  const copied = await copyToClipboard(url)
+  toast.add(copied
+    ? { title: 'Link copied', color: 'success' }
+    : { title: url, color: 'neutral' })
 }
 
 // ── Delete ───────────────────────────────────────────────────────────────

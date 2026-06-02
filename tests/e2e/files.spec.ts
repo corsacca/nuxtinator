@@ -80,6 +80,7 @@ test('version history lists snapshots', async ({ page }) => {
 
 test('share link renders for an anonymous visitor, then 404s after revoke', async ({ page, browser }) => {
   const { org } = await loginIntoNewOrg(page, { roles: ['admin'] })
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.goto(`/@${org.slug}/files`)
   await page.getByRole('button', { name: /new document/i }).click()
   await page.getByPlaceholder('Document title').fill('Shared doc')
@@ -96,11 +97,15 @@ test('share link renders for an anonymous visitor, then 404s after revoke', asyn
     page.getByRole('button', { name: /^save$/i }).click()
   ])
 
-  // Issue the share link.
+  // Issue the share link — a single Share click should create *and* copy it.
   await Promise.all([
     page.waitForResponse(r => r.url().includes('/share') && r.request().method() === 'POST' && r.status() === 200),
     page.getByRole('button', { name: /^share$/i }).click()
   ])
+  // onShare finished once the link controls appear; the URL should be on the clipboard.
+  await expect(page.getByRole('button', { name: /copy link/i })).toBeVisible()
+  const clip = await page.evaluate(() => navigator.clipboard.readText())
+  expect(clip).toContain('/files/public/')
 
   // Read the token straight from the DB and open it anonymously.
   const sql = getHostAdminDb()
