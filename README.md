@@ -266,7 +266,7 @@ Open `layers.ts`. It contains an entry for every available nuxtinator layer. **D
 
 You do not need to touch `nuxt.config.ts` or `scripts/sync-layers.ts` — both derive from `LAYERS`.
 
-If the user mentioned a layer not on the available-layers table — third-party, sibling-checkout, etc. — add a new `LAYERS` entry with all three fields (`id`, `pkg`, `url`). The file has commented-out example entries for the third-party + sibling-checkout cases. Bun workspaces resolve cross-layer deps by package name across sources, so a third-party layer that lists `"@nuxtinator/core": "*"` will find it through the consumer's workspace as long as `core` is still in `LAYERS`.
+If the user mentioned a **remote** layer not on the available-layers table — a third-party layer hosted in its own git repo — add a new `LAYERS` entry with all three fields (`id`, `pkg`, `url`); the file has a commented-out third-party example to copy. giget sources are `github:` / `gitlab:` / `bitbucket:` / `sourcehut:` only (no `file:` provider). Bun workspaces resolve cross-layer deps by package name across sources, so a third-party layer that lists `"@nuxtinator/core": "*"` will find it through the consumer's workspace as long as `core` is still in `LAYERS`. For an app the user is **writing themselves** (not hosted yet), don't add a `LAYERS` entry — those live in the `apps/<id>/` directory, which `nuxt.config.ts` globs into `extends` (see the shipped `apps/example/` and `apps/README.md`).
 
 ### Step 6: Rename the project
 
@@ -334,13 +334,13 @@ After scaffolding is verified, tell the user:
 - Fill in `.env` (database URL, JWT secret, encryption key, any provider credentials for the layers they selected). Generate secrets with the `openssl` commands shown in `.env.example`.
 - Provision the database. For single-tenant: one role, one database — see [documentation/single-tenant-deploy.md](documentation/single-tenant-deploy.md). For multi-tenant: two roles (`host_admin` BYPASSRLS + `app_user` RLS-enforced) — see [documentation/tenancy.md](documentation/tenancy.md).
 - Run `bun run dev`. The first user to register is automatically promoted to operator-admin.
-- Adding a new app of their own: see [documentation/layers.md](documentation/layers.md#creating-a-new-app-layer). They can either drop pages directly into the host (project-specific code) or create a sibling layer in their own repo.
+- Adding a new app of their own: see [documentation/layers.md](documentation/layers.md#creating-a-new-app-layer). They can drop pages directly into the host (project-specific code), add a local app in `apps/<id>/` (globbed into extends — copy the shipped `apps/example/`), or publish a layer to its own repo and list it in `layers.ts`.
 - Updating to a newer cut of nuxtinator: set `NUXTINATOR_REF=<tag-or-sha>` in `.env` (or change the default in `scripts/sync-layers.ts`), then run `bun run setup` again. `forceClean: true` in the script means each layer is re-extracted from the new ref.
 
 ### Things to **not** do
 
 - **Don't fork the layers.** The user fetches each via `sync-layers` into `_layers/<id>/`; they never own the layer source. The extracted host is the only thing they edit.
-- **Don't add layers to `LAYERS` in `layers.ts` that don't exist** in the available-layers table — unless the user has explicitly given you a giget URL for a third-party / sibling-checkout layer. If the user asks for something not on the list and provides no URL, say so and offer to scaffold a custom layer in their own repo (see [layers.md](documentation/layers.md)).
+- **Don't add layers to `LAYERS` in `layers.ts` that don't exist** in the available-layers table — unless the user has explicitly given you a giget URL for a third-party / sibling-checkout layer. If the user asks for something not on the list and provides no URL, say so and offer to scaffold a custom app for them — locally in `apps/<id>/` (globbed into extends; copy the shipped `apps/example/`), or in its own repo if they want to share it (see [layers.md](documentation/layers.md)).
 - **Don't manually edit the `extends:` array** in `nuxt.config.ts` to add or remove a layer. `extends:` is derived from `layers.ts`. Editing `extends:` directly creates drift between what's in `LAYERS` (what gets fetched) and what Nuxt extends (what gets loaded). Edit `layers.ts` only.
 - **Don't add `@nuxtinator/*` to the consumer's `package.json` `dependencies`** — not as `workspace:*` (only valid in this monorepo) and not as a `github:` URL (bun's `github:` dep protocol can't resolve a monorepo subpath; install will fail). Layers arrive as workspace members via the `_layers/*` glob already wired in `package.json`'s `workspaces`, not as npm deps.
 - **Don't change the workspaces glob to `.layers/*`.** Bun's minimatch doesn't match dot-prefixed dirs. The template uses `_layers/*` for this exact reason. There is no error if you change it wrong — `bun install` succeeds, no symlinks get made, nothing works.

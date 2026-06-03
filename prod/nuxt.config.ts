@@ -29,6 +29,18 @@ function layer(pkg: string): string {
   return process.env[envKey] || pkg
 }
 
+// Your own app layers live in ./apps/<id>/ — committed source you own. Nuxt
+// only auto-discovers a directory literally named `layers/`, so we glob `apps/`
+// into extends ourselves. Each subdirectory is loaded as a layer; adding one is
+// zero-config (just drop the folder in). Fetched nuxtinator layers come from
+// _layers/ via layers.ts and are listed first; your apps stack on top.
+function localApps(): string[] {
+  if (!existsSync('apps')) return []
+  return readdirSync('apps', { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => `./apps/${d.name}`)
+}
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 //
 // Standalone starter config — copy this whole prod/ folder to begin a project,
@@ -39,7 +51,7 @@ function layer(pkg: string): string {
 // public.tenancy in @nuxtinator/core).
 export default defineNuxtConfig({
 
-  extends: LAYERS.map(l => layer(l.pkg)),
+  extends: [...LAYERS.map(l => layer(l.pkg)), ...localApps()],
 
   modules: [
     '@nuxt/eslint',

@@ -42,17 +42,96 @@ Import shared functionality by alias, not relative path into `_layers/`:
 
 Core composables/components are auto-imported (no explicit import needed).
 
-## Your own code goes in the host
+## Where your code goes — host vs. your own app
 
-This project's own pages and routes live directly in the host, not in `_layers/`:
+You add features two ways. Pick by reuse, not by size:
 
-- Pages: `app/pages/<feature>/...`
-- API routes: `server/routes/api/<feature>/...`
-- Migrations: `migrations/<feature>_NNN_<desc>.ts` — the host's `migrations/` runs alongside every layer's on boot. Filenames must be globally unique across host + layers.
+- **In the host** (this project) — for code only *this* project needs. Lives directly in `app/`, `server/`, `migrations/`. Nothing to fetch. This is the common case.
+- **In your own app layer** (`apps/<id>/`) — for a self-contained feature you'd reuse or version on its own. `nuxt.config.ts` globs `apps/*` into `extends`; copy the ready-made [apps/example/](apps/example/) to start. See [Creating your own app](#creating-your-own-app) below.
 
-**Write pages in single-tenant shape** — no `/@:orgSlug/...` prefix. If the `tenancy` layer is loaded it adds the `/@:slug/...` aliases automatically; don't hand-write them.
+Either way: never put your code in `_layers/` — that's regenerated on every `sync-layers` and your edits are lost.
 
-Server routes that need a user / permissions use `defineTenantHandler` from `#tenant/server` (single-tenant mode = `requireAuth` + a transaction; multi-tenant mode adds org context). Database access is `db` from `#core/server/utils/database`.
+### Adding a feature in the host
+
+```
+app/pages/<feature>/...                  ← pages (route by URL)
+server/routes/api/<feature>/...          ← API routes (NOT server/api/)
+server/plugins/register-<feature>.ts     ← wires the feature into the app shell (see below)
+migrations/<feature>_NNN_<desc>.ts       ← runs alongside every layer's on boot
+```
+
+- **Write pages in single-tenant shape** — no `/@:orgSlug/...` prefix. If the `tenancy` layer is loaded it adds the `/@:slug/...` aliases automatically; don't hand-write them.
+- Server routes that need a user / permissions use `defineTenantHandler` from `#tenant/server` (single mode = `requireAuth` + a transaction; multi mode adds org context). Database access is `db` from `#core/server/utils/database`.
+- **Migration filenames must be globally unique** across the host + every layer. Prefix with your feature id: `reports_001_*.ts`.
+
+A bare page gives you a reachable URL but **no launcher tile, no sidebar nav, no permission gating**. To make a feature first-class, add a Nitro plugin that feeds core's registries (the same mechanism every layer uses — import them by the `#core` alias):
+
+```ts
+// server/plugins/register-reports.ts
+import { registerPermissions }   from '#core/server/utils/permissions-registry'
+import { registerDefaultGrants } from '#core/server/utils/default-grants-registry'
+import { registerApp }           from '#core/server/utils/app-registry'
+import { registerNavItem }       from '#core/server/utils/nav-registry'
+
+export default defineNitroPlugin(() => {
+  registerPermissions(['reports.access', 'reports.read'], {
+    'reports.access': { title: 'Access Reports', description: 'Open the Reports app.' },
+    'reports.read':   { title: 'Read reports',   description: 'View reports.' }
+  })
+  registerDefaultGrants('reports', {
+    admin:  ['reports.access', 'reports.read'],
+    member: ['reports.access', 'reports.read']
+  })
+  registerApp({                       // launcher tile
+    id: 'reports', title: 'Reports', path: '/reports',
+    icon: 'i-lucide-bar-chart', requiredPermission: 'reports.access', order: 40
+  })
+  registerNavItem({                   // in-app sidebar item
+    appId: 'reports', title: 'All reports', path: '/reports',
+    icon: 'i-lucide-list', requiredPermission: 'reports.read', order: 10
+  })
+})
+```
+
+To make TypeScript accept your new permission strings, widen the `#permissions` interface anywhere in the host (e.g. `app/utils/permissions.ts`):
+
+```ts
+declare module '#permissions' {
+  interface PermissionRegistry { 'reports.access': true; 'reports.read': true }
+}
+```
+
+The six registries you can feed (all under `#core/server/utils/`): `app-registry` (launcher tiles), `nav-registry` (in-app nav), `admin-section-registry` (admin shell sections), `permissions-registry`, `default-grants-registry` (role→permission defaults), `roles-registry` (shippable static roles). **Prefix everything with your feature id** — paths, tables, migrations, permissions, components — or you'll collide with a layer.
+
+## Creating your own app
+
+An app layer is a self-contained feature (pages + routes + permissions + migrations) you can drop in or lift out as a unit. There are two homes, depending on whether you want to share it:
+
+### Local — `apps/<id>/` (the common case)
+
+`nuxt.config.ts` globs `apps/*` into `extends`, so every subdirectory loads as a layer. No `layers.ts` entry, no fetch, no install — drop the folder in and it loads.
+
+```bash
+cp -r apps/example apps/reports     # then rename example → reports everywhere
+```
+
+[apps/example/](apps/example/) is a complete minimal app layer (page + `true` endpoint + registry wiring); [apps/README.md](apps/README.md) lists every file and the rename steps. `apps/` is committed and owned by you; `_layers/` is the gitignored cache of fetched layers — don't confuse them.
+
+### Remote — published to a repo, listed in `layers.ts`
+
+To share a layer across projects, put it in its own git repo and add an entry to [layers.ts](layers.ts):
+
+```ts
+{ id: 'reports', pkg: '@yourscope/reports', url: 'github:your-org/reports#v1.0.0' }
+```
+
+`bun run setup` fetches it into `_layers/reports/` and Nuxt extends it by package name. giget supports `github:` / `gitlab:` / `bitbucket:` / `sourcehut:` / `https://…tarball` — **there is no `file:` provider**, so for a local app use `apps/<id>/` (above), not a `file:` URL.
+
+### Layer package.json rules (either home)
+
+Framework/DB singletons (`nuxt`, `vue`, `@nuxt/kit`, `@nuxt/ui`, `kysely`, `kysely-postgres-js`, `postgres`, `h3`, `tailwindcss`) go in `peerDependencies` so they resolve to this host's copy. Layer-private deps go in `dependencies`. Cross-layer deps (e.g. `@nuxtinator/core`) go in `optionalDependencies` as `"*"`. Don't add a `main` field.
+
+For the full file-by-file template — DB schema augmentation, per-app tenancy retrofit migrations (`*_T<NNN>_*.ts`), admin sections, static roles, and the prefix conventions — see the upstream guide: **https://github.com/corsacca/nuxtinator/blob/master/documentation/layers.md** (section "Creating a new app layer").
 
 ## Good to know
 

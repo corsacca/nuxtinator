@@ -1,8 +1,13 @@
 // Which nuxtinator layers this project uses.
 //
-// This file is the SINGLE SOURCE OF TRUTH for layer selection. Both
-// nuxt.config.ts (the `extends:` array) and scripts/sync-layers.ts (the
-// fetcher) read from it. To add or remove a layer, edit this file only.
+// This file is the SINGLE SOURCE OF TRUTH for REMOTE layer selection — layers
+// fetched from a git host into _layers/<id>/. Both nuxt.config.ts (the
+// `extends:` array) and scripts/sync-layers.ts (the fetcher) read from it.
+//
+// YOUR OWN apps don't go here. Drop them in ./apps/<id>/ — nuxt.config.ts globs
+// that directory into `extends`, so a new app loads with no entry in this file,
+// no fetch, and no install step. See ./apps/README.md. Use this file only for
+// layers pulled from a remote repo.
 //
 // Each entry has three fields:
 //   id   — directory name under _layers/<id>/ (also the bare slug used in
@@ -10,9 +15,10 @@
 //   pkg  — package name Nuxt's extends: resolves to. Must match the layer's
 //          own package.json `name` field. For first-party layers this is
 //          @nuxtinator/<id>; for third-party layers, whatever scope they use.
-//   url  — anything giget accepts: `github:owner/repo[/subdir][#ref]`,
-//          `gitlab:owner/repo#ref`, `https://...tarball.tar.gz`, or
-//          `file:./local-checkout` for an in-development sibling.
+//   url  — a giget source: `github:owner/repo[/subdir][#ref]`,
+//          `gitlab:owner/repo#ref`, `bitbucket:…`, `sourcehut:…`, or an
+//          `https://…tarball.tar.gz`. giget has NO `file:` provider — for a
+//          local app use ./apps/<id>/ (above), not a file: URL here.
 //
 // Load order matters. Keep core first; tenancy second so its multi-mode
 // kernel overrides core's single-mode; email backend; oauth; mcp; app
@@ -36,7 +42,7 @@ export const LAYERS = [
   { id: 'context',         pkg: '@nuxtinator/context',        url: `github:corsacca/nuxtinator/layers/apps/context#${REF}` },
   { id: 'dev',             pkg: '@nuxtinator/dev',            url: `github:corsacca/nuxtinator/layers/dev#${REF}` }
 
-  // Example third-party / sibling-checkout entries (uncomment + edit to use):
-  // { id: 'contacts',     pkg: '@disciple-tools/contacts',   url: 'github:disciple-tools/contacts-layer#v0.5.0' },
-  // { id: 'my-experiment',pkg: '@me/my-experiment',          url: 'file:../my-experiment-layer' }
+  // Example remote third-party layer (uncomment + edit to use). For your OWN
+  // apps, use ./apps/<id>/ instead — see ./apps/README.md.
+  // { id: 'contacts',     pkg: '@disciple-tools/contacts',   url: 'github:disciple-tools/contacts-layer#v0.5.0' }
 ] as const

@@ -39,9 +39,12 @@ After Step 1 you'll see:
 
 ```
 my-app/
-├── layers.ts                 ← single source of truth for layer selection
-├── nuxt.config.ts            ← imports LAYERS from layers.ts; derives extends:
+├── layers.ts                 ← single source of truth for REMOTE layer selection
+├── nuxt.config.ts            ← imports LAYERS; derives extends: (and globs apps/*)
 ├── scripts/sync-layers.ts    ← iterates LAYERS; downloadTemplate per URL → _layers/<id>/
+├── apps/                     ← YOUR OWN app layers (globbed into extends)
+│   ├── README.md             ← how to add one
+│   └── example/              ← a ready-made minimal app — copy it to start
 ├── package.json              ← workspaces: ["_layers/*"]; no @nuxtinator/* deps
 ├── bunfig.toml               ← [install] linker = "hoisted" (required — don't delete)
 ├── .env.example
@@ -160,25 +163,23 @@ First `bun run dev` creates the schema (you'll see migration logs). Then visit <
 
 ## Adding your own app layer
 
-You don't need to fork the nuxtinator repo to add features. Two options:
+You don't need to fork the nuxtinator repo to add features. Three ways, by how reusable the feature is:
 
 1. **In-project code** — drop pages under `app/pages/<your-app>/` and routes under `server/routes/api/<your-app>/` directly in your project. Anything you `import` resolves against the project's deps. Good for project-specific stuff that won't be reused.
 
-2. **A new layer in your own repo** — create a sibling directory (or another git repo) shaped like the layers in nuxtinator. Add an entry to `layers.ts`:
+2. **A local app in `apps/<id>/`** — for a self-contained feature you'd lift in or out as a unit. `nuxt.config.ts` globs `apps/*` into `extends`, so every subdirectory loads as a layer — no `layers.ts` entry, no fetch, no install step. The template ships a ready-made [`apps/example/`](https://github.com/corsacca/nuxtinator/tree/master/prod/apps/example); copy it and rename `example` → your app id throughout. This is the recommended home for your own apps. (Don't confuse `apps/` — your committed source — with `_layers/`, the gitignored cache of fetched layers.)
+
+3. **A shared layer in its own repo** — to reuse a layer across projects, publish it to a git host and add an entry to `layers.ts`:
 
    ```ts
    { id: 'my-layer', pkg: '@yourscope/my-layer', url: 'github:your-org/my-layer#v1.0.0' }
    ```
 
-   Or for a sibling checkout during development:
+   `bun run setup` fetches it into `_layers/my-layer/`. giget accepts `github:` / `gitlab:` / `bitbucket:` / `sourcehut:` sources — there is **no `file:` provider**, so for a local app use option 2 (`apps/<id>/`), not a `file:` URL. To iterate on a *fetched* layer against a local checkout, use the `NUXTINATOR_<ID>_PATH` env override (see "Working against local layer source" below).
 
-   ```ts
-   { id: 'my-layer', pkg: '@yourscope/my-layer', url: 'file:../my-layer-checkout' }
-   ```
+See [layers.md](layers.md#creating-a-new-app-layer) for the full layer template (permissions, registries, migrations, tenancy retrofits).
 
-   `layers.ts`'s header has commented-out template entries for both shapes. See [layers.md](layers.md#creating-a-new-app-layer) for the full layer template.
-
-Either way, you're adding to your own project without touching nuxtinator's code. `bun run setup` re-fetches and rehoists everything; no other file changes needed.
+Adding to your own project never touches nuxtinator's code. `bun run setup` re-fetches and rehoists; apps in `apps/` need no setup at all.
 
 ---
 
