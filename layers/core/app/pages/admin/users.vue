@@ -335,6 +335,7 @@ const handleSave = async () => {
 const markingVerified = ref(false)
 const sendingVerification = ref(false)
 const resendingInvite = ref(false)
+const sendingPasswordReset = ref(false)
 
 const handleMarkVerified = async () => {
   if (!selectedUser.value || selectedUser.value.verified) return
@@ -410,6 +411,24 @@ const handleResendInvite = async () => {
     })
   } finally {
     resendingInvite.value = false
+  }
+}
+
+const handleSendPasswordReset = async () => {
+  if (!selectedUser.value) return
+  sendingPasswordReset.value = true
+  try {
+    const userId = selectedUser.value.id
+    await $fetch(`/api/admin/users/${userId}/send-password-reset`, { method: 'POST' })
+    toast.add({ title: 'Password reset email sent', color: 'success' })
+  } catch (err: unknown) {
+    toast.add({
+      title: 'Send failed',
+      description: (err as { data?: { statusMessage?: string }, message?: string } | null)?.data?.statusMessage || (err as { message?: string } | null)?.message || 'Failed to send password reset email',
+      color: 'error'
+    })
+  } finally {
+    sendingPasswordReset.value = false
   }
 }
 
@@ -677,9 +696,18 @@ const handleDelete = async () => {
           <hr class="border-(--ui-border)">
 
           <section class="space-y-2">
-            <h3 class="font-medium">
-              Verification
-            </h3>
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="font-medium">
+                Verification
+              </h3>
+              <UBadge
+                :color="STATUS_META[selectedUser.status].color"
+                :icon="STATUS_META[selectedUser.status].icon"
+                :label="STATUS_META[selectedUser.status].label"
+                variant="subtle"
+                size="lg"
+              />
+            </div>
             <div class="flex gap-2 flex-wrap">
               <UButton
                 v-if="selectedUser.status === 'not_verified'"
@@ -704,12 +732,15 @@ const handleDelete = async () => {
               >
                 Resend invite
               </UButton>
-              <span
-                v-if="selectedUser.verified"
-                class="text-sm text-(--ui-text-muted)"
+              <UButton
+                v-if="selectedUser.status === 'active' || selectedUser.status === 'not_verified'"
+                variant="outline"
+                color="neutral"
+                :loading="sendingPasswordReset"
+                @click="handleSendPasswordReset"
               >
-                Verified.
-              </span>
+                Send password reset email
+              </UButton>
             </div>
           </section>
 
