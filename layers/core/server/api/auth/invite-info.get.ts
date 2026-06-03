@@ -15,7 +15,9 @@ export default defineEventHandler(async (event) => {
     .where('token_key', '=', token)
     .executeTakeFirst()
 
-  if (!user || user.verified || user.password !== null) {
+  // An invite is "still pending" iff no password has been set yet. `verified`
+  // is a separate, admin-controlled axis and must not gate acceptance.
+  if (!user || user.password !== null) {
     throw createError({ statusCode: 404, statusMessage: 'Invitation not found' })
   }
 

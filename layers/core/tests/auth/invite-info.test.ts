@@ -31,6 +31,16 @@ describe('GET /api/auth/invite-info', () => {
     expect(err.statusCode).toBe(404)
   })
 
+  it('still resolves the invite when the user was marked verified while pending (password=null)', async () => {
+    // Regression: an admin clicking "Mark verified" on a still-pending invitee
+    // used to strand the invite. The gate keys off password, not the verified
+    // flag, so the link must still resolve.
+    const invite = await createPendingInvite(sql)
+    await sql`UPDATE users SET verified = true WHERE id = ${invite.userId}`
+    const res = await $fetch(`/api/auth/invite-info?token=${invite.token}`)
+    expect(res.email).toBe(invite.email)
+  })
+
   it('returns 410 when token is expired', async () => {
     const invite = await createPendingInvite(sql, { expiresInMs: -1000 })
     const err = await $fetch(`/api/auth/invite-info?token=${invite.token}`).catch(e => e)

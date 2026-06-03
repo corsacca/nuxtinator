@@ -86,6 +86,28 @@ describe('POST /api/auth/accept-invite', () => {
     expect(rows[0]!.token_expires_at).toBeNull()
   })
 
+  it('still accepts when the user was marked verified while pending (password=null)', async () => {
+    // Regression: admin "Mark verified" on a pending invite must not break the
+    // accept flow — it keys off password (null), not the verified flag.
+    const invite = await createPendingInvite(sql)
+    await sql`UPDATE users SET verified = true WHERE id = ${invite.userId}`
+
+    const res = await fetch('/api/auth/accept-invite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: invite.token, password: 'newpassword123', display_name: 'Healed Name' })
+    })
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.success).toBe(true)
+
+    const rows = await sql<{ verified: boolean, password: string | null }[]>`
+      SELECT verified, password FROM users WHERE id = ${invite.userId}`
+    expect(rows[0]!.verified).toBe(true)
+    expect(rows[0]!.password).toBeTruthy()
+    expect(await bcrypt.compare('newpassword123', rows[0]!.password!)).toBe(true)
+  })
+
   it('second call against an already-accepted invite returns 410', async () => {
     const invite = await createPendingInvite(sql)
 
