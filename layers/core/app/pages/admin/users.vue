@@ -989,10 +989,13 @@ const handleDelete = async () => {
                   <div class="text-xs text-(--ui-text-muted)">
                     /@{{ org.slug }}
                   </div>
-                  <UInput
+                  <USelectMenu
                     v-if="isAttached(org.id)"
                     :model-value="rolesFor(org.id)"
-                    placeholder="Roles (comma-separated)"
+                    :items="staticRoles"
+                    value-key="key"
+                    label-key="name"
+                    placeholder="Pick a role..."
                     size="sm"
                     class="mt-2"
                     :disabled="inviting"
