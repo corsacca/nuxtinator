@@ -29,6 +29,17 @@ export default defineNuxtConfig({
 
   css: [fileURLToPath(new URL('./app/assets/css/main.css', import.meta.url))],
 
+  app: {
+    head: {
+      // Show correct color on first paint before nuxt loads 
+      style: [
+        {
+          innerHTML: ':root{background-color:#fff}:root.dark{background-color:#0f172a}'
+        }
+      ]
+    }
+  },
+
   alias: {
     // `#core/...` resolves to this layer's root, so cross-layer code can
     // import e.g. `#core/server/utils/database` without depending on whether
