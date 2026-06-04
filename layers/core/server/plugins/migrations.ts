@@ -1,9 +1,8 @@
-import { Kysely, Migrator, type Migration, type MigrationProvider } from 'kysely'
-import { PostgresJSDialect } from 'kysely-postgres-js'
-import postgres from 'postgres'
+import { Migrator, type Migration, type MigrationProvider } from 'kysely'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { createKyselyDb } from '#core/server/utils/db-connection'
 
 // Migration runner. Builds its own Kysely client connecting via DATABASE_URL.
 // In single-tenant mode that's just the database. In multi-tenant mode it's
@@ -78,18 +77,10 @@ export default defineNitroPlugin(async () => {
     return
   }
 
-  const isLocal = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1')
-  const adminDb = new Kysely<unknown>({
-    dialect: new PostgresJSDialect({
-      postgres: postgres(databaseUrl, {
-        ssl: isLocal ? false : 'require',
-        max: 5,
-        idle_timeout: 20,
-        connect_timeout: 30,
-        prepare: false,
-        onnotice: () => {}
-      })
-    })
+  const adminDb = createKyselyDb<unknown>(databaseUrl, {
+    max: 5,
+    idle_timeout: 20,
+    connect_timeout: 30
   })
 
   const regularFolders = [

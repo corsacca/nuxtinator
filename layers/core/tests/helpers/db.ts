@@ -6,19 +6,13 @@
 // assert the app's behavior via real HTTP through $fetch (which goes through
 // the Nuxt server's app_user-roled `db`).
 import postgres from 'postgres'
+import { createPgPool } from '../../server/utils/db-connection'
 
 let _hostAdmin: ReturnType<typeof postgres> | null = null
 let _appUser: ReturnType<typeof postgres> | null = null
 
 function buildPool(url: string): ReturnType<typeof postgres> {
-  const isLocal = url.includes('localhost') || url.includes('127.0.0.1')
-  return postgres(url, {
-    ssl: isLocal ? false : { rejectUnauthorized: false },
-    max: 5,
-    idle_timeout: 10,
-    prepare: false,
-    onnotice: () => {}
-  })
+  return createPgPool(url, { max: 5, idle_timeout: 10 })
 }
 
 export function getHostAdminDb(): ReturnType<typeof postgres> {

@@ -16,9 +16,7 @@
 import bcrypt from 'bcrypt'
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline/promises'
-import postgres from 'postgres'
-import { Kysely } from 'kysely'
-import { PostgresJSDialect } from 'kysely-postgres-js'
+import { createKyselyDb } from '../server/utils/db-connection'
 import type { Database } from '../server/database/schema'
 
 async function prompt(rl: ReturnType<typeof createInterface>, q: string, opts: { hidden?: boolean } = {}) {
@@ -60,13 +58,7 @@ async function main() {
     console.error('DATABASE_URL is not set')
     process.exit(1)
   }
-  const isLocal = url.includes('localhost') || url.includes('127.0.0.1')
-
-  const db = new Kysely<Database>({
-    dialect: new PostgresJSDialect({
-      postgres: postgres(url, { ssl: isLocal ? false : 'require', prepare: false, max: 2 })
-    })
-  })
+  const db = createKyselyDb<Database>(url, { max: 2 })
 
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   try {

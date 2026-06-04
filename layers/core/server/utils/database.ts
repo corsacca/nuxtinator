@@ -1,6 +1,5 @@
 import { Kysely, sql } from 'kysely'
-import { PostgresJSDialect } from 'kysely-postgres-js'
-import postgres from 'postgres'
+import { createKyselyDb } from '#core/server/utils/db-connection'
 import type { Database } from '#core/server/database/schema'
 
 // Single Kysely client for the host. In multi-tenant mode the tenancy layer
@@ -26,18 +25,10 @@ function getDb(): Kysely<Database> {
     || useRuntimeConfig().databaseUrl
     || process.env.DATABASE_URL
   if (!url) throw new Error('APP_DATABASE_URL (or DATABASE_URL) is not set')
-  const isLocal = url.includes('localhost') || url.includes('127.0.0.1')
-  _db = new Kysely<Database>({
-    dialect: new PostgresJSDialect({
-      postgres: postgres(url, {
-        ssl: isLocal ? false : 'require',
-        max: 10,
-        idle_timeout: 20,
-        connect_timeout: 30,
-        prepare: false,
-        onnotice: () => {}
-      })
-    })
+  _db = createKyselyDb<Database>(url, {
+    max: 10,
+    idle_timeout: 20,
+    connect_timeout: 30
   })
   return _db
 }

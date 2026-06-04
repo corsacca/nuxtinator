@@ -1,6 +1,5 @@
 import { Kysely } from 'kysely'
-import { PostgresJSDialect } from 'kysely-postgres-js'
-import postgres from 'postgres'
+import { createKyselyDb } from '#core/server/utils/db-connection'
 import type { Database } from '#core/server/database/schema'
 
 // `adminDb` — BYPASSRLS Kysely client for cross-org operations. Connects as
@@ -19,18 +18,10 @@ export const adminDb = new Proxy({} as Kysely<Database>, {
     if (!_adminDb) {
       const url = useRuntimeConfig().databaseUrl || process.env.DATABASE_URL
       if (!url) throw new Error('DATABASE_URL is not set (required for tenancy layer adminDb)')
-      const isLocal = url.includes('localhost') || url.includes('127.0.0.1')
-      _adminDb = new Kysely<Database>({
-        dialect: new PostgresJSDialect({
-          postgres: postgres(url, {
-            ssl: isLocal ? false : 'require',
-            max: 5,
-            idle_timeout: 20,
-            connect_timeout: 30,
-            prepare: false,
-            onnotice: () => {}
-          })
-        })
+      _adminDb = createKyselyDb<Database>(url, {
+        max: 5,
+        idle_timeout: 20,
+        connect_timeout: 30
       })
     }
     const value = (_adminDb as unknown as Record<PropertyKey, unknown>)[prop as PropertyKey]

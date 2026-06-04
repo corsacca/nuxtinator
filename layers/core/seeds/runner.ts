@@ -12,8 +12,7 @@ import { existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Kysely, sql } from 'kysely'
-import { PostgresJSDialect } from 'kysely-postgres-js'
-import postgres from 'postgres'
+import { createKyselyDb } from '../server/utils/db-connection'
 import type { SeedContext } from './types'
 
 function resolveLayerRoot(pkg: string): string | null {
@@ -31,17 +30,7 @@ function buildDb(): Kysely<any> {
   // pick DATABASE_URL ahead of APP_DATABASE_URL.
   const url = process.env.DATABASE_URL
   if (!url) throw new Error('DATABASE_URL is not set')
-  const isLocal = url.includes('localhost') || url.includes('127.0.0.1')
-  return new Kysely<any>({
-    dialect: new PostgresJSDialect({
-      postgres: postgres(url, {
-        ssl: isLocal ? false : 'require',
-        prepare: false,
-        max: 4,
-        onnotice: () => {}
-      })
-    })
-  })
+  return createKyselyDb<any>(url, { max: 4 })
 }
 
 async function detectTenancy(db: Kysely<any>): Promise<boolean> {

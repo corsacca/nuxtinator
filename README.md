@@ -120,6 +120,8 @@ NUXT_PUBLIC_SITE_URL=http://localhost:2080
 NODE_ENV=development
 ```
 
+**Database TLS** auto-negotiates by default — postgres.js `prefer`: it asks the server (via `SSLRequest`) and uses TLS when the server offers it, falling back to plaintext when it doesn't. So a local Postgres with no TLS, a private-network Postgres/PgBouncer that speaks plaintext (Docker, Dokploy, Fly internal networking), and a managed Postgres that requires TLS all connect with no configuration. To force a specific posture, append `?sslmode=...` to `DATABASE_URL`/`APP_DATABASE_URL` — the standard libpq modes (`disable`, `allow`, `prefer`, `require`, `verify-full`) are honored. Note that `prefer` and `require` do **not** verify the server certificate; use `verify-full` (with a CA the cert chains to) for real MITM protection.
+
 ### Tenancy (multi-tenant only)
 
 ```env
