@@ -1,4 +1,5 @@
-// GET /api/files/items/:id/versions — list a doc's version snapshots, newest first.
+// GET /api/files/items/:id/versions — list a doc's or site's version
+// snapshots, newest first.
 
 import { withOrgPermission } from '#tenant/server'
 import { loadItem } from '../../../../../utils/file-helpers'
@@ -9,7 +10,7 @@ export default defineEventHandler(async (event) => {
 
     const item = await loadItem(tx, id)
     if (!item) throw createError({ statusCode: 404, statusMessage: 'Not found.' })
-    if (item.kind !== 'doc') return { versions: [] }
+    if (item.kind === 'file') return { versions: [] }
 
     const rows = await tx
       .selectFrom('files_versions as v')

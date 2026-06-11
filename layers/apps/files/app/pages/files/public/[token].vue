@@ -12,7 +12,8 @@ const token = computed(() => route.params.token as string)
 
 interface PublicDoc { kind: 'doc', title: string, body_md: string }
 interface PublicFile { kind: 'file', title: string, filename: string | null, mime: string | null, size_bytes: string | null, url: string | null }
-type PublicItem = PublicDoc | PublicFile
+interface PublicSite { kind: 'site', title: string }
+type PublicItem = PublicDoc | PublicFile | PublicSite
 
 const item = ref<PublicItem | null>(null)
 const loading = ref(true)
@@ -25,11 +26,19 @@ const lightboxOpen = ref(false)
 
 onMounted(async () => {
   try {
-    item.value = await $fetch<PublicItem>(`/api/files/public/${token.value}`)
+    const fetched = await $fetch<PublicItem>(`/api/files/public/${token.value}`)
+    // Sites live at the raw serve route (full-tab HTML, outside the SPA).
+    // Full location replace, not router navigation — it's a Nitro route.
+    // Keep the spinner up while the browser swaps pages.
+    if (fetched.kind === 'site') {
+      window.location.replace(`/files/site/${token.value}`)
+      return
+    }
+    item.value = fetched
+    loading.value = false
   } catch (e: unknown) {
     const err = e as { statusMessage?: string, message?: string }
     error.value = err.statusMessage || err.message || 'This link is no longer available.'
-  } finally {
     loading.value = false
   }
 })
@@ -58,7 +67,9 @@ useHead({ title: 'Shared file' })
           <FilesRenderer :body-md="item.body_md" />
         </div>
 
-        <div v-else class="flex flex-col items-center gap-4">
+        <!-- Sites never render here — onMounted redirects them to the raw
+             serve route before `item` is set. -->
+        <div v-else-if="item.kind === 'file'" class="flex flex-col items-center gap-4">
           <img
             v-if="isImage && item.url"
             :src="item.url"

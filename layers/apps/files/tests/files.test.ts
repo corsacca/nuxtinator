@@ -6,6 +6,7 @@ import {
   createFilesOrgWith,
   createTestDoc,
   createTestFile,
+  createTestSite,
   withOrgHeader
 } from './helpers'
 
@@ -176,6 +177,95 @@ describe('files layer', () => {
   it('public route 404s on a malformed token (no auth)', async () => {
     const res = await fetch('/api/files/public/not-a-uuid')
     expect(res.status).toBe(404)
+  })
+
+  it('creates a site with an initial version', async () => {
+    const { org, auth } = await createFilesOrgWith(sql)
+    const res = await $fetch<{ item: { id: string, kind: string } }>(
+      '/api/files/items',
+      {
+        method: 'POST',
+        body: { kind: 'site', title: 'My Site', body_md: '<h1>hello</h1>' },
+        ...withOrgHeader(auth, org.slug)
+      }
+    )
+    expect(res.item.kind).toBe('site')
+
+    const versions = await sql`SELECT id FROM files_versions WHERE item_id = ${res.item.id}`
+    expect(versions.length).toBe(1)
+  })
+
+  it('rejects an unknown item kind (400)', async () => {
+    const { org, auth } = await createFilesOrgWith(sql)
+    const res = await fetch('/api/files/items', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...withOrgHeader(auth, org.slug).headers },
+      body: JSON.stringify({ kind: 'widget', title: 'Nope' })
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('editing a site creates a new version snapshot', async () => {
+    const { org, user, auth } = await createFilesOrgWith(sql)
+    const { id } = await createTestSite(sql, { org_id: org.id, created_by: user.id, html: '<p>v1</p>' })
+
+    await $fetch(`/api/files/items/${id}`, {
+      method: 'PATCH', body: { body_md: '<p>v2</p>' }, ...withOrgHeader(auth, org.slug)
+    })
+
+    const versions = await $fetch<{ versions: Array<{ content: string }> }>(
+      `/api/files/items/${id}/versions`, { ...withOrgHeader(auth, org.slug) }
+    )
+    expect(versions.versions.length).toBe(2)
+    expect(versions.versions[0]!.content).toBe('<p>v2</p>')
+  })
+
+  it('serves a shared site raw with the sandbox CSP, and 404s after revoke', async () => {
+    const { org, user, auth } = await createFilesOrgWith(sql)
+    const html = '<!doctype html><html><body><h1>It works</h1></body></html>'
+    const { id } = await createTestSite(sql, { org_id: org.id, created_by: user.id, html })
+    const issued = await $fetch<{ share_token: string }>(
+      `/api/files/items/${id}/share`, { method: 'POST', ...withOrgHeader(auth, org.slug) }
+    )
+
+    // No auth headers at all.
+    const res = await fetch(`/files/site/${issued.share_token}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/html')
+    // Opaque origin: the page must never be able to ride a visitor's cookie.
+    expect(res.headers.get('content-security-policy')).toContain('sandbox')
+    expect(res.headers.get('content-security-policy')).not.toContain('allow-same-origin')
+    expect(await res.text()).toBe(html)
+
+    await $fetch(`/api/files/items/${id}/share`, { method: 'DELETE', ...withOrgHeader(auth, org.slug) })
+    const after = await fetch(`/files/site/${issued.share_token}`)
+    expect(after.status).toBe(404)
+  })
+
+  it('site raw route 404s for a doc share token', async () => {
+    const { org, user, auth } = await createFilesOrgWith(sql)
+    const { id } = await createTestDoc(sql, { org_id: org.id, created_by: user.id })
+    const issued = await $fetch<{ share_token: string }>(
+      `/api/files/items/${id}/share`, { method: 'POST', ...withOrgHeader(auth, org.slug) }
+    )
+
+    const res = await fetch(`/files/site/${issued.share_token}`)
+    expect(res.status).toBe(404)
+  })
+
+  it('public token API identifies a site without returning its body', async () => {
+    const { org, user, auth } = await createFilesOrgWith(sql)
+    const { id } = await createTestSite(sql, { org_id: org.id, created_by: user.id, title: 'Landing' })
+    const issued = await $fetch<{ share_token: string }>(
+      `/api/files/items/${id}/share`, { method: 'POST', ...withOrgHeader(auth, org.slug) }
+    )
+
+    const pub = await $fetch<{ kind: string, title: string, body_md?: string }>(
+      `/api/files/public/${issued.share_token}`
+    )
+    expect(pub.kind).toBe('site')
+    expect(pub.title).toBe('Landing')
+    expect(pub.body_md).toBeUndefined()
   })
 
   it('nulls created_by when the creator is deleted (item survives)', async () => {

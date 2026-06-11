@@ -9,7 +9,7 @@ definePageMeta({
   middleware: 'auth'
 })
 
-const { list, createDoc, search: searchApi } = useFiles()
+const { list, createDoc, createSite, search: searchApi } = useFiles()
 const toast = useToast()
 
 // Pull a human message out of an $fetch/h3 error (body statusMessage first).
@@ -57,17 +57,26 @@ watch(q, (val) => {
 
 watch(activeTag, load)
 
-// New document modal
-const newDocOpen = ref(false)
+// New document / new site modal (one modal, kind chosen by the opening button)
+const newItemOpen = ref(false)
+const newKind = ref<'doc' | 'site'>('doc')
 const newTitle = ref('')
 const creating = ref(false)
 
-async function createNewDoc() {
-  const title = newTitle.value.trim() || 'Untitled document'
+function openNewItem(kind: 'doc' | 'site') {
+  newKind.value = kind
+  newItemOpen.value = true
+}
+
+async function createNewItem() {
+  const title = newTitle.value.trim()
+    || (newKind.value === 'site' ? 'Untitled site' : 'Untitled document')
   creating.value = true
   try {
-    const res = await createDoc({ title })
-    newDocOpen.value = false
+    const res = newKind.value === 'site'
+      ? await createSite({ title })
+      : await createDoc({ title })
+    newItemOpen.value = false
     newTitle.value = ''
     await navigateTo(`/files/${res.item.id}`)
   } catch (e) {
@@ -87,6 +96,11 @@ function isMarkdown(file: File): boolean {
   return /\.(md|markdown)$/i.test(file.name) || file.type === 'text/markdown'
 }
 
+// HTML files are imported as editable sites rather than stored uploads.
+function isHtml(file: File): boolean {
+  return /\.html?$/i.test(file.name) || file.type === 'text/html'
+}
+
 async function uploadFiles(files: File[]) {
   uploading.value = true
   let ok = 0
@@ -99,6 +113,11 @@ async function uploadFiles(files: File[]) {
           const title = file.name.replace(/\.(md|markdown)$/i, '') || file.name
           const res = await createDoc({ title, body_md })
           lastDocId = res.item.id
+        } else if (isHtml(file)) {
+          const html = await file.text()
+          const title = file.name.replace(/\.html?$/i, '') || file.name
+          const res = await createSite({ title, html })
+          lastDocId = res.item.id
         } else {
           const fd = new FormData()
           fd.append('file', file)
@@ -109,7 +128,7 @@ async function uploadFiles(files: File[]) {
         toast.add({ title: `${file.name}: ${errMsg(e)}`, color: 'error' })
       }
     }
-    // A lone markdown drop lands straight in the editor.
+    // A lone markdown/HTML drop lands straight in the editor.
     if (ok === 1 && files.length === 1 && lastDocId) {
       await navigateTo(`/files/${lastDocId}`)
       return
@@ -147,8 +166,11 @@ onMounted(load)
         placeholder="Search files…"
         class="w-full sm:w-64"
       />
-      <UButton icon="i-lucide-file-plus" @click="newDocOpen = true">
+      <UButton icon="i-lucide-file-plus" @click="openNewItem('doc')">
         New document
+      </UButton>
+      <UButton icon="i-lucide-globe" variant="outline" @click="openNewItem('site')">
+        New site
       </UButton>
     </div>
 
@@ -216,7 +238,7 @@ onMounted(load)
           <div class="flex-1 min-w-0">
             <p class="font-medium truncate group-hover:text-(--ui-primary)">{{ item.title }}</p>
             <p class="text-xs text-(--ui-text-muted) truncate">
-              {{ item.kind === 'doc' ? 'Document' : (item.filename ?? 'File') }}
+              {{ item.kind === 'doc' ? 'Document' : item.kind === 'site' ? 'Site' : (item.filename ?? 'File') }}
               <span v-if="formatBytes(item.size_bytes)"> · {{ formatBytes(item.size_bytes) }}</span>
             </p>
           </div>
@@ -253,21 +275,21 @@ onMounted(load)
       </NuxtLink>
     </div>
 
-    <!-- New document modal -->
-    <UModal v-model:open="newDocOpen" title="New document">
+    <!-- New document / new site modal -->
+    <UModal v-model:open="newItemOpen" :title="newKind === 'site' ? 'New site' : 'New document'">
       <template #body>
         <UInput
           v-model="newTitle"
-          placeholder="Document title"
+          :placeholder="newKind === 'site' ? 'Site title' : 'Document title'"
           autofocus
           class="w-full"
-          @keyup.enter="createNewDoc"
+          @keyup.enter="createNewItem"
         />
       </template>
       <template #footer>
         <div class="flex justify-end gap-2 w-full">
-          <UButton variant="ghost" color="neutral" @click="newDocOpen = false">Cancel</UButton>
-          <UButton :loading="creating" @click="createNewDoc">Create</UButton>
+          <UButton variant="ghost" color="neutral" @click="newItemOpen = false">Cancel</UButton>
+          <UButton :loading="creating" @click="createNewItem">Create</UButton>
         </div>
       </template>
     </UModal>

@@ -1,11 +1,29 @@
-// Shared logic for files-item reads + doc writes. Routes (PATCH, restore) and
-// MCP write tools all call `saveDocContent` so the byte cap and version-row
-// insert stay in one place. Mirrors the context layer's `saveSectionContent`.
+// Shared logic for files-item reads + doc/site writes. Routes (PATCH,
+// restore) and MCP write tools all call `saveDocContent` so the byte cap and
+// version-row insert stay in one place. Mirrors the context layer's
+// `saveSectionContent`.
 
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 
 export const MAX_DOC_BYTES = 100 * 1024
+// Sites get a larger cap: self-contained HTML pages often inline images as
+// base64 data URIs. Their bodies are excluded from FTS (see the
+// files_003 migration), so the tsvector size limit doesn't constrain them.
+export const MAX_SITE_BYTES = 2 * 1024 * 1024
+
+// Kinds whose body_md is edited in-app and snapshotted into files_versions.
+export type EditableKind = 'doc' | 'site'
+
+export function maxBodyBytes(kind: EditableKind): number {
+  return kind === 'site' ? MAX_SITE_BYTES : MAX_DOC_BYTES
+}
+
+export function bodyLimitMessage(kind: EditableKind): string {
+  return kind === 'site'
+    ? 'Site content exceeds 2MB limit.'
+    : 'Document content exceeds 100KB limit.'
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -28,7 +46,7 @@ export function normalizeTags(tags: unknown): string[] {
 
 export interface FilesItemRow {
   id: string
-  kind: 'doc' | 'file'
+  kind: 'doc' | 'file' | 'site'
   title: string
   body_md: string | null
   storage_key: string | null
@@ -65,25 +83,25 @@ export async function loadItem(
   return (row as FilesItemRow | undefined) ?? null
 }
 
-// Update a doc's title/body + insert a full-snapshot version, atomically. The
-// item must already exist and be a `doc`. Returns the updated row + new
-// version id.
+// Update an editable item's (doc or site) title/body + insert a full-snapshot
+// version, atomically. The item must already exist and be an editable kind.
+// Returns the updated row + new version id.
 export async function saveDocContent(
   tx: Transaction<Database>,
   itemId: string,
   data: { title: string, body_md: string },
   userId: string
 ): Promise<{ item: FilesItemRow, versionId: string }> {
-  if (Buffer.byteLength(data.body_md, 'utf8') > MAX_DOC_BYTES) {
-    throw createError({ statusCode: 413, statusMessage: 'Document content exceeds 100KB limit.' })
-  }
-
   const existing = await loadItem(tx, itemId)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Document not found.' })
   }
-  if (existing.kind !== 'doc') {
-    throw createError({ statusCode: 400, statusMessage: 'Only documents are editable.' })
+  if (existing.kind === 'file') {
+    throw createError({ statusCode: 400, statusMessage: 'Uploaded files are not editable.' })
+  }
+
+  if (Buffer.byteLength(data.body_md, 'utf8') > maxBodyBytes(existing.kind)) {
+    throw createError({ statusCode: 413, statusMessage: bodyLimitMessage(existing.kind) })
   }
 
   const updated = await tx

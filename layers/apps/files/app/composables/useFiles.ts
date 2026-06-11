@@ -3,7 +3,7 @@
 // cross-component stale cache. Always uses `$fetch` so the tenancy interceptor
 // (X-Active-Org header) is picked up at call time.
 
-export type FilesItemKind = 'doc' | 'file'
+export type FilesItemKind = 'doc' | 'file' | 'site'
 
 export interface FilesItemSummary {
   id: string
@@ -52,6 +52,14 @@ export function useFiles() {
     return await $fetch<{ item: { id: string } }>('/api/files/items', {
       method: 'POST',
       body: input
+    })
+  }
+
+  // A site is a self-contained HTML page; its markup travels in body_md.
+  async function createSite(input: { title: string, html?: string, tags?: string[] }) {
+    return await $fetch<{ item: { id: string } }>('/api/files/items', {
+      method: 'POST',
+      body: { kind: 'site', title: input.title, body_md: input.html, tags: input.tags }
     })
   }
 
@@ -106,9 +114,21 @@ export function useFiles() {
     return `${origin}/files/public/${token}`
   }
 
+  // Raw serve URL for a shared site — opens the HTML itself, full tab.
+  function siteUrl(token: string): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return `${origin}/files/site/${token}`
+  }
+
+  // The link to hand out for an item's share token, by kind.
+  function shareUrl(item: { kind: FilesItemKind }, token: string): string {
+    return item.kind === 'site' ? siteUrl(token) : publicUrl(token)
+  }
+
   return {
-    list, get, createDoc, update, remove, replaceFile,
-    listVersions, restoreVersion, issueLink, revokeLink, search, publicUrl
+    list, get, createDoc, createSite, update, remove, replaceFile,
+    listVersions, restoreVersion, issueLink, revokeLink, search,
+    publicUrl, siteUrl, shareUrl
   }
 }
 
@@ -127,6 +147,7 @@ export function formatBytes(bytes: string | number | null): string {
 // Pick an icon for a file row based on mime / kind.
 export function iconForItem(item: { kind: FilesItemKind, mime: string | null }): string {
   if (item.kind === 'doc') return 'i-lucide-file-text'
+  if (item.kind === 'site') return 'i-lucide-globe'
   const mime = item.mime ?? ''
   if (mime.startsWith('image/')) return 'i-lucide-image'
   if (mime.startsWith('video/')) return 'i-lucide-video'

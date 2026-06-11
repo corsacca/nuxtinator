@@ -1,6 +1,6 @@
 // PATCH /api/files/items/:id
-// Edit a doc (title/body_md → new version), or rename / re-tag any item.
-// Wiki-style: anyone with files.write may edit. Last-write-wins.
+// Edit a doc or site (title/body_md → new version), or rename / re-tag any
+// item. Wiki-style: anyone with files.write may edit. Last-write-wins.
 
 import { withOrgPermission } from '#tenant/server'
 import { logUpdate } from '#core/server/utils/activity-logger'
@@ -22,8 +22,8 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Title cannot be empty.' })
     }
 
-    // Doc content edits go through saveDocContent so a version snapshot lands.
-    if (item.kind === 'doc' && (titleProvided || bodyProvided)) {
+    // Doc/site content edits go through saveDocContent so a version snapshot lands.
+    if (item.kind !== 'file' && (titleProvided || bodyProvided)) {
       await saveDocContent(tx, id, {
         title: titleProvided ? body!.title!.trim() : item.title,
         body_md: bodyProvided ? body!.body_md! : (item.body_md ?? '')

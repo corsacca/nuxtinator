@@ -36,7 +36,7 @@ export const listFilesTool = defineMcpTool({
   description: 'List documents and uploaded files in the active org, newest first.',
   scope: 'files.read',
   input: z.object({
-    kind: z.enum(['doc', 'file']).optional(),
+    kind: z.enum(['doc', 'file', 'site']).optional(),
     limit: z.number().int().min(1).max(100).optional()
   }).strict(),
   handler: async (input, ctx) => {

@@ -1,18 +1,20 @@
 // Module augmentation: extends the host's Database interface with files tables.
 import type { ColumnType, Generated } from 'kysely'
 
-// A files item is either an authored markdown `doc` or an uploaded binary
-// `file`. Docs carry `body_md` + version history; files carry storage
-// metadata and are immutable (re-upload = a new item).
-export type FilesItemKind = 'doc' | 'file'
+// A files item is an authored markdown `doc`, an uploaded binary `file`, or a
+// self-contained HTML `site`. Docs and sites carry `body_md` + version
+// history (a site's body_md is raw HTML, served as a page via the public
+// site route); files carry storage metadata and are immutable (re-upload =
+// a new item).
+export type FilesItemKind = 'doc' | 'file' | 'site'
 
 export interface FilesItemsTable {
   id: Generated<string>
   kind: FilesItemKind
   title: string
-  // Docs only. The FTS `body_tsv` generated column (title + filename + body)
-  // is created in the migration and never referenced from TS — raw SQL only,
-  // like messages.
+  // Docs (markdown) and sites (raw HTML). The FTS `body_tsv` generated column
+  // (title + filename + body; site bodies excluded) is created in the
+  // migration and never referenced from TS — raw SQL only, like messages.
   body_md: string | null
   // Files only.
   storage_key: string | null
@@ -34,8 +36,8 @@ export interface FilesItemsTable {
   deleted_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
 }
 
-// Full content snapshot per save (docs). Restore re-saves an old snapshot as
-// a new head version — restore is itself an edit.
+// Full content snapshot per save (docs and sites). Restore re-saves an old
+// snapshot as a new head version — restore is itself an edit.
 export interface FilesVersionsTable {
   id: Generated<string>
   item_id: string

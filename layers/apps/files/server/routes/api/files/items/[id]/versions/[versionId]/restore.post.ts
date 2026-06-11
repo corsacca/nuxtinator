@@ -13,8 +13,8 @@ export default defineEventHandler(async (event) => {
 
     const item = await loadItem(tx, id)
     if (!item) throw createError({ statusCode: 404, statusMessage: 'Not found.' })
-    if (item.kind !== 'doc') {
-      throw createError({ statusCode: 400, statusMessage: 'Only documents have versions.' })
+    if (item.kind === 'file') {
+      throw createError({ statusCode: 400, statusMessage: 'Uploaded files do not have versions.' })
     }
     requireUuid(versionId, 'Version not found.')
 

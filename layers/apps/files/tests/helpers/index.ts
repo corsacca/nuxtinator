@@ -76,6 +76,25 @@ export async function createTestDoc(
   return { id }
 }
 
+// Seed a site item (self-contained HTML in body_md) + its initial version.
+export async function createTestSite(
+  sql: ReturnType<typeof postgres>,
+  opts: { org_id: string, created_by: string, title?: string, html?: string }
+): Promise<{ id: string }> {
+  const id = randomUUID()
+  const title = opts.title ?? `test-files-site-${randomUUID().slice(0, 8)}`
+  const html = opts.html ?? '<!doctype html><html><body><h1>seed site</h1></body></html>'
+  await sql`
+    INSERT INTO files_items (id, kind, title, body_md, created_by, last_edited_by, org_id)
+    VALUES (${id}, 'site', ${title}, ${html}, ${opts.created_by}, ${opts.created_by}, ${opts.org_id})
+  `
+  await sql`
+    INSERT INTO files_versions (item_id, title, content, edited_by, org_id)
+    VALUES (${id}, ${title}, ${html}, ${opts.created_by}, ${opts.org_id})
+  `
+  return { id }
+}
+
 // Seed a file item. storage_key can be fake — generateSignedUrl only builds a
 // presigned URL string and doesn't verify the object exists.
 export async function createTestFile(

@@ -1,6 +1,7 @@
 // GET /api/files/search?q=...&limit=
 // Postgres FTS over files_items.body_tsv (title + filename + body + tags),
-// scoped by RLS to this org. Binary file contents are not indexed.
+// scoped by RLS to this org. Binary file contents and site (raw HTML) bodies
+// are not indexed.
 
 import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
@@ -10,12 +11,16 @@ const MAX_LIMIT = 50
 // HTML-escape the body BEFORE ts_headline (which only injects <b>...</b> and
 // does not escape its input) so a doc containing markup can't round-trip live
 // HTML into the client's v-html. Same pattern as the messages search route.
+// Site bodies (raw HTML, excluded from body_tsv) headline on the title
+// instead — a markup-soup snippet is useless and the body can be megabytes.
 const ESCAPED_BODY = sql<string>`
   replace(
     replace(
       replace(
         replace(
-          replace(coalesce(f.body_md, f.title), '&', '&amp;'),
+          replace(
+            coalesce(CASE WHEN f.kind = 'site' THEN NULL ELSE f.body_md END, f.title),
+            '&', '&amp;'),
           '<', '&lt;'),
         '>', '&gt;'),
       '"', '&quot;'),

@@ -38,6 +38,13 @@ export default defineEventHandler(async (event) => {
         return { kind: 'doc' as const, title: item.title, body_md: item.body_md ?? '' }
       }
 
+      // Sites are served raw at /files/site/:token; the public page redirects
+      // there. No body here — the HTML only ever leaves via the raw route,
+      // where the CSP sandbox header applies.
+      if (item.kind === 'site') {
+        return { kind: 'site' as const, title: item.title }
+      }
+
       const url = item.storage_key ? await generateSignedUrl(item.storage_key) : null
       return {
         kind: 'file' as const,

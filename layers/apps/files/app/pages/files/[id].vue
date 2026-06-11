@@ -16,28 +16,31 @@ function errMsg(e: unknown): string {
 }
 
 const {
-  get, update, remove, replaceFile, listVersions, restoreVersion, issueLink, revokeLink, publicUrl
+  get, update, remove, replaceFile, listVersions, restoreVersion, issueLink, revokeLink, shareUrl, siteUrl
 } = useFiles()
 
 const item = ref<FilesItemDetail | null>(null)
 const loading = ref(true)
 const notFound = ref(false)
 
-// Doc working copy. Docs open in edit mode by default; `editing` toggles
-// between the split editor and a full-width rendered display.
+// Working copy for editable kinds (docs and sites). They open in edit mode by
+// default; `editing` toggles between the split editor and a full-width
+// rendered display.
 const editing = ref(false)
 const editTitle = ref('')
 const editBody = ref('')
 const saving = ref(false)
 
-const docEditing = computed(() => item.value?.kind === 'doc' && editing.value)
+// Docs and sites are editable in-app; uploaded files are not.
+const isEditable = computed(() => item.value != null && item.value.kind !== 'file')
+const editorOpen = computed(() => isEditable.value && editing.value)
 
 async function load() {
   loading.value = true
   notFound.value = false
   try {
     item.value = await get(id.value)
-    if (item.value.kind === 'doc') {
+    if (item.value.kind !== 'file') {
       editTitle.value = item.value.title
       editBody.value = item.value.body_md ?? ''
     }
@@ -174,7 +177,7 @@ async function onShare() {
     // Create + copy in one action (copy before the reload/toast, while the
     // click gesture is fresh and no toast overlay is up yet).
     const token = await issueLink(id.value)
-    const copied = await copyToClipboard(publicUrl(token))
+    const copied = await copyToClipboard(shareUrl(item.value!, token))
     await load()
     toast.add({
       title: copied ? 'Share link created and copied' : 'Share link created',
@@ -202,7 +205,7 @@ async function onRevoke() {
 
 async function copyLink() {
   if (!item.value?.share_token) return
-  const url = publicUrl(item.value.share_token)
+  const url = shareUrl(item.value, item.value.share_token)
   const copied = await copyToClipboard(url)
   toast.add(copied
     ? { title: 'Link copied', color: 'success' }
@@ -228,15 +231,15 @@ async function onDelete() {
 
 onMounted(async () => {
   await load()
-  // Docs open straight into edit mode.
-  if (item.value?.kind === 'doc') editing.value = true
+  // Docs and sites open straight into edit mode.
+  if (isEditable.value) editing.value = true
 })
 </script>
 
 <template>
   <div
     class="flex flex-col w-full"
-    :class="docEditing ? '' : (item?.kind === 'file' ? 'max-w-7xl mx-auto' : 'max-w-5xl mx-auto')"
+    :class="editorOpen ? '' : (item?.kind === 'file' ? 'max-w-7xl mx-auto' : 'max-w-5xl mx-auto')"
   >
     <div v-if="loading" class="text-center py-16 text-(--ui-text-muted)">
       <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin" />
@@ -261,19 +264,19 @@ onMounted(async () => {
           aria-label="Back to files"
         />
         <UInput
-          v-if="docEditing"
+          v-if="editorOpen"
           v-model="editTitle"
-          placeholder="Untitled document"
+          :placeholder="item.kind === 'site' ? 'Untitled site' : 'Untitled document'"
           size="lg"
           class="flex-1"
           :ui="{ base: 'font-semibold' }"
         />
         <h1 v-else class="text-xl font-semibold flex-1 truncate">
-          {{ item.kind === 'doc' ? editTitle : item.title }}
+          {{ isEditable ? editTitle : item.title }}
         </h1>
 
-        <!-- Doc mode controls -->
-        <template v-if="item.kind === 'doc'">
+        <!-- Editable (doc/site) mode controls -->
+        <template v-if="isEditable">
           <UButton v-if="editing" icon="i-lucide-check" :loading="saving" @click="saveEdit">
             Save
           </UButton>
@@ -355,6 +358,19 @@ onMounted(async () => {
           Download
         </UButton>
         <template v-if="item.share_token">
+          <!-- Plain external anchor (not a router link): the raw site route is
+               served by Nitro, outside the SPA. -->
+          <UButton
+            v-if="item.kind === 'site'"
+            size="sm"
+            variant="soft"
+            icon="i-lucide-external-link"
+            :href="siteUrl(item.share_token)"
+            target="_blank"
+            external
+          >
+            Open site
+          </UButton>
           <UButton size="sm" variant="soft" icon="i-lucide-link" @click="copyLink">
             Copy link
           </UButton>
@@ -385,8 +401,12 @@ onMounted(async () => {
       <!-- Body -->
       <div>
         <FilesDocEditor
-          v-if="docEditing"
+          v-if="editorOpen && item.kind === 'doc'"
           v-model:body-md="editBody"
+        />
+        <FilesSiteEditor
+          v-else-if="editorOpen && item.kind === 'site'"
+          v-model:html="editBody"
         />
         <div
           v-else-if="item.kind === 'doc'"
@@ -394,6 +414,15 @@ onMounted(async () => {
         >
           <FilesRenderer :body-md="editBody" />
         </div>
+        <!-- Site display: sandboxed (opaque-origin) preview — the pasted
+             HTML's scripts can't reach the app's DOM, storage, or APIs. -->
+        <iframe
+          v-else-if="item.kind === 'site'"
+          :srcdoc="editBody"
+          sandbox="allow-scripts allow-forms allow-popups allow-modals"
+          :title="item.title"
+          class="w-full h-[80vh] rounded-lg border border-(--ui-border) bg-white"
+        />
         <FilesFilePreview v-else :item="item" />
       </div>
 
