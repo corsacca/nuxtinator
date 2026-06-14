@@ -75,21 +75,26 @@ export interface UploadResult {
 }
 
 /**
- * Upload a file to S3-compatible storage (Backblaze B2)
+ * Upload a file to S3-compatible storage (Backblaze B2).
+ * Objects are stored under `folder/` (default `uploads/`) with a random name;
+ * pass a folder to keep an app or layer's files grouped under their own prefix.
  */
 export async function uploadToS3(
   fileData: Buffer,
   originalFilename: string,
   contentType: string,
-  visibility: 'public' | 'private' = 'private'
+  visibility: 'public' | 'private' = 'private',
+  folder: string = 'uploads'
 ): Promise<UploadResult> {
   try {
     const client = getS3Client()
 
-    // Generate unique filename
+    // Store under the given top-level folder (surrounding slashes ignored),
+    // with a random filename to avoid collisions.
     const ext = originalFilename.split('.').pop()
     const randomName = randomBytes(16).toString('hex')
-    const key = `uploads/${randomName}.${ext}`
+    const prefix = folder.replace(/^\/+|\/+$/g, '') || 'uploads'
+    const key = `${prefix}/${randomName}.${ext}`
 
     // Upload to S3
     await client.putObject(key, fileData, {
