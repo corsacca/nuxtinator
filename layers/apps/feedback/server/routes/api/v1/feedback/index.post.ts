@@ -150,7 +150,7 @@ export default defineEventHandler(async (event) => {
   const uploaded: { kind: IncomingFile['kind']; key: string; filename: string; mime: string; size: number }[] = []
   try {
     for (const f of incomingFiles) {
-      const result = await uploadToS3(f.buffer, f.filename, f.mime, 'private')
+      const result = await uploadToS3(f.buffer, f.filename, f.mime, 'private', 'feedback')
       uploaded.push({
         kind: f.kind,
         key: result.key,

@@ -32,7 +32,8 @@ export default defineEventHandler(async (event) => {
       Buffer.from(filePart.data),
       filePart.filename ?? 'icon',
       contentType,
-      'public'
+      'public',
+      'context'
     )
 
     const updated = await tx

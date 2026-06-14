@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
     const tagsPart = parts.find(p => p.name === 'tags')
     const tags = tagsPart ? parseTags(tagsPart.data.toString('utf8')) : []
 
-    const result = await uploadToS3(Buffer.from(data), originalFilename, contentType, 'private')
+    const result = await uploadToS3(Buffer.from(data), originalFilename, contentType, 'private', 'files')
 
     const item = await tx
       .insertInto('files_items')

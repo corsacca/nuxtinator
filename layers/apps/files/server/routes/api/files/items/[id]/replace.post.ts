@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const oldKey = item.storage_key
-    const result = await uploadToS3(Buffer.from(data), originalFilename, contentType, 'private')
+    const result = await uploadToS3(Buffer.from(data), originalFilename, contentType, 'private', 'files')
 
     const updated = await tx
       .updateTable('files_items')

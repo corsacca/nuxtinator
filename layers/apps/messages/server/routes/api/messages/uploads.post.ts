@@ -31,7 +31,8 @@ export default defineEventHandler(async (event) => {
       Buffer.from(data),
       originalFilename,
       contentType,
-      'private'
+      'private',
+      'messages'
     )
 
     return {
