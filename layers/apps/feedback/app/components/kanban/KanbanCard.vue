@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { KanbanCardModel } from './types'
-import { isCardOverdue, priorityDotColor, postTypeBadge } from '../../composables/useCardUtils'
+import { isCardOverdue, priorityDotColor, postTypeBadge, cardPhase, phaseLabel, DOING_COLUMN } from '../../composables/useCardUtils'
 
 const props = withDefaults(
   defineProps<{
@@ -33,6 +33,10 @@ const priorityQual = computed<string | null>(() => {
 const priorityDotClass = computed(() => priorityDotColor(priorityQual.value))
 const overdue = computed(() => isCardOverdue(props.card, props.columnName))
 const showOverdueIcon = computed(() => overdue.value && !props.card.is_done)
+
+// Cards in the DOING column surface which workflow phase they're in.
+const showPhase = computed(() => props.columnName === DOING_COLUMN)
+const phaseText = computed(() => phaseLabel(cardPhase(props.card)))
 
 const assigneeInitials = computed(() => {
   const a = props.card.assignee
@@ -119,6 +123,14 @@ function handleDragEnd(event: DragEvent) {
     </h4>
 
     <div class="mt-1.5 flex items-center gap-2 text-[11px] text-(--ui-text-muted)">
+      <span
+        v-if="showPhase"
+        class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-(--ui-bg-accented) text-(--ui-text) shrink-0"
+        :title="`Phase: ${phaseText}`"
+      >
+        {{ phaseText }}
+      </span>
+
       <span
         v-if="assigneeInitials"
         class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-(--ui-bg-accented) text-[9px] font-semibold text-(--ui-text) shrink-0"

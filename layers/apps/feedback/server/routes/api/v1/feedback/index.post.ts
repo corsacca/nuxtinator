@@ -8,7 +8,7 @@
  *
  * Org membership is NOT required — anyone with a valid project_id can submit.
  * The receiving org's admin decides in the kanban dashboard whether to accept
- * (→ BACKLOG) or reject (→ ARCHIVE).
+ * (→ DOING) or reject (→ ARCHIVE).
  *
  * Accepts both application/json and multipart/form-data (with `payload` JSON
  * part + `screenshot` / `attachments` file parts). Files upload to S3 and

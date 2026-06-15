@@ -9,31 +9,18 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   renameColumn: [payload: { id: string; name: string }]
-  updateWip: [payload: { id: string; wip_limit: number | null }]
   toggleColumn: []
 }>()
 
 const toast = useToast()
 const { isColumnExpanded, toggleColumn } = useColumnCollapse()
 
-const MANDATORY_NAMES = ['BACKLOG', 'DONE'] as const
+const MANDATORY_NAMES = ['FEEDBACK INBOX', 'DOING', 'DONE', 'ARCHIVE'] as const
 const isMandatory = computed(() => MANDATORY_NAMES.includes(props.column.name as typeof MANDATORY_NAMES[number]))
 
 const isExpanded = computed(() => {
   if (!props.scope) return true
   return isColumnExpanded(props.scope, props.column.id).value
-})
-
-const wipExceeded = computed(() => {
-  return props.column.wip_limit !== null
-    && props.column.wip_limit !== undefined
-    && props.cardCount >= props.column.wip_limit
-})
-
-const wipDisplay = computed(() => {
-  return props.column.wip_limit
-    ? `${props.cardCount}/${props.column.wip_limit}`
-    : String(props.cardCount)
 })
 
 const isEditingName = ref(false)
@@ -80,49 +67,6 @@ function handleNameKeydown(e: KeyboardEvent) {
   }
 }
 
-const isEditingWip = ref(false)
-const wipInput = ref<number | null>(props.column.wip_limit)
-const wipInputEl = ref<HTMLInputElement | null>(null)
-
-function handleWipDblClick() {
-  wipInput.value = props.column.wip_limit
-  isEditingWip.value = true
-  nextTick(() => {
-    wipInputEl.value?.focus()
-    wipInputEl.value?.select()
-  })
-}
-
-function commitWip() {
-  const raw = wipInput.value
-  let next: number | null
-  if (raw === null || raw === undefined || (typeof raw === 'string' && String(raw).trim() === '')) {
-    next = null
-  } else {
-    const n = Number(raw)
-    next = Number.isFinite(n) && n > 0 ? Math.floor(n) : null
-  }
-  if (next !== props.column.wip_limit) {
-    emit('updateWip', { id: props.column.id, wip_limit: next })
-  }
-  isEditingWip.value = false
-}
-
-function cancelWip() {
-  wipInput.value = props.column.wip_limit
-  isEditingWip.value = false
-}
-
-function handleWipKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter') {
-    e.preventDefault()
-    commitWip()
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    cancelWip()
-  }
-}
-
 function handleToggleColumn() {
   if (props.scope) {
     toggleColumn(props.scope, props.column.id)
@@ -133,15 +77,11 @@ function handleToggleColumn() {
 watch(() => props.column.name, (val) => {
   if (!isEditingName.value) nameInput.value = val
 })
-watch(() => props.column.wip_limit, (val) => {
-  if (!isEditingWip.value) wipInput.value = val
-})
 </script>
 
 <template>
   <div
     class="kanban-column-header px-3 py-2 border-b border-(--ui-border) bg-(--ui-bg-elevated) flex items-center gap-2"
-    :class="{ 'wip-exceeded border-red-500 border-b-2': wipExceeded }"
   >
     <button
       type="button"
@@ -176,36 +116,13 @@ watch(() => props.column.wip_limit, (val) => {
       </h3>
     </div>
 
-    <div class="flex items-center gap-1 shrink-0">
-      <span class="text-[10px] text-(--ui-text-muted) uppercase">WIP</span>
-      <input
-        v-if="isEditingWip"
-        ref="wipInputEl"
-        v-model.number="wipInput"
-        type="number"
-        min="0"
-        class="w-14 px-1 py-0.5 text-xs bg-(--ui-bg) border border-(--ui-border) rounded outline-none focus:ring-1 focus:ring-(--ui-primary)"
-        @blur="commitWip"
-        @keydown="handleWipKeydown"
+    <div class="flex items-center shrink-0">
+      <span
+        class="text-xs px-2 py-0.5 rounded border bg-(--ui-bg-accented) text-(--ui-text-muted) border-(--ui-border) select-none"
+        :title="`${cardCount} card${cardCount === 1 ? '' : 's'}`"
       >
-      <button
-        v-else
-        type="button"
-        class="text-xs px-2 py-0.5 rounded border select-none"
-        :class="wipExceeded
-          ? 'wip-exceeded animate-pulse text-red-500 border-red-500 bg-red-500/10'
-          : 'bg-(--ui-bg-accented) text-(--ui-text-muted) border-(--ui-border)'"
-        title="Double-click to edit WIP limit (empty to clear)"
-        @dblclick="handleWipDblClick"
-      >
-        {{ wipDisplay }}
-      </button>
+        {{ cardCount }}
+      </span>
     </div>
   </div>
 </template>
-
-<style scoped>
-.wip-exceeded {
-  /* Hook for downstream styles / tests targeting the exceeded state. */
-}
-</style>

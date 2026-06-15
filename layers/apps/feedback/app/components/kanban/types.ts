@@ -21,7 +21,6 @@ export interface KanbanColumnModel {
   id: string
   name: string
   position: number
-  wip_limit: number | null
   is_collapsed: boolean
   post_meta: Record<string, any>
 }

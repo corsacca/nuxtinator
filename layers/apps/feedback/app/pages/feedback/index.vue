@@ -366,7 +366,7 @@ function openProjectCtx(e: { x: number; y: number; project: Project }) {
 }
 
 function openColumnCtx(e: { x: number; y: number; column: Column }) {
-  const isProtected = e.column.name === 'BACKLOG' || e.column.name === 'DONE'
+  const isProtected = ['FEEDBACK INBOX', 'DOING', 'DONE', 'ARCHIVE'].includes(e.column.name)
   ctxMenu.value = {
     open: true,
     x: e.x,
@@ -374,7 +374,6 @@ function openColumnCtx(e: { x: number; y: number; column: Column }) {
     target: { kind: 'column', column: e.column },
     items: [
       { label: 'Rename', icon: 'i-lucide-pencil', action: 'rename' },
-      { label: 'Set WIP limit', icon: 'i-lucide-gauge', action: 'wip' },
       ...(isProtected ? [] : [{ label: 'Delete', icon: 'i-lucide-trash-2', danger: true, action: 'delete' }])
     ]
   }
@@ -401,15 +400,6 @@ function onCtxSelect(action: string) {
         $fetch(`/api/feedback/columns/${t.column.id}`, { method: 'PATCH', body: { name } })
           .then(() => loadAll())
           .catch((e: any) => toast.add({ title: 'Rename failed', description: e?.data?.statusMessage, color: 'error' }))
-      }
-    } else if (action === 'wip') {
-      if (!import.meta.client) return
-      const raw = prompt('WIP limit (empty = no limit)', String(t.column.wip_limit ?? ''))
-      if (raw !== null) {
-        const wip = raw.trim() === '' ? null : Number(raw)
-        $fetch(`/api/feedback/columns/${t.column.id}/wip`, { method: 'PATCH', body: { wip_limit: wip } })
-          .then(() => loadAll())
-          .catch((e: any) => toast.add({ title: 'WIP update failed', description: e?.data?.statusMessage, color: 'error' }))
       }
     }
   }

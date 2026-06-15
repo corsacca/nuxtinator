@@ -13,10 +13,7 @@ import { generateSignedUrl } from '#core/server/utils/storage'
 
 const COLUMN_TO_STATUS: Record<string, string> = {
   'FEEDBACK INBOX': 'new',
-  'BACKLOG': 'accepted',
-  'PLANNING': 'in_progress',
-  'BUILDING': 'in_progress',
-  'TESTING': 'in_progress',
+  'DOING': 'in_progress',
   'DONE': 'accepted',
   'ARCHIVE': 'rejected'
 }

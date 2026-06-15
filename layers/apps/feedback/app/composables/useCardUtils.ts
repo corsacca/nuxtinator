@@ -1,13 +1,36 @@
 import type { KanbanCardModel, PostType } from '../components/kanban/types'
 
 /**
+ * Cards in the DOING column carry a workflow phase in post_meta.phase. These
+ * are the phases and their display labels; a card with no phase reads as the
+ * first one.
+ */
+export const DOING_COLUMN = 'DOING'
+
+export const PHASES = [
+  { value: 'backlog', label: 'Backlog' },
+  { value: 'planning', label: 'Planning' },
+  { value: 'building', label: 'Building' },
+  { value: 'testing', label: 'Testing' }
+] as const
+
+export function cardPhase(card: KanbanCardModel): string {
+  const p = card.post_meta?.phase
+  return typeof p === 'string' && p ? p : 'backlog'
+}
+
+export function phaseLabel(value: string | null | undefined): string {
+  return PHASES.find(p => p.value === value)?.label ?? 'Backlog'
+}
+
+/**
  * Check if a card is overdue.
  */
 export function isCardOverdue(
   card: KanbanCardModel,
   columnName: string | undefined
 ): boolean {
-  if (!card?.due_date || columnName === 'DONE') return false
+  if (!card?.due_date || columnName === 'DONE' || columnName === 'ARCHIVE') return false
   const t = Date.parse(card.due_date)
   if (Number.isNaN(t)) return false
   return t < Date.now()

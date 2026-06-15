@@ -5,6 +5,7 @@ import type {
   KanbanProjectModel,
   PostType
 } from './types'
+import { PHASES, DOING_COLUMN } from '../../composables/useCardUtils'
 
 type Card = KanbanCardModel
 
@@ -214,6 +215,13 @@ const assigneeOptions = computed<string[]>(() =>
     .map(u => u.display_name)
     .filter((n): n is string => !!n)
 )
+
+// The phase picker only applies while a card sits in the DOING column.
+const currentColumnName = computed(() =>
+  props.columns.find(c => c.id === props.card?.column_id)?.name ?? ''
+)
+const isDoing = computed(() => currentColumnName.value === DOING_COLUMN)
+const phaseSelectItems = PHASES.map(p => ({ label: p.label, value: p.value }))
 
 // -------- Meta helpers --------
 function getMeta(key: string): any {
@@ -478,7 +486,10 @@ function formatClaudePrompt(): string {
   const base = formatCardContextForAgent()
   const title = card.title || 'Untitled'
   const col = currentColumn()
-  const action = determineActionFromColumn(col?.name || 'BACKLOG')
+  // In DOING the workflow stage is the card's phase; elsewhere it's the column.
+  const phase = String(card.post_meta?.phase || 'backlog')
+  const stage = col?.name === DOING_COLUMN ? phase.toUpperCase() : (col?.name || 'BACKLOG')
+  const action = determineActionFromColumn(stage)
 
   return `${base}
 
@@ -504,18 +515,20 @@ Use \`./kanban\` to read and update this card.
 # Import a plan from file
 ./kanban import-plan "${title}" ./plan.md
 
-# Move to next column when ready
-./kanban move "${title}" "PLANNING"
-./kanban move "${title}" "BUILDING"
-./kanban move "${title}" "TESTING"
+# Move between columns when ready
+./kanban move "${title}" "DOING"
 ./kanban move "${title}" "DONE"
+./kanban move "${title}" "ARCHIVE"
+
+# Set the work phase while in DOING
+./kanban update-meta "${title}" phase "planning"
 
 # Set priority
 ./kanban set-priority "${title}" high 85
 \`\`\`
 
 ### Column workflow:
-CHANGE REQUESTS -> BACKLOG -> PLANNING -> BUILDING -> TESTING -> DONE
+FEEDBACK INBOX -> DOING (phase: backlog -> planning -> building -> testing) -> DONE (or ARCHIVE)
 
 ### Your task:
 **${action}** this ${card.post_type || 'task'} card. Start by reading it with \`./kanban get "${title}"\`, then fill in missing fields (plan, implementation, etc.) and move the card forward when appropriate.`
@@ -793,6 +806,14 @@ async function handleCopyPostMeta() {
               <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
                 Coordination
               </h3>
+              <UFormField v-if="isDoing" label="Phase">
+                <USelect
+                  :model-value="getMeta('phase') || 'backlog'"
+                  :items="phaseSelectItems"
+                  class="w-full"
+                  @update:model-value="(v: any) => setMeta('phase', v)"
+                />
+              </UFormField>
               <UFormField label="Assignee">
                 <USelectMenu
                   v-model="draft.assignee"

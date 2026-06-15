@@ -9,7 +9,6 @@ const props = defineProps<{
   project: KanbanProjectModel
   cards: KanbanCardModel[]
   scope?: string
-  columnCardCount?: number
   swimlaneFilterIds?: string[]
   heightPx?: number
 }>()
@@ -62,17 +61,6 @@ const cellCards = computed(() => {
       && (laneSet ? laneSet.has(c.swimlane_id) : c.swimlane_id === props.swimlane.id)
   )
   return sortCardsByPriority(filtered)
-})
-
-const effectiveColumnCount = computed(() => {
-  if (typeof props.columnCardCount === 'number') return props.columnCardCount
-  return cellCards.value.length
-})
-
-const wipExceeded = computed(() => {
-  const limit = props.column.wip_limit
-  if (limit === null || limit === undefined) return false
-  return effectiveColumnCount.value >= limit
 })
 
 function handleDragOver(e: DragEvent) {
@@ -136,7 +124,6 @@ const hiddenCount = computed(() =>
            flex flex-col gap-1 min-w-0"
     :class="{
       'drag-over bg-blue-500/10 ring-1 ring-blue-400 dark:bg-blue-950/40': isDragOver,
-      'ring-1 ring-red-500 border-red-500': wipExceeded,
       'overflow-y-auto scrollbar-thin': !isCollapsed,
       'h-80': !isCollapsed && heightPx === undefined,
       'h-12 overflow-hidden': isCollapsed
@@ -210,13 +197,6 @@ const hiddenCount = computed(() =>
       {{ cellCards.length }} card{{ cellCards.length === 1 ? '' : 's' }}
     </div>
 
-    <div
-      v-if="wipExceeded"
-      class="absolute top-1 right-1 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl wip-flash pointer-events-none"
-      aria-hidden="true"
-    >
-      WIP!
-    </div>
   </div>
 </template>
 
@@ -233,13 +213,5 @@ const hiddenCount = computed(() =>
 }
 .kanban-cell::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, currentColor 55%, transparent);
-}
-
-@keyframes wip-flash {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.wip-flash {
-  animation: wip-flash 1s ease-in-out infinite;
 }
 </style>

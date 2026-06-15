@@ -30,7 +30,6 @@ export interface ColumnsTable {
   id: Generated<string>
   name: string
   position: number
-  wip_limit: number | null
   is_collapsed: Generated<boolean>
   post_meta: Generated<Record<string, any>>
   created_at: ColumnType<Date, string | Date | undefined, string | Date>
