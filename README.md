@@ -162,7 +162,8 @@ S3_REGION=
 S3_ACCESS_KEY_ID=
 S3_SECRET_ACCESS_KEY=
 S3_BUCKET_NAME=
-S3_PUBLIC_BASE_URL=               # only for public files
+S3_PUBLIC_BUCKET_NAME=            # optional public-read bucket; falls back to S3_BUCKET_NAME
+S3_PUBLIC_BASE_URL=               # public read URL (custom domain on the public bucket); for public files
 ```
 
 ---

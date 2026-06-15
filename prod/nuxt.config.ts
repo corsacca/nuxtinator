@@ -90,6 +90,7 @@ export default defineNuxtConfig({
     s3AccessKeyId: process.env.S3_ACCESS_KEY_ID || '',
     s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
     s3BucketName: process.env.S3_BUCKET_NAME || '',
+    s3PublicBucketName: process.env.S3_PUBLIC_BUCKET_NAME || '',
     s3PublicBaseUrl: process.env.S3_PUBLIC_BASE_URL || '',
     secretEncryptionKey: process.env.NUXT_SECRET_ENCRYPTION_KEY || '',
     public: {

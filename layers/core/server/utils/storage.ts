@@ -9,7 +9,7 @@ const SIGNED_URL_EXPIRATION = 60 * 60 * 24 * 7 // 7 days in seconds
 // Get S3 settings from environment variables
 function getS3Settings() {
   // Try to get runtime config first (for production builds), then fallback to process.env
-  let S3_ENDPOINT, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_BUCKET_NAME, S3_PUBLIC_BASE_URL
+  let S3_ENDPOINT, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_BUCKET_NAME, S3_PUBLIC_BUCKET_NAME, S3_PUBLIC_BASE_URL
 
   try {
     // Use runtime config if available (production build)
@@ -19,6 +19,7 @@ function getS3Settings() {
     S3_ACCESS_KEY_ID = config.s3AccessKeyId || process.env.S3_ACCESS_KEY_ID
     S3_SECRET_ACCESS_KEY = config.s3SecretAccessKey || process.env.S3_SECRET_ACCESS_KEY
     S3_BUCKET_NAME = config.s3BucketName || process.env.S3_BUCKET_NAME
+    S3_PUBLIC_BUCKET_NAME = config.s3PublicBucketName || process.env.S3_PUBLIC_BUCKET_NAME
     S3_PUBLIC_BASE_URL = config.s3PublicBaseUrl || process.env.S3_PUBLIC_BASE_URL
   } catch {
     // Fallback to process.env (development mode)
@@ -27,6 +28,7 @@ function getS3Settings() {
     S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID
     S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY
     S3_BUCKET_NAME = process.env.S3_BUCKET_NAME
+    S3_PUBLIC_BUCKET_NAME = process.env.S3_PUBLIC_BUCKET_NAME
     S3_PUBLIC_BASE_URL = process.env.S3_PUBLIC_BASE_URL
   }
 
@@ -36,8 +38,18 @@ function getS3Settings() {
     accessKeyId: S3_ACCESS_KEY_ID,
     secretAccessKey: S3_SECRET_ACCESS_KEY,
     bucketName: S3_BUCKET_NAME,
+    publicBucketName: S3_PUBLIC_BUCKET_NAME,
     publicBaseUrl: S3_PUBLIC_BASE_URL
   }
+}
+
+// The bucket that public objects live in. Public uploads can be routed to a
+// dedicated public-read bucket (S3_PUBLIC_BUCKET_NAME, bound to a CDN custom
+// domain); when it's unset they fall back to the primary bucket. Both share
+// the same endpoint and credentials — only the bucket name differs.
+function getPublicBucketName(): string | undefined {
+  const settings = getS3Settings()
+  return settings.publicBucketName || settings.bucketName
 }
 
 // Initialize S3 client with current settings
@@ -78,6 +90,9 @@ export interface UploadResult {
  * Upload a file to S3-compatible storage (Backblaze B2).
  * Objects are stored under `folder/` (default `uploads/`) with a random name;
  * pass a folder to keep an app or layer's files grouped under their own prefix.
+ * `visibility: 'public'` writes to the public-read bucket and returns a stable
+ * public URL; `'private'` writes to the primary bucket and returns a
+ * time-limited signed URL.
  */
 export async function uploadToS3(
   fileData: Buffer,
@@ -96,11 +111,13 @@ export async function uploadToS3(
     const prefix = folder.replace(/^\/+|\/+$/g, '') || 'uploads'
     const key = `${prefix}/${randomName}.${ext}`
 
-    // Upload to S3
+    // Upload to S3. Public objects go to the public-read bucket; private
+    // objects stay in the primary bucket (the client's default).
     await client.putObject(key, fileData, {
       metadata: {
         'Content-Type': contentType
-      }
+      },
+      ...(visibility === 'public' ? { bucketName: getPublicBucketName() } : {})
     })
 
     // Generate URL based on visibility: public returns a stable URL via the
@@ -132,12 +149,13 @@ export function getPublicUrl(key: string): string {
 }
 
 /**
- * Delete a file from S3-compatible storage
+ * Delete a file from S3-compatible storage. Pass `visibility: 'public'` to
+ * delete from the public-read bucket; defaults to the primary bucket.
  */
-export async function deleteFromS3(key: string): Promise<void> {
+export async function deleteFromS3(key: string, visibility: 'public' | 'private' = 'private'): Promise<void> {
   try {
     const client = getS3Client()
-    await client.deleteObject(key)
+    await client.deleteObject(key, visibility === 'public' ? { bucketName: getPublicBucketName() } : {})
   } catch (error: any) {
     console.error('S3 delete error:', error)
     throw new Error(`Failed to delete file from storage: ${error.message}`)
