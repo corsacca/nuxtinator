@@ -2,9 +2,6 @@ import { readBody } from 'h3'
 import { withOrgPermission } from '#tenant/server'
 import { logCreate } from '#core/server/utils/activity-logger'
 
-const ALLOWED_TYPES = ['task', 'feature', 'bug', 'artifact', 'feedback'] as const
-type PostType = typeof ALLOWED_TYPES[number]
-
 function normDate(v: unknown): string | null {
   if (v === null || v === undefined || v === '') return null
   if (typeof v === 'string') return v
@@ -18,10 +15,8 @@ export default defineEventHandler(async (event) => {
   const swimlaneId = typeof body.swimlane_id === 'string' ? body.swimlane_id : ''
   const columnId = typeof body.column_id === 'string' ? body.column_id : ''
   const title = typeof body.title === 'string' ? body.title : ''
-  const postTypeIn = typeof body.post_type === 'string' ? body.post_type : 'task'
-  const postType: PostType = (ALLOWED_TYPES as readonly string[]).includes(postTypeIn)
-    ? postTypeIn as PostType
-    : 'task'
+  // This is the feedback board — every card created here is a feedback card.
+  const postType = 'feedback' as const
 
   if (!projectId) throw createError({ statusCode: 400, statusMessage: 'project_id required' })
   if (!swimlaneId) throw createError({ statusCode: 400, statusMessage: 'swimlane_id required' })

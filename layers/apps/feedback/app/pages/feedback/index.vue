@@ -223,14 +223,13 @@ async function submitSwimlane() {
 const cardModalOpen = ref(false)
 const cardForm = ref({
   title: '',
-  post_type: 'task' as 'task' | 'feature' | 'bug' | 'artifact' | 'feedback',
   columnId: '',
   swimlaneId: '',
   projectId: ''
 })
 const cardBusy = ref(false)
 function openAddCard(payload: { columnId: string; swimlaneId: string; projectId: string }) {
-  cardForm.value = { title: '', post_type: 'task', ...payload }
+  cardForm.value = { title: '', ...payload }
   cardModalOpen.value = true
 }
 async function submitCard() {
@@ -244,7 +243,8 @@ async function submitCard() {
         column_id: cardForm.value.columnId,
         swimlane_id: cardForm.value.swimlaneId,
         title: cardForm.value.title.trim(),
-        post_type: cardForm.value.post_type
+        // Feedback-only board; new cards default to a bug, editable in the panel.
+        post_meta: { feedback_sub_type: 'bug' }
       }
     })
     cards.value.push(created)
@@ -612,18 +612,6 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
         <div class="space-y-4">
           <UFormField label="Title" required>
             <UInput v-model="cardForm.title" placeholder="Briefly describe the card" autofocus />
-          </UFormField>
-          <UFormField label="Type">
-            <USelect
-              v-model="cardForm.post_type"
-              :items="[
-                { label: 'Task', value: 'task' },
-                { label: 'Feature', value: 'feature' },
-                { label: 'Bug', value: 'bug' },
-                { label: 'Artifact', value: 'artifact' },
-                { label: 'Feedback', value: 'feedback' }
-              ]"
-            />
           </UFormField>
         </div>
       </template>

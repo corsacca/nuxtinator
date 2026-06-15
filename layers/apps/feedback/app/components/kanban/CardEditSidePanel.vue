@@ -97,7 +97,7 @@ const planField: MetaField = {
   name: 'plan',
   label: 'Plan',
   type: 'textarea',
-  placeholder: 'Step-by-step plan for this card. Import via: ./kanban-agent-v2.sh import-plan "Card Title" plan.md'
+  placeholder: 'Step-by-step plan for this card.'
 }
 
 const POST_META_FIELDS: Record<string, MetaField[]> = {
@@ -416,7 +416,10 @@ function formatCardContextForAgent(): string {
   const proj = currentProject()
   const columnName = col?.name || 'Unknown'
   const projectName = proj?.name || 'Unknown'
-  const action = determineActionFromColumn(columnName)
+  // In DOING the workflow stage is the card's phase; elsewhere it's the column.
+  const phase = String(card.post_meta?.phase || 'backlog')
+  const stage = col?.name === DOING_COLUMN ? phase.toUpperCase() : columnName
+  const action = determineActionFromColumn(stage)
   const qual = card.post_meta?.priority_qualitative
   const quant = card.post_meta?.priority_quantitative
   const metaFields = POST_META_FIELDS[card.post_type] || []
@@ -480,60 +483,6 @@ function formatCardContextForAgent(): string {
   return lines.join('\n')
 }
 
-function formatClaudePrompt(): string {
-  const card = buildCardForContext()
-  if (!card) return ''
-  const base = formatCardContextForAgent()
-  const title = card.title || 'Untitled'
-  const col = currentColumn()
-  // In DOING the workflow stage is the card's phase; elsewhere it's the column.
-  const phase = String(card.post_meta?.phase || 'backlog')
-  const stage = col?.name === DOING_COLUMN ? phase.toUpperCase() : (col?.name || 'BACKLOG')
-  const action = determineActionFromColumn(stage)
-
-  return `${base}
-
----
-
-## Kanban CLI Reference
-
-Use \`./kanban\` to read and update this card.
-
-### Commands for this card:
-
-\`\`\`bash
-# Read current state
-./kanban get "${title}"
-
-# Update description
-./kanban update "${title}" "new description here"
-
-# Update metadata fields
-./kanban update-meta "${title}" plan "step-by-step plan content"
-./kanban update-meta "${title}" implementation_plan "implementation details"
-
-# Import a plan from file
-./kanban import-plan "${title}" ./plan.md
-
-# Move between columns when ready
-./kanban move "${title}" "DOING"
-./kanban move "${title}" "DONE"
-./kanban move "${title}" "ARCHIVE"
-
-# Set the work phase while in DOING
-./kanban update-meta "${title}" phase "planning"
-
-# Set priority
-./kanban set-priority "${title}" high 85
-\`\`\`
-
-### Column workflow:
-FEEDBACK INBOX -> DOING (phase: backlog -> planning -> building -> testing) -> DONE (or ARCHIVE)
-
-### Your task:
-**${action}** this ${card.post_type || 'task'} card. Start by reading it with \`./kanban get "${title}"\`, then fill in missing fields (plan, implementation, etc.) and move the card forward when appropriate.`
-}
-
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -559,53 +508,13 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-async function handleSendToAgent() {
+async function handleCopyForAgent() {
   const text = formatCardContextForAgent()
   const ok = await copyToClipboard(text)
   if (ok) {
     toast.add({
       title: 'Copied to clipboard',
-      description: 'Card context copied — paste into your agent.',
-      icon: 'i-lucide-send',
-      color: 'success'
-    })
-  } else {
-    toast.add({
-      title: 'Copy failed',
-      description: 'Unable to access the clipboard.',
-      color: 'error'
-    })
-  }
-}
-
-async function handleSendToClaude() {
-  const text = formatClaudePrompt()
-  const ok = await copyToClipboard(text)
-  if (ok) {
-    toast.add({
-      title: 'Copied for Claude',
-      description: 'Card context + CLI reference copied — paste into Claude.ai or Claude Code.',
-      icon: 'i-lucide-sparkles',
-      color: 'success'
-    })
-  } else {
-    toast.add({
-      title: 'Copy failed',
-      description: 'Unable to access the clipboard.',
-      color: 'error'
-    })
-  }
-}
-
-async function handleCopyPostMeta() {
-  const card = buildCardForContext()
-  if (!card) return
-  const text = JSON.stringify(card.post_meta ?? {}, null, 2)
-  const ok = await copyToClipboard(text)
-  if (ok) {
-    toast.add({
-      title: 'Post meta copied',
-      description: 'All post_meta fields copied as JSON.',
+      description: 'Card context copied — paste into your AI agent.',
       icon: 'i-lucide-clipboard',
       color: 'success'
     })
@@ -629,33 +538,13 @@ async function handleCopyPostMeta() {
           <div class="flex items-center gap-2">
             <UButton
               size="xs"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-clipboard"
-              title="Copy all post_meta fields as JSON"
-              @click="handleCopyPostMeta"
-            >
-              Copy
-            </UButton>
-            <UButton
-              size="xs"
               color="primary"
               variant="soft"
-              icon="i-lucide-send"
-              title="Copy card context to clipboard for an AI agent"
-              @click="handleSendToAgent"
+              icon="i-lucide-clipboard"
+              title="Copy this card's full context to paste into an AI assistant"
+              @click="handleCopyForAgent"
             >
-              Send to Agent
-            </UButton>
-            <UButton
-              size="xs"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-sparkles"
-              title="Copy card context + CLI reference for Claude"
-              @click="handleSendToClaude"
-            >
-              Send to Claude
+              Copy for AI
             </UButton>
             <UButton variant="ghost" icon="i-lucide-x" aria-label="Close" @click="open = false" />
           </div>
