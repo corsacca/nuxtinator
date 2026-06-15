@@ -22,7 +22,6 @@ export interface FeedbackAuthCodesTable {
   redirect_origin: string
   code_challenge: string
   token_ciphertext: string
-  used: Generated<boolean>
   expires: ColumnType<Date, string | Date, string | Date>
   created_at: ColumnType<Date, string | Date | undefined, string | Date>
 }

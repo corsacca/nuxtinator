@@ -7,6 +7,11 @@ import { sql } from 'kysely'
 // origin, PKCE challenge} and handed back to the embedding site, which exchanges
 // it at /api/v1/feedback/token for the encrypted access token stored here.
 //
+// Single-use is enforced by deleting the row on exchange (DELETE … RETURNING),
+// so there's no `used` flag — presence means unclaimed. Codes that are minted
+// but never exchanged are reaped by the expiry sweep in
+// server/plugins/feedback-cleanup.ts (the reason for the `expires` index).
+//
 // Not tenant-scoped: rows are ephemeral, keyed by a high-entropy hash, and the
 // token-exchange endpoint looks a code up by hash with no org context (it can't
 // know the org before reading the row). The project_id FK still ties each code
@@ -22,7 +27,6 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn('redirect_origin', 'text', col => col.notNull())
     .addColumn('code_challenge', 'text', col => col.notNull())
     .addColumn('token_ciphertext', 'text', col => col.notNull())
-    .addColumn('used', 'boolean', col => col.notNull().defaultTo(false))
     .addColumn('expires', 'timestamptz', col => col.notNull())
     .addColumn('created_at', 'timestamptz', col => col.notNull().defaultTo(sql`now()`))
     .execute()

@@ -95,15 +95,18 @@ export function useFeedback() {
     } catch {
       return false
     }
-    const code = params.get('code')
-    const state = params.get('state')
+    // Only our own widget-namespaced params (set by the connect bridge) — never
+    // a bare `?code`/`?state`, which the embedding page may own (e.g. its own
+    // OAuth callback). So we never read or strip params that aren't ours.
+    const code = params.get('fw_code')
+    const state = params.get('fw_state')
     if (!code) return false
 
-    // Strip the one-time code + state from the URL so they never linger in
+    // Strip our one-time code + state from the URL so they never linger in
     // history, regardless of whether the exchange below succeeds.
     try {
-      params.delete('code')
-      params.delete('state')
+      params.delete('fw_code')
+      params.delete('fw_state')
       const qs = params.toString()
       const clean = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
       window.history.replaceState({}, '', clean)

@@ -10,11 +10,15 @@
 import { readBody, getHeader } from 'h3'
 import { db } from '#core/server/utils/database'
 import { decryptSecret } from '#core/server/utils/secret-crypto'
-import { verifyToken } from '#core/server/utils/auth'
+import { verifyScopedToken } from '#core/server/utils/auth'
+import { WIDGET_TOKEN_SCOPE } from '../../../../utils/widget-auth'
 import { widgetSha256Hex, widgetS256Challenge, isValidWidgetVerifier, widgetTimingSafeEqual } from '../../../../utils/widget-crypto'
 import { originOf } from '../../../../utils/widget-origins'
+import { enforceWidgetRateLimit, widgetClientIp } from '../../../../utils/rate-limit'
 
 export default defineEventHandler(async (event) => {
+  await enforceWidgetRateLimit(event, 'ratelimit.feedback.token', 'ip', widgetClientIp(event), 60, 60_000)
+
   const body = await readBody(event) ?? {}
   const code = typeof body.code === 'string' ? body.code : ''
   const verifier = typeof body.code_verifier === 'string' ? body.code_verifier : ''
@@ -23,13 +27,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'code and valid code_verifier required' })
   }
 
-  // Atomically claim the code: only an unused, unexpired row flips to used, so a
-  // replayed code finds nothing to claim.
+  // Atomically claim the code by deleting it: the delete returns the row only
+  // on the first, unexpired hit, so a replay finds nothing AND exchanged codes
+  // leave nothing behind to accumulate. (A periodic sweep reaps codes that were
+  // minted but never exchanged — see server/plugins/feedback-cleanup.ts.)
   const row = await db
-    .updateTable('feedback_auth_codes')
-    .set({ used: true })
+    .deleteFrom('feedback_auth_codes')
     .where('code_hash', '=', widgetSha256Hex(code))
-    .where('used', '=', false)
     .where('expires', '>', new Date())
     .returningAll()
     .executeTakeFirst()
@@ -48,7 +52,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const token = decryptSecret(row.token_ciphertext)
-  const payload = verifyToken(token)
+  const payload = verifyScopedToken(token, WIDGET_TOKEN_SCOPE)
   if (!payload) throw createError({ statusCode: 500, statusMessage: 'token unavailable' })
 
   return {

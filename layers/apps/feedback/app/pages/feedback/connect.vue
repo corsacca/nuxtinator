@@ -43,9 +43,12 @@ onMounted(async () => {
       method: 'POST',
       body: { project_id: projectId, redirect_uri: redirectUri, code_challenge: codeChallenge }
     })
+    // Hand the code back on widget-namespaced params (`fw_*`) so they can't
+    // collide with — or get stripped from — params the embedding page uses for
+    // its own purposes (e.g. its own OAuth callback's `?code`/`?state`).
     const back = new URL(redirectUri)
-    back.searchParams.set('code', code)
-    if (state) back.searchParams.set('state', state)
+    back.searchParams.set('fw_code', code)
+    if (state) back.searchParams.set('fw_state', state)
     window.location.replace(back.toString())
   } catch (e: any) {
     const code = e?.statusCode ?? e?.status ?? e?.response?.status

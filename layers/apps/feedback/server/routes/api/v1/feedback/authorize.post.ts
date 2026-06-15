@@ -13,16 +13,19 @@
  */
 import { readBody } from 'h3'
 import { withProjectOrgContext } from '#tenant/server'
-import { signAuthToken } from '#core/server/utils/auth'
+import { signScopedToken } from '#core/server/utils/auth'
 import { encryptSecret } from '#core/server/utils/secret-crypto'
 import { db } from '#core/server/utils/database'
-import { requireWidgetAuthUser } from '../../../../utils/widget-auth'
+import { requireWidgetAuthUser, WIDGET_TOKEN_SCOPE } from '../../../../utils/widget-auth'
+import { enforceWidgetRateLimit, widgetClientIp } from '../../../../utils/rate-limit'
 import { widgetSha256Hex, randomUrlToken, isValidWidgetChallenge } from '../../../../utils/widget-crypto'
 import { originOf, isRedirectOriginAllowed } from '../../../../utils/widget-origins'
 
 const CODE_TTL_MS = 60_000
 
 export default defineEventHandler(async (event) => {
+  await enforceWidgetRateLimit(event, 'ratelimit.feedback.authorize', 'ip', widgetClientIp(event), 30, 60_000)
+
   const authUser = requireWidgetAuthUser(event)
 
   const body = await readBody(event) ?? {}
@@ -56,8 +59,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'redirect origin not allowed for this project' })
   }
 
-  const token = signAuthToken(
+  const token = signScopedToken(
     { userId: authUser.userId, email: authUser.email, display_name: authUser.display_name },
+    WIDGET_TOKEN_SCOPE,
     (useRuntimeConfig().feedbackTokenTtl as string) || '30d'
   )
 
