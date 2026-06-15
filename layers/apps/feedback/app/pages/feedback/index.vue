@@ -47,6 +47,7 @@ const projects = ref<Project[]>([])
 const columns = ref<Column[]>([])
 const swimlanes = ref<Swimlane[]>([])
 const cards = ref<Card[]>([])
+const assignableUsers = ref<{ id: string, display_name: string | null }[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -57,13 +58,16 @@ async function loadAll() {
   loading.value = true
   error.value = ''
   try {
-    const [projectsRes, columnsRes] = await Promise.all([
+    const [projectsRes, columnsRes, assigneesRes] = await Promise.all([
       $fetch<Project[]>('/api/feedback/projects'),
-      $fetch<Column[]>('/api/feedback/columns')
+      $fetch<Column[]>('/api/feedback/columns'),
+      $fetch<{ users: { id: string, display_name: string | null }[] }>('/api/feedback/assignees')
+        .catch(() => ({ users: [] }))
     ])
 
     projects.value = projectsRes
     columns.value = columnsRes
+    assignableUsers.value = assigneesRes.users
 
     const laneResults = await Promise.all(
       projects.value.map(p => $fetch<Swimlane[]>('/api/feedback/swimlanes', { query: { project_id: p.id } }))
@@ -552,6 +556,7 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
       :card="activeCard"
       :columns="columns"
       :projects="projects"
+      :users="assignableUsers"
       @save="onSaveCard"
       @delete="onDeleteCard"
     />

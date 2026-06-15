@@ -13,6 +13,9 @@ interface MetaField {
   label: string
   type: 'text' | 'textarea' | 'number' | 'select'
   options?: string[]
+  // Select options whose display label differs from the stored value. Takes
+  // precedence over `options` when present.
+  optionItems?: { label: string, value: string }[]
   placeholder?: string
 }
 
@@ -21,9 +24,13 @@ const props = withDefaults(defineProps<{
   card: Card | null
   columns?: KanbanColumnModel[]
   projects?: KanbanProjectModel[]
+  // Users assignable to cards (org members in multi-tenant mode, all users in
+  // single mode), supplied by the board.
+  users?: { id: string, display_name: string | null }[]
 }>(), {
   columns: () => [],
-  projects: () => []
+  projects: () => [],
+  users: () => []
 })
 
 const emit = defineEmits<{
@@ -93,57 +100,13 @@ const planField: MetaField = {
 }
 
 const POST_META_FIELDS: Record<string, MetaField[]> = {
-  task: [
-    { name: 'estimated_hours', label: 'Estimated Hours', type: 'number', placeholder: '0' },
-    { name: 'blocked_by', label: 'Blocked By', type: 'text', placeholder: 'Card IDs or blocker description' },
-    { name: 'task_status', label: 'Task Status', type: 'select', options: ['todo', 'in_progress', 'blocked', 'completed'] },
-    { name: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Additional task notes' },
-    planField
-  ],
-  feature: [
-    { name: 'priority_level', label: 'Priority Level', type: 'select', options: ['p0', 'p1', 'p2', 'p3'] },
-    { name: 'estimated_effort', label: 'Estimated Effort', type: 'select', options: ['small', 'medium', 'large', 'xl'] },
-    { name: 'dependencies', label: 'Dependencies', type: 'text', placeholder: 'Comma-separated card IDs or names' },
-    { name: 'user_story', label: 'User Story', type: 'textarea', placeholder: 'As a [user], I want [goal] so that [benefit]' },
-    { name: 'requirements', label: 'Requirements', type: 'textarea', placeholder: 'Detailed requirements' },
-    { name: 'implementation_plan', label: 'Implementation Plan', type: 'textarea', placeholder: 'Step-by-step implementation plan' },
-    planField
-  ],
-  bug: [
-    { name: 'severity', label: 'Severity', type: 'select', options: ['low', 'medium', 'high', 'critical'] },
-    { name: 'priority_level', label: 'Priority Level', type: 'select', options: ['p0', 'p1', 'p2', 'p3'] },
-    { name: 'reproducible', label: 'Reproducible', type: 'select', options: ['always', 'sometimes', 'rare'] },
-    { name: 'affected_version', label: 'Affected Version', type: 'text', placeholder: 'e.g., v1.2.3' },
-    { name: 'steps_to_reproduce', label: 'Steps to Reproduce', type: 'textarea', placeholder: '1. Step one\n2. Step two\n3. ...' },
-    { name: 'bug_behavior', label: 'Bug Behavior', type: 'textarea', placeholder: 'Describe the bug behavior' },
-    { name: 'bug_repair_plan', label: 'Bug Repair Plan', type: 'textarea', placeholder: 'Plan for fixing the bug' },
-    planField
-  ],
-  artifact: [
-    { name: 'artifact_type', label: 'Artifact Type', type: 'select', options: ['documentation', 'design', 'specification', 'diagram'] },
-    { name: 'url', label: 'URL', type: 'text', placeholder: 'https://...' },
-    { name: 'version', label: 'Version', type: 'text', placeholder: 'v1.0.0' },
-    { name: 'documentation_link', label: 'Documentation Link', type: 'text', placeholder: 'Link to related docs' },
-    { name: 'related_cards', label: 'Related Cards', type: 'text', placeholder: 'Comma-separated card IDs' },
-    { name: 'artifact', label: 'Artifact Description', type: 'textarea', placeholder: 'Detailed description of the artifact' },
-    planField
-  ],
   feedback: [
-    { name: 'feedback_sub_type', label: 'Feedback Type', type: 'select', options: ['bug_fix', 'new_feature', 'change_request'] },
-    { name: 'reported_element', label: 'Reported Element', type: 'text', placeholder: 'Which element/component this refers to' },
-    { name: 'problem_description', label: 'Problem Description', type: 'textarea', placeholder: 'Describe the problem' },
-    { name: 'suggested_fix', label: 'Suggested Fix', type: 'textarea', placeholder: 'Suggested fix or improvement' },
+    { name: 'feedback_sub_type', label: 'Type', type: 'select', optionItems: [{ label: 'Bug', value: 'bug' }, { label: 'Idea', value: 'idea' }] },
+    { name: 'problem_description', label: 'Problem', type: 'textarea', placeholder: 'What is wrong' },
+    { name: 'suggested_fix', label: 'Suggested solution', type: 'textarea', placeholder: 'Change it to…' },
     planField
   ]
 }
-
-const postTypeOptions = [
-  { label: 'Task', value: 'task' },
-  { label: 'Feature', value: 'feature' },
-  { label: 'Bug', value: 'bug' },
-  { label: 'Project Artifact', value: 'artifact' },
-  { label: 'Feedback', value: 'feedback' }
-]
 
 // Reka's Select primitive (underlying Nuxt UI) reserves empty-string as the
 // "no selection" state, so we can't use it as a real option value. Use
@@ -155,15 +118,25 @@ const priorityQualOptions = [
   { label: 'Highest', value: 'highest' }
 ]
 
-const dynamicFields = computed<MetaField[]>(() => {
-  if (!draft.value) return []
-  return POST_META_FIELDS[draft.value.post_type] || []
+// Feedback content fields, minus `plan` (which renders in the Progress
+// section). The two text fields are labeled and ordered by type so the panel
+// reads the way the submitter filled it in: a bug leads with its problem, an
+// idea leads with the idea itself.
+const feedbackContentFields = computed<MetaField[]>(() => {
+  const typeField = (POST_META_FIELDS.feedback || []).find(f => f.name === 'feedback_sub_type')!
+  if (getMeta('feedback_sub_type') === 'idea') {
+    return [
+      typeField,
+      { name: 'suggested_fix', label: 'Idea', type: 'textarea', placeholder: 'The idea' },
+      { name: 'problem_description', label: 'Problem it solves', type: 'textarea', placeholder: 'Why it helps' }
+    ]
+  }
+  return [
+    typeField,
+    { name: 'problem_description', label: 'Problem', type: 'textarea', placeholder: 'What is wrong' },
+    { name: 'suggested_fix', label: 'Suggested solution', type: 'textarea', placeholder: 'Change it to…' }
+  ]
 })
-
-// Feedback content fields (everything except `plan`, which renders in the Progress section)
-const feedbackContentFields = computed<MetaField[]>(() =>
-  (POST_META_FIELDS.feedback || []).filter(f => f.name !== 'plan')
-)
 
 // -------- Feedback attachments (admin view) --------
 interface FeedbackAttachment {
@@ -230,15 +203,17 @@ function openLightbox(a: FeedbackAttachment) {
   lightboxOpen.value = true
 }
 
-const postTypeHeading = computed(() => {
-  if (!draft.value) return ''
-  const pt = draft.value.post_type
-  return pt.charAt(0).toUpperCase() + pt.slice(1) + ' Specific Fields'
-})
-
 function selectItems(options: string[]) {
   return options.map(o => ({ label: o, value: o }))
 }
+
+// Assignee picker options — member display names. Assignee is stored as the
+// name string (the column and the card avatar both key off it).
+const assigneeOptions = computed<string[]>(() =>
+  props.users
+    .map(u => u.display_name)
+    .filter((n): n is string => !!n)
+)
 
 // -------- Meta helpers --------
 function getMeta(key: string): any {
@@ -300,8 +275,17 @@ async function handleSave() {
   saving.value = true
   try {
     const d = draft.value
+    // Feedback cards have no standalone title field; the board headline tracks
+    // the primary content field — the problem for a bug, the idea for an idea —
+    // truncated the same way the widget derives the title on first submit.
+    const feedbackPrimary = d.post_meta?.feedback_sub_type === 'idea'
+      ? d.post_meta?.suggested_fix
+      : d.post_meta?.problem_description
+    const title = d.post_type === 'feedback' && feedbackPrimary
+      ? String(feedbackPrimary).slice(0, 140)
+      : d.title
     const patch: Partial<Card> & { post_meta?: Record<string, any> } = {
-      title: d.title,
+      title,
       post_type: d.post_type,
       description: d.description || null,
       assignee: d.assignee || null,
@@ -707,9 +691,6 @@ async function handleCopyPostMeta() {
               <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
                 Feedback
               </h3>
-              <UFormField label="Title">
-                <UInput v-model="draft.title" placeholder="Card title" class="w-full" />
-              </UFormField>
               <UFormField v-for="f in feedbackContentFields" :key="f.name" :label="f.label">
                 <UTextarea
                   v-if="f.type === 'textarea'"
@@ -722,7 +703,7 @@ async function handleCopyPostMeta() {
                 <USelect
                   v-else-if="f.type === 'select'"
                   :model-value="getMeta(f.name) || undefined"
-                  :items="selectItems(f.options || [])"
+                  :items="f.optionItems || selectItems(f.options || [])"
                   placeholder="-- Select --"
                   class="w-full"
                   @update:model-value="(v: any) => setMeta(f.name, v)"
@@ -812,42 +793,24 @@ async function handleCopyPostMeta() {
               <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
                 Coordination
               </h3>
-              <UFormField label="Card Type">
-                <USelect v-model="draft.post_type" :items="postTypeOptions" class="w-full" />
-              </UFormField>
               <UFormField label="Assignee">
-                <UInput v-model="draft.assignee" placeholder="Assigned to" class="w-full" />
+                <USelectMenu
+                  v-model="draft.assignee"
+                  :items="assigneeOptions"
+                  placeholder="Unassigned"
+                  :clear="true"
+                  class="w-full"
+                />
               </UFormField>
-              <div class="grid grid-cols-2 gap-3">
-                <UFormField label="Start Date">
-                  <UInput v-model="draft.start_date" type="date" class="w-full" />
-                </UFormField>
-                <UFormField label="Due Date">
-                  <UInput v-model="draft.due_date" type="date" class="w-full" />
-                </UFormField>
-              </div>
-              <div class="grid grid-cols-2 gap-3">
-                <UFormField label="Priority (Qualitative)">
-                  <USelect
-                    :model-value="getMeta('priority_qualitative') || undefined"
-                    :items="priorityQualOptions"
-                    placeholder="-- Select --"
-                    class="w-full"
-                    @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
-                  />
-                </UFormField>
-                <UFormField label="Priority (Quantitative)">
-                  <UInput
-                    type="number"
-                    :model-value="getMeta('priority_quantitative')"
-                    placeholder="1-100"
-                    :min="1"
-                    :max="100"
-                    class="w-full"
-                    @update:model-value="(v: any) => setMetaNumber('priority_quantitative', v)"
-                  />
-                </UFormField>
-              </div>
+              <UFormField label="Priority">
+                <USelect
+                  :model-value="getMeta('priority_qualitative') || undefined"
+                  :items="priorityQualOptions"
+                  placeholder="-- Select --"
+                  class="w-full"
+                  @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
+                />
+              </UFormField>
               <UFormField label="Plan">
                 <UTextarea
                   :rows="3"
@@ -857,10 +820,6 @@ async function handleCopyPostMeta() {
                   @update:model-value="(v: any) => setMeta('plan', v)"
                 />
               </UFormField>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <UCheckbox v-model="draft.is_done" />
-                <span class="text-sm font-medium">Mark as Done</span>
-              </label>
               <UFormField label="Testing Results">
                 <UTextarea
                   v-model="draft.testing_results"
@@ -870,115 +829,6 @@ async function handleCopyPostMeta() {
                 />
               </UFormField>
             </section>
-          </div>
-
-          <!-- Non-feedback: original flat layout -->
-          <div v-else class="space-y-4">
-            <UFormField label="Card Type">
-              <USelect v-model="draft.post_type" :items="postTypeOptions" class="w-full" />
-            </UFormField>
-
-            <UFormField label="Title">
-              <UInput v-model="draft.title" placeholder="Card title" class="w-full" />
-            </UFormField>
-
-            <UFormField label="Assignee">
-              <UInput v-model="draft.assignee" placeholder="Assigned to" class="w-full" />
-            </UFormField>
-
-            <div class="grid grid-cols-2 gap-3">
-              <UFormField label="Start Date">
-                <UInput v-model="draft.start_date" type="date" class="w-full" />
-              </UFormField>
-              <UFormField label="Due Date">
-                <UInput v-model="draft.due_date" type="date" class="w-full" />
-              </UFormField>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <UFormField label="Priority (Qualitative)">
-                <USelect
-                  :model-value="getMeta('priority_qualitative') || undefined"
-                  :items="priorityQualOptions"
-                  placeholder="-- Select --"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
-                />
-              </UFormField>
-              <UFormField label="Priority (Quantitative)">
-                <UInput
-                  type="number"
-                  :model-value="getMeta('priority_quantitative')"
-                  placeholder="1-100"
-                  :min="1"
-                  :max="100"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMetaNumber('priority_quantitative', v)"
-                />
-              </UFormField>
-            </div>
-
-            <UFormField label="Description">
-              <UTextarea v-model="draft.description" :rows="4" placeholder="Card description" class="w-full" />
-            </UFormField>
-
-            <!-- Dynamic post-type-specific fields -->
-            <div v-if="dynamicFields.length" class="space-y-3 pt-2 border-t border-(--ui-border)">
-              <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
-                {{ postTypeHeading }}
-              </h3>
-
-              <UFormField v-for="f in dynamicFields" :key="f.name" :label="f.label">
-                <UTextarea
-                  v-if="f.type === 'textarea'"
-                  :rows="3"
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || ''"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta(f.name, v)"
-                />
-                <USelect
-                  v-else-if="f.type === 'select'"
-                  :model-value="getMeta(f.name) || undefined"
-                  :items="selectItems(f.options || [])"
-                  placeholder="-- Select --"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta(f.name, v)"
-                />
-                <UInput
-                  v-else-if="f.type === 'number'"
-                  type="number"
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || '0'"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMetaNumber(f.name, v)"
-                />
-                <UInput
-                  v-else
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || ''"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta(f.name, v)"
-                />
-              </UFormField>
-            </div>
-
-            <!-- Task done + testing results -->
-            <div class="pt-2 border-t border-(--ui-border) space-y-3">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <UCheckbox v-model="draft.is_done" />
-                <span class="text-sm font-medium">Mark as Done</span>
-              </label>
-
-              <UFormField label="Testing Results">
-                <UTextarea
-                  v-model="draft.testing_results"
-                  :rows="3"
-                  placeholder="Test results, feedback, notes..."
-                  class="w-full"
-                />
-              </UFormField>
-            </div>
           </div>
         </div>
 

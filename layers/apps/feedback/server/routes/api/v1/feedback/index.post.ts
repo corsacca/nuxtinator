@@ -21,7 +21,7 @@ import { withProjectOrgContext } from '#tenant/server'
 import { logCreate } from '#core/server/utils/activity-logger'
 import { uploadToS3, generateSignedUrl, deleteFromS3 } from '#core/server/utils/storage'
 
-const ALLOWED_SUB_TYPES = ['bug', 'feature_addition', 'feature_change'] as const
+const ALLOWED_SUB_TYPES = ['bug', 'idea'] as const
 type SubType = typeof ALLOWED_SUB_TYPES[number]
 
 const CHAR_CAP = 2000
@@ -144,14 +144,23 @@ export default defineEventHandler(async (event) => {
   const suggested_fix = clampString(body.suggested_fix)
   const submitter_name = clampString(body.submitter_name, 100)
 
-  if (!reported_element) throw createError({ statusCode: 400, statusMessage: 'reported_element required' })
-  if (!problem_description) throw createError({ statusCode: 400, statusMessage: 'problem_description required' })
-  if (!suggested_fix) throw createError({ statusCode: 400, statusMessage: 'suggested_fix required' })
-  if (!authUser && !submitter_name) throw createError({ statusCode: 400, statusMessage: 'submitter_name required' })
-
   const sub: SubType = (ALLOWED_SUB_TYPES as readonly string[]).includes(body.feedback_sub_type)
     ? body.feedback_sub_type as SubType
     : 'bug'
+
+  // Each type requires its primary field: an idea needs the idea itself
+  // (suggested_fix), a bug needs the problem statement (problem_description).
+  // The complementary field is optional.
+  if (sub === 'idea') {
+    if (!suggested_fix) throw createError({ statusCode: 400, statusMessage: 'idea description required' })
+  } else {
+    if (!problem_description) throw createError({ statusCode: 400, statusMessage: 'problem_description required' })
+  }
+  if (!authUser && !submitter_name) throw createError({ statusCode: 400, statusMessage: 'submitter_name required' })
+
+  // Title comes from the type's primary field; reported_element is no longer
+  // collected by the widget but is honored as a fallback if a caller sends it.
+  const title = (reported_element || (sub === 'idea' ? suggested_fix : problem_description)).slice(0, 140)
 
   // Upload to S3 BEFORE the transaction so a DB hiccup doesn't leave stray
   // attachment rows pointing at S3 blobs we'd then need to GC.
@@ -230,7 +239,7 @@ export default defineEventHandler(async (event) => {
           project_id: projectId,
           swimlane_id: swimlane.id,
           column_id: inboxColumn.id,
-          title: reported_element.slice(0, 140),
+          title,
           post_type: 'feedback',
           post_meta: postMeta
         })

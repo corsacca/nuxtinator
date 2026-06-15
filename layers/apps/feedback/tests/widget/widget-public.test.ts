@@ -104,26 +104,34 @@ describe('public widget endpoints', () => {
     expect(meta.submitter_anonymous).toBe(false)
   })
 
-  it('POST /api/v1/feedback: 400 missing project_id / reported_element / problem_description / suggested_fix / submitter_name (anon)', async () => {
+  it('POST /api/v1/feedback: 400 missing project_id / type primary field / submitter_name (anon)', async () => {
     const { org } = await createFeedbackOrgWith(sql, ['admin'])
     const project = await createTestProject(sql, { org_id: org.id })
 
     const noProj = await $fetch('/api/v1/feedback', {
       method: 'POST',
-      body: { reported_element: 'x', problem_description: 'y', suggested_fix: 'z', submitter_name: 'n' }
+      body: { problem_description: 'y', suggested_fix: 'z', submitter_name: 'n' }
     }).catch(e => e)
     expect(noProj.statusCode).toBe(400)
 
-    const noElem = await $fetch('/api/v1/feedback', {
+    // A bug requires its problem statement.
+    const noProblem = await $fetch('/api/v1/feedback', {
       method: 'POST',
-      body: { project_id: project.id, problem_description: 'y', suggested_fix: 'z', submitter_name: 'n' }
+      body: { project_id: project.id, feedback_sub_type: 'bug', suggested_fix: 'z', submitter_name: 'n' }
     }).catch(e => e)
-    expect(noElem.statusCode).toBe(400)
+    expect(noProblem.statusCode).toBe(400)
+
+    // An idea requires the idea itself.
+    const noIdea = await $fetch('/api/v1/feedback', {
+      method: 'POST',
+      body: { project_id: project.id, feedback_sub_type: 'idea', problem_description: 'y', submitter_name: 'n' }
+    }).catch(e => e)
+    expect(noIdea.statusCode).toBe(400)
 
     // Anonymous needs submitter_name.
     const noName = await $fetch('/api/v1/feedback', {
       method: 'POST',
-      body: { project_id: project.id, reported_element: 'x', problem_description: 'y', suggested_fix: 'z' }
+      body: { project_id: project.id, problem_description: 'y', suggested_fix: 'z' }
     }).catch(e => e)
     expect(noName.statusCode).toBe(400)
   })

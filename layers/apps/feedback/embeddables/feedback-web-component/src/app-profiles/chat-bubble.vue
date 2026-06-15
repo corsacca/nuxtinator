@@ -57,10 +57,10 @@ async function onSignIn() {
 }
 
 const SUB_TYPES = [
-  { value: 'bug', label: 'Bug Fix' },
-  { value: 'feature_addition', label: 'New Feature Request' },
-  { value: 'feature_change', label: 'Change Request to Existing Feature' }
+  { value: 'bug', label: 'Bug' },
+  { value: 'idea', label: 'Idea' }
 ]
+const SUB_TYPE_LABEL = { bug: 'Bug', idea: 'Idea' }
 const STATUS_LABEL = {
   new: 'New',
   triage_needed: 'Triage',
@@ -87,7 +87,6 @@ function saveName(name) {
 const form = reactive({
   submitter_name: loadSavedName(),
   feedback_sub_type: 'bug',
-  reported_element: '',
   problem_description: '',
   suggested_fix: ''
 })
@@ -233,7 +232,6 @@ const apiBaseReady = computed(() => Boolean(apiBase?.value))
 function resetForm() {
   form.submitter_name = loadSavedName()
   form.feedback_sub_type = 'bug'
-  form.reported_element = ''
   form.problem_description = ''
   form.suggested_fix = ''
   clearScreenshot()
@@ -243,9 +241,12 @@ function resetForm() {
 
 function validate() {
   if (!auth.isAuthed && !form.submitter_name.trim()) return 'Your name is required.'
-  if (!form.reported_element.trim()) return 'Reported element is required.'
-  if (!form.problem_description.trim()) return 'Problem description is required.'
-  if (!form.suggested_fix.trim()) return 'Suggested fix is required.'
+  // Each type has one required field; the complementary field is optional.
+  if (form.feedback_sub_type === 'idea') {
+    if (!form.suggested_fix.trim()) return 'Please describe your idea.'
+  } else {
+    if (!form.problem_description.trim()) return 'Please describe the problem.'
+  }
   return ''
 }
 
@@ -258,7 +259,6 @@ async function doSubmit() {
   try {
     await submit({
       feedback_sub_type: form.feedback_sub_type,
-      reported_element: form.reported_element.trim(),
       problem_description: form.problem_description.trim(),
       suggested_fix: form.suggested_fix.trim(),
       submitter_name: form.submitter_name.trim()
@@ -284,6 +284,13 @@ function toggleExpanded(id) {
 function truncate(s, n = 60) {
   if (!s) return ''
   return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+// List title comes from each type's primary field (an idea's idea, a bug's
+// problem); reported_element is kept only as a fallback for older records.
+function itemTitle(s) {
+  const primary = s.feedback_sub_type === 'idea' ? s.suggested_fix : s.problem_description
+  return s.reported_element || primary || s.problem_description || s.suggested_fix || 'Feedback'
 }
 
 function handleLogout() {
@@ -435,42 +442,64 @@ watch(open, (v) => {
               />
             </label>
 
-            <label class="fw-field">
+            <div class="fw-field">
               <span>Type</span>
-              <select v-model="form.feedback_sub_type">
-                <option v-for="t in SUB_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-              </select>
-            </label>
+              <div class="fw-segments" role="group" aria-label="Feedback type">
+                <button
+                  v-for="t in SUB_TYPES"
+                  :key="t.value"
+                  type="button"
+                  class="fw-segment"
+                  :class="{ active: form.feedback_sub_type === t.value }"
+                  :aria-pressed="form.feedback_sub_type === t.value"
+                  @click="form.feedback_sub_type = t.value"
+                >{{ t.label }}</button>
+              </div>
+            </div>
 
-            <label class="fw-field">
-              <span>What element are you reporting?</span>
-              <input
-                v-model="form.reported_element"
-                type="text"
-                placeholder="e.g. 'Save button on settings page'"
-                :maxlength="charCap"
-              />
-            </label>
+            <template v-if="form.feedback_sub_type === 'idea'">
+              <label class="fw-field">
+                <span>What is your idea?</span>
+                <textarea
+                  v-model="form.suggested_fix"
+                  rows="3"
+                  placeholder="e.g. 'Let me export the table to CSV.'"
+                  :maxlength="charCap"
+                />
+              </label>
 
-            <label class="fw-field">
-              <span>What is the problem?</span>
-              <textarea
-                v-model="form.problem_description"
-                rows="3"
-                placeholder="What is broken, confusing, or could be better?"
-                :maxlength="charCap"
-              />
-            </label>
+              <label class="fw-field">
+                <span>What problem does it solve? <em>(optional)</em></span>
+                <textarea
+                  v-model="form.problem_description"
+                  rows="3"
+                  placeholder="Why would this help?"
+                  :maxlength="charCap"
+                />
+              </label>
+            </template>
 
-            <label class="fw-field">
-              <span>What fix do you suggest?</span>
-              <textarea
-                v-model="form.suggested_fix"
-                rows="3"
-                placeholder="How would you improve it?"
-                :maxlength="charCap"
-              />
-            </label>
+            <template v-else>
+              <label class="fw-field">
+                <span>What is the problem?</span>
+                <textarea
+                  v-model="form.problem_description"
+                  rows="3"
+                  placeholder="e.g. 'Typo in the page title — it should say &quot;Example&quot;.'"
+                  :maxlength="charCap"
+                />
+              </label>
+
+              <label class="fw-field">
+                <span>Suggested solution <em>(optional)</em></span>
+                <textarea
+                  v-model="form.suggested_fix"
+                  rows="3"
+                  placeholder="Change it to…"
+                  :maxlength="charCap"
+                />
+              </label>
+            </template>
 
             <div class="fw-uploads">
               <div class="fw-uploads-row">
@@ -598,7 +627,7 @@ watch(open, (v) => {
                 :class="{ open: expandedId === s.id }"
               >
                 <button class="fw-item-head" @click="toggleExpanded(s.id)">
-                  <span class="fw-item-title">{{ truncate(s.reported_element, 48) }}</span>
+                  <span class="fw-item-title">{{ truncate(itemTitle(s), 48) }}</span>
                   <span class="fw-item-meta">
                     <span :class="['fw-badge', 'fw-badge-' + s.status]">
                       {{ STATUS_LABEL[s.status] || s.status }}
@@ -609,11 +638,19 @@ watch(open, (v) => {
                 <div v-if="expandedId === s.id" class="fw-item-body">
                   <dl>
                     <dt>Type</dt>
-                    <dd>{{ s.feedback_sub_type }}</dd>
-                    <dt>Problem</dt>
-                    <dd>{{ s.problem_description }}</dd>
-                    <dt>Suggested fix</dt>
-                    <dd>{{ s.suggested_fix }}</dd>
+                    <dd>{{ SUB_TYPE_LABEL[s.feedback_sub_type] || s.feedback_sub_type }}</dd>
+                    <template v-if="s.feedback_sub_type === 'idea'">
+                      <dt v-if="s.suggested_fix">Idea</dt>
+                      <dd v-if="s.suggested_fix">{{ s.suggested_fix }}</dd>
+                      <dt v-if="s.problem_description">Problem it solves</dt>
+                      <dd v-if="s.problem_description">{{ s.problem_description }}</dd>
+                    </template>
+                    <template v-else>
+                      <dt v-if="s.problem_description">Problem</dt>
+                      <dd v-if="s.problem_description">{{ s.problem_description }}</dd>
+                      <dt v-if="s.suggested_fix">Suggested solution</dt>
+                      <dd v-if="s.suggested_fix">{{ s.suggested_fix }}</dd>
+                    </template>
                     <dt v-if="s.tags?.length">Tags</dt>
                     <dd v-if="s.tags?.length">{{ s.tags.join(', ') }}</dd>
                     <dt v-if="s.page_path">Page</dt>
@@ -881,6 +918,37 @@ watch(open, (v) => {
 .fw-field textarea:focus {
   outline: none;
   border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+.fw-segments {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+}
+.fw-segment {
+  flex: 1;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.fw-segment:hover { color: #374151; }
+.fw-segment.active {
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.fw-segment:focus-visible {
+  outline: none;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
 }
 
