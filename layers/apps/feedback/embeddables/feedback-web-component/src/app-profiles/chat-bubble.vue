@@ -115,6 +115,12 @@ function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function applyScreenshotBlob(blob) {
+  if (screenshotPreview.value) URL.revokeObjectURL(screenshotPreview.value)
+  screenshot.value = new File([blob], 'screenshot.png', { type: 'image/png' })
+  screenshotPreview.value = URL.createObjectURL(blob)
+}
+
 async function takeScreenshot() {
   screenshotError.value = ''
   screenshotBusy.value = true
@@ -135,15 +141,38 @@ async function takeScreenshot() {
     if (totalUploadBytes() + blob.size - (screenshot.value?.size || 0) > MAX_TOTAL_BYTES) {
       throw new Error('Total upload would exceed 25 MB')
     }
-    if (screenshotPreview.value) URL.revokeObjectURL(screenshotPreview.value)
-    const file = new File([blob], 'screenshot.png', { type: 'image/png' })
-    screenshot.value = file
-    screenshotPreview.value = URL.createObjectURL(blob)
+    applyScreenshotBlob(blob)
   } catch (e) {
     screenshotError.value = e.message || 'Screenshot failed'
   } finally {
     screenshotBusy.value = false
     open.value = wasOpen
+  }
+}
+
+// Auto-capture a screenshot of the visible screen when the panel first opens,
+// so a bug report ships with a screenshot by default. Unlike takeScreenshot()
+// this never touches `open` — the panel stays put and the feedback UI is left
+// out of the capture by useScreenshot's ignoreElements predicate. It only runs
+// when there's no screenshot yet, so a manual "Replace screenshot" wins.
+async function autoScreenshot() {
+  if (screenshot.value || screenshotBusy.value) return
+  screenshotError.value = ''
+  screenshotBusy.value = true
+  try {
+    // Let the panel commit to the DOM, then give the browser a paint frame so
+    // html2canvas renders against settled layout.
+    await nextTick()
+    await new Promise(r => requestAnimationFrame(() => r()))
+    const blob = await captureScreenshot()
+    if (!blob || blob.size > MAX_FILE_BYTES) return
+    if (totalUploadBytes() + blob.size > MAX_TOTAL_BYTES) return
+    applyScreenshotBlob(blob)
+  } catch {
+    // Auto-capture is best-effort; stay silent and let the user grab one
+    // manually if it fails.
+  } finally {
+    screenshotBusy.value = false
   }
 }
 
@@ -317,7 +346,9 @@ watch(() => projectIdRef?.value, () => {
   if (auth.isAuthed) loadSubmissions()
 })
 watch(open, (v) => {
-  if (v && auth.isAuthed && !submissions.value.length) loadSubmissions()
+  if (!v) return
+  if (auth.isAuthed && !submissions.value.length) loadSubmissions()
+  autoScreenshot()
 })
 </script>
 
