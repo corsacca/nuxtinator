@@ -70,13 +70,26 @@ const STATUS_LABEL = {
 }
 const charCap = 2000
 
+// Remember the submitter's name across submissions and reloads (anonymous users
+// only — authed users submit under their profile, so the name field is hidden).
+// Persisted to localStorage so a returning visitor doesn't retype it.
+const NAME_KEY = 'fw-name'
+function loadSavedName() {
+  try { return localStorage.getItem(NAME_KEY) || '' } catch { return '' }
+}
+function saveName(name) {
+  try {
+    if (name) localStorage.setItem(NAME_KEY, name)
+    else localStorage.removeItem(NAME_KEY)
+  } catch { /* ignore */ }
+}
+
 const form = reactive({
-  submitter_name: '',
+  submitter_name: loadSavedName(),
   feedback_sub_type: 'bug',
   reported_element: '',
   problem_description: '',
-  suggested_fix: '',
-  tags: ''
+  suggested_fix: ''
 })
 
 // Screenshot + attachments state. Mirrors the server-side limits in
@@ -218,12 +231,11 @@ const apiBase = inject('apiBase')
 const apiBaseReady = computed(() => Boolean(apiBase?.value))
 
 function resetForm() {
-  form.submitter_name = ''
+  form.submitter_name = loadSavedName()
   form.feedback_sub_type = 'bug'
   form.reported_element = ''
   form.problem_description = ''
   form.suggested_fix = ''
-  form.tags = ''
   clearScreenshot()
   attachments.value = []
   attachmentError.value = ''
@@ -249,13 +261,13 @@ async function doSubmit() {
       reported_element: form.reported_element.trim(),
       problem_description: form.problem_description.trim(),
       suggested_fix: form.suggested_fix.trim(),
-      tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
       submitter_name: form.submitter_name.trim()
     }, {
       screenshot: screenshot.value,
       attachments: attachments.value
     })
     submitOk.value = true
+    saveName(form.submitter_name.trim())
     resetForm()
     setTimeout(() => { submitOk.value = false }, 2500)
   } catch (e) {
@@ -458,11 +470,6 @@ watch(open, (v) => {
                 placeholder="How would you improve it?"
                 :maxlength="charCap"
               />
-            </label>
-
-            <label class="fw-field">
-              <span>Tags <em>(comma-separated, optional)</em></span>
-              <input v-model="form.tags" type="text" placeholder="ux, mobile, blocker" />
             </label>
 
             <div class="fw-uploads">
