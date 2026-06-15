@@ -8,9 +8,23 @@ export interface ProjectsTable {
   name: string
   description: string | null
   is_expanded: Generated<boolean>
+  allowed_origins: Generated<string[]>
   post_meta: Generated<Record<string, any>>
   created_at: ColumnType<Date, string | Date | undefined, string | Date>
   updated_at: ColumnType<Date, string | Date | undefined, string | Date>
+}
+
+export interface FeedbackAuthCodesTable {
+  id: Generated<string>
+  code_hash: string
+  user_id: string
+  project_id: string
+  redirect_origin: string
+  code_challenge: string
+  token_ciphertext: string
+  used: Generated<boolean>
+  expires: ColumnType<Date, string | Date, string | Date>
+  created_at: ColumnType<Date, string | Date | undefined, string | Date>
 }
 
 export interface ColumnsTable {
@@ -81,5 +95,6 @@ declare module '#core/server/database/schema' {
     cards: CardsTable
     card_column_history: CardColumnHistoryTable
     feedback_attachments: FeedbackAttachmentsTable
+    feedback_auth_codes: FeedbackAuthCodesTable
   }
 }

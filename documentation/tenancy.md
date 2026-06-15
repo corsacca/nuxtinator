@@ -117,6 +117,13 @@ Multi-mode page URLs use an `@`-prefix for the org slug:
 
 The `@` prefix is the disambiguator: no slug can collide with any system top-level path. Slug shape is `^[a-z0-9-]{2,40}$`. No reserved-name list.
 
+### Route guard + opt-out
+
+[tenant-route-guard.global.ts](../layers/tenancy/app/middleware/tenant-route-guard.global.ts) rewrites naive in-app links (`/calendar`) to the active org (`/@acme/calendar`), and sends bare app paths with no active org to `/orgs`. Routes that must pass through untouched are exempted two ways:
+
+- **`definePageMeta({ tenantExempt: true })`** on the page — the per-page, per-layer escape hatch. A layer exempts its own public route (e.g. the feedback widget's `/feedback/connect` sign-in bridge) without editing the guard. The flag is typed in [tenancy/types.d.ts](../layers/tenancy/types.d.ts).
+- **`SYSTEM_PREFIXES`** in the guard — a central list for whole subtrees (`/admin`, `/account`, …) that can't be tagged page-by-page.
+
 ---
 
 ## OAuth + multi-tenancy
