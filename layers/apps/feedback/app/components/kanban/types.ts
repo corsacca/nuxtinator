@@ -39,5 +39,6 @@ export interface KanbanProjectModel {
   name: string
   description: string | null
   is_expanded: boolean
+  allowed_origins: string[]
   post_meta: Record<string, any>
 }

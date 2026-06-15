@@ -39,6 +39,10 @@ export default defineNuxtRouteMiddleware((to, from) => {
 
   // Already in an org-prefixed route — nothing to do.
   if (path.startsWith('/@')) return
+  // A page can opt out of org-prefixing by setting `tenantExempt: true` in its
+  // `definePageMeta` — the per-page equivalent of SYSTEM_PREFIXES, so a layer
+  // exempts its own public route without editing this file.
+  if (to.meta.tenantExempt) return
   // Legacy `/o/<slug>/...` shape from before the rename. Rewrite to the
   // current `/@<slug>/...` form so bookmarks keep working AND so this guard
   // doesn't accidentally double-prefix from the cookie.

@@ -9,6 +9,13 @@ async function hourlySweep() {
   try {
     await db.deleteFrom('oauth_authorization_codes').where('expires', '<', sql<Date>`now()`).execute()
     await db.deleteFrom('oauth_pending_requests').where('expires', '<', sql<Date>`now()`).execute()
+    // Per-request rate-limit bookkeeping from the token/authorize endpoints,
+    // useless past its 1h window — pruned so it can't grow activity_logs
+    // unbounded; ~a day is kept for visibility.
+    await db.deleteFrom('activity_logs')
+      .where('event_type', 'like', 'ratelimit.oauth.%')
+      .where('timestamp', '<', sql<Date>`now() - interval '1 day'`)
+      .execute()
   } catch (err) {
     console.error('oauth hourly sweep failed:', err)
   }

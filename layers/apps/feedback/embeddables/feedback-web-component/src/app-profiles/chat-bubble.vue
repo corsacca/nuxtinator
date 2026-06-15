@@ -23,38 +23,37 @@ const {
   submissionsLoading,
   submissionsError,
   refreshMe,
-  login,
-  register,
+  beginSignIn,
+  completeSignInFromUrl,
   logout,
   loadSubmissions,
   submit,
-  bindStorageSync
+  bindStorageSync,
+  firstParty
 } = feedback
 
 const open = ref(false)
 const activeTab = ref('submit')
 
-// `view` controls the main panel body: 'tabs' shows the Submit / My
-// Submissions UI (default, works for anonymous + authed users); 'auth' shows
-// the login/register form with a back button to return to 'tabs'.
-const view = ref('tabs')
-const loginMode = ref('login')
-const authBusy = ref(false)
 const expandedId = ref(null)
 const submitting = ref(false)
 const submitError = ref('')
 const submitOk = ref(false)
 const userMenuOpen = ref(false)
+const signingIn = ref(false)
 
-function gotoAuth(mode = 'login') {
-  loginMode.value = mode
-  auth.authError = ''
-  view.value = 'auth'
-}
+// Persisted across the sign-in full-page redirect so we can reopen the panel on
+// the user's return and drop them on the "My Submissions" tab.
+const REOPEN_KEY = 'fw-reopen'
 
-function backToTabs() {
-  view.value = 'tabs'
-  auth.authError = ''
+// Cross-origin sign-in navigates the whole page to the host and back. First-
+// party (in-app) sessions already authenticate via the cookie, so there sign-in
+// is never offered.
+async function onSignIn() {
+  if (signingIn.value) return
+  signingIn.value = true
+  try { localStorage.setItem(REOPEN_KEY, '1') } catch { /* ignore */ }
+  await beginSignIn()
 }
 
 const SUB_TYPES = [
@@ -70,9 +69,6 @@ const STATUS_LABEL = {
   accepted: 'Accepted'
 }
 const charCap = 2000
-
-const loginForm = reactive({ email: '', password: '' })
-const registerForm = reactive({ email: '', password: '', display_name: '' })
 
 const form = reactive({
   submitter_name: '',
@@ -241,48 +237,6 @@ function validate() {
   return ''
 }
 
-async function doLogin() {
-  authBusy.value = true
-  auth.authError = ''
-  try {
-    await login({ email: loginForm.email, password: loginForm.password })
-    loginForm.password = ''
-    view.value = 'tabs'
-    activeTab.value = 'mine'
-    await loadSubmissions()
-  } catch (e) {
-    auth.authError = e.message || 'Login failed'
-  } finally {
-    authBusy.value = false
-  }
-}
-
-async function doRegister() {
-  authBusy.value = true
-  auth.authError = ''
-  try {
-    const data = await register({
-      email: registerForm.email,
-      password: registerForm.password,
-      display_name: registerForm.display_name
-    })
-    if (data?.requiresVerification && !data.autoLoggedIn) {
-      auth.authError = 'Check your email to verify, then log in.'
-      loginMode.value = 'login'
-      loginForm.email = registerForm.email
-    } else if (data?.autoLoggedIn) {
-      view.value = 'tabs'
-      activeTab.value = 'mine'
-      await loadSubmissions()
-    }
-    registerForm.password = ''
-  } catch (e) {
-    auth.authError = e.message || 'Registration failed'
-  } finally {
-    authBusy.value = false
-  }
-}
-
 async function doSubmit() {
   submitError.value = ''
   submitOk.value = false
@@ -330,11 +284,33 @@ function handleDocumentClick() {
 }
 
 let unbindStorage = null
-onMounted(() => {
+onMounted(async () => {
   unbindStorage = bindStorageSync()
   loadProject()
-  if (auth.token) refreshMe().then(() => auth.isAuthed && loadSubmissions())
   document.addEventListener('click', handleDocumentClick)
+
+  // Finish a sign-in if we just came back from the host's connect bridge.
+  const returned = await completeSignInFromUrl()
+
+  // Reopen the panel (on the "My Submissions" tab) when returning from the
+  // redirect, so the user lands back where they started.
+  let reopen = false
+  try {
+    reopen = localStorage.getItem(REOPEN_KEY) === '1'
+    if (reopen) localStorage.removeItem(REOPEN_KEY)
+  } catch { /* ignore */ }
+  if (returned || reopen) {
+    open.value = true
+    activeTab.value = 'mine'
+  }
+  signingIn.value = false
+
+  // First-party mode authenticates via the host session cookie; cross-origin
+  // uses a stored bearer token. Either way, refresh to pick up the user. (After
+  // a fresh exchange above, auth.user is already set; this reconciles reloads.)
+  if (auth.token || firstParty.value) {
+    refreshMe().then(() => auth.isAuthed && loadSubmissions())
+  }
 })
 onBeforeUnmount(() => {
   unbindStorage && unbindStorage()
@@ -387,10 +363,11 @@ watch(open, (v) => {
               </div>
             </div>
             <button
-              v-else-if="view !== 'auth'"
+              v-else
               class="fw-header-signin"
               type="button"
-              @click="gotoAuth('login')"
+              :disabled="signingIn"
+              @click="onSignIn"
             >Sign in</button>
             <button class="fw-close" aria-label="Close" @click="open = false">×</button>
           </div>
@@ -410,60 +387,10 @@ watch(open, (v) => {
             <strong>{{ project.name }}</strong>
           </div>
 
-          <template v-if="view === 'auth'">
-            <section class="fw-body fw-auth">
-              <button type="button" class="fw-back" @click="backToTabs">
-                ← Back to feedback
-              </button>
+          <div v-if="auth.authError" class="fw-alert fw-alert-error fw-alert-inline">
+            {{ auth.authError }}
+          </div>
 
-              <div class="fw-auth-tabs">
-                <button
-                  :class="{ active: loginMode === 'login' }"
-                  @click="loginMode = 'login'; auth.authError = ''"
-                >Log in</button>
-                <button
-                  :class="{ active: loginMode === 'register' }"
-                  @click="loginMode = 'register'; auth.authError = ''"
-                >Register</button>
-              </div>
-
-              <form v-if="loginMode === 'login'" @submit.prevent="doLogin">
-                <label class="fw-field">
-                  <span>Email</span>
-                  <input v-model="loginForm.email" type="email" autocomplete="email" required />
-                </label>
-                <label class="fw-field">
-                  <span>Password</span>
-                  <input v-model="loginForm.password" type="password" autocomplete="current-password" required />
-                </label>
-                <div v-if="auth.authError" class="fw-alert fw-alert-error">{{ auth.authError }}</div>
-                <button class="fw-submit" :disabled="authBusy" type="submit">
-                  {{ authBusy ? 'Signing in…' : 'Log in' }}
-                </button>
-              </form>
-
-              <form v-else @submit.prevent="doRegister">
-                <label class="fw-field">
-                  <span>Display name</span>
-                  <input v-model="registerForm.display_name" type="text" required minlength="2" />
-                </label>
-                <label class="fw-field">
-                  <span>Email</span>
-                  <input v-model="registerForm.email" type="email" autocomplete="email" required />
-                </label>
-                <label class="fw-field">
-                  <span>Password</span>
-                  <input v-model="registerForm.password" type="password" autocomplete="new-password" required minlength="8" />
-                </label>
-                <div v-if="auth.authError" class="fw-alert fw-alert-error">{{ auth.authError }}</div>
-                <button class="fw-submit" :disabled="authBusy" type="submit">
-                  {{ authBusy ? 'Creating…' : 'Create account' }}
-                </button>
-              </form>
-            </section>
-          </template>
-
-          <template v-else>
             <nav class="fw-tabs" role="tablist">
               <button
                 role="tab"
@@ -639,15 +566,12 @@ watch(open, (v) => {
                 Track your feedback
               </div>
               <div class="fw-signin-cta-body">
-                Sign in or create an account to see your past submissions and
-                track their status as the team works on them.
+                Sign in to see your past submissions and track their status as
+                the team works on them.
               </div>
               <div class="fw-signin-cta-actions">
-                <button class="fw-submit" type="button" @click="gotoAuth('login')">
-                  Log in
-                </button>
-                <button class="fw-submit fw-submit-ghost" type="button" @click="gotoAuth('register')">
-                  Create account
+                <button class="fw-submit" type="button" :disabled="signingIn" @click="onSignIn">
+                  {{ signingIn ? 'Redirecting…' : 'Sign in' }}
                 </button>
               </div>
             </div>
@@ -709,7 +633,6 @@ watch(open, (v) => {
               </li>
             </ul>
           </section>
-          </template>
         </template>
       </div>
     </transition>

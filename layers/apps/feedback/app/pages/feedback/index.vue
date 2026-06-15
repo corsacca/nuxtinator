@@ -119,12 +119,19 @@ const projectForm = ref({
   id: '' as string,
   name: '',
   description: '',
+  allowedOrigins: '',
   mode: 'create' as 'create' | 'edit'
 })
 const projectBusy = ref(false)
 
+// The allowed-origins textarea accepts one origin per line (commas/spaces also
+// split). The server re-validates and normalizes, so loose parsing is fine.
+function parseOriginsInput(value: string): string[] {
+  return value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)
+}
+
 function openCreateProject() {
-  projectForm.value = { id: '', name: '', description: '', mode: 'create' }
+  projectForm.value = { id: '', name: '', description: '', allowedOrigins: '', mode: 'create' }
   projectModalOpen.value = true
 }
 function openRenameProject(p: Project) {
@@ -132,6 +139,7 @@ function openRenameProject(p: Project) {
     id: p.id,
     name: p.name,
     description: p.description ?? '',
+    allowedOrigins: (p.allowed_origins ?? []).join('\n'),
     mode: 'edit'
   }
   projectModalOpen.value = true
@@ -156,7 +164,8 @@ async function submitProject() {
         method: 'PATCH',
         body: {
           name: projectForm.value.name.trim(),
-          description: projectForm.value.description
+          description: projectForm.value.description,
+          allowed_origins: parseOriginsInput(projectForm.value.allowedOrigins)
         }
       })
       const i = projects.value.findIndex(x => x.id === updated.id)
@@ -555,6 +564,17 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
           </UFormField>
           <UFormField label="Description">
             <UTextarea v-model="projectForm.description" :rows="2" />
+          </UFormField>
+          <UFormField
+            v-if="projectForm.mode === 'edit'"
+            label="Allowed widget origins"
+            help="Sites where the embeddable feedback widget may sign users in (one origin per line, e.g. https://app.example.com). Leave empty to disable cross-origin sign-in."
+          >
+            <UTextarea
+              v-model="projectForm.allowedOrigins"
+              :rows="3"
+              placeholder="https://app.example.com&#10;https://docs.example.com"
+            />
           </UFormField>
         </div>
       </template>

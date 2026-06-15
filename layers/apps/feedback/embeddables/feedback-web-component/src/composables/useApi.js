@@ -4,12 +4,28 @@
  * error shape so callers can branch on e.status.
  */
 
-import { inject } from 'vue'
+import { inject, computed } from 'vue'
 import { useAuthStore } from '../stores/authStore.js'
 
 export function useApi() {
   const apiBase = inject('apiBase')
   const auth = useAuthStore()
+
+  // First-party = the api origin is the same origin serving the page (the widget
+  // is mounted in-app, not embedded on a third-party site). First-party requests
+  // send credentials so the host's httpOnly `auth-token` session cookie rides
+  // along and an already-signed-in user is recognized without a separate widget
+  // login. A cross-origin embed can't send that cookie under SameSite, so it
+  // omits credentials and authenticates with a bearer token instead.
+  const firstParty = computed(() => {
+    try {
+      const base = apiBase?.value || ''
+      if (!base) return false
+      return new URL(base, window.location.href).origin === window.location.origin
+    } catch {
+      return false
+    }
+  })
 
   function url(path) {
     const base = (apiBase?.value || '').replace(/\/$/, '')
@@ -26,7 +42,7 @@ export function useApi() {
     const res = await fetch(url(path), {
       method,
       headers,
-      credentials: 'omit',
+      credentials: firstParty.value ? 'include' : 'omit',
       body: body ? (isFormData ? body : JSON.stringify(body)) : undefined
     })
 
@@ -44,7 +60,7 @@ export function useApi() {
     return data
   }
 
-  return { request, url }
+  return { request, url, firstParty }
 }
 
 function safeJson(text) {
