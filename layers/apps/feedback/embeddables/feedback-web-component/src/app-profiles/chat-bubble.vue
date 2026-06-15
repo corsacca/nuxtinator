@@ -28,7 +28,8 @@ const {
   logout,
   loadSubmissions,
   submit,
-  bindStorageSync
+  bindStorageSync,
+  firstParty
 } = feedback
 
 const open = ref(false)
@@ -333,7 +334,9 @@ let unbindStorage = null
 onMounted(() => {
   unbindStorage = bindStorageSync()
   loadProject()
-  if (auth.token) refreshMe().then(() => auth.isAuthed && loadSubmissions())
+  // First-party mode authenticates via the host session cookie, so refresh even
+  // without a stored widget token to pick up an already-signed-in user.
+  if (auth.token || firstParty.value) refreshMe().then(() => auth.isAuthed && loadSubmissions())
   document.addEventListener('click', handleDocumentClick)
 })
 onBeforeUnmount(() => {

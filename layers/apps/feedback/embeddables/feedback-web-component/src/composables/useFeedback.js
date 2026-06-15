@@ -35,7 +35,10 @@ export function useFeedback() {
   }
 
   async function refreshMe() {
-    if (!auth.token) {
+    // First-party (in-app) sessions live in an httpOnly cookie, so there's no
+    // widget token to gate on — always ask the server who we are. Cross-origin
+    // embeds with no bearer token are anonymous and skip the round-trip.
+    if (!auth.token && !api.firstParty.value) {
       auth.setUser(null)
       return
     }
@@ -165,7 +168,8 @@ export function useFeedback() {
     logout,
     loadSubmissions,
     submit,
-    bindStorageSync
+    bindStorageSync,
+    firstParty: api.firstParty
   }
 }
 
