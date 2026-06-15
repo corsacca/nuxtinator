@@ -2,7 +2,6 @@ import { registerPermissions } from '#core/server/utils/permissions-registry'
 import { registerDefaultGrants } from '#core/server/utils/default-grants-registry'
 import { registerApp } from '#core/server/utils/app-registry'
 import { registerNavItem } from '#core/server/utils/nav-registry'
-import { registerAdminSection } from '#core/server/utils/admin-section-registry'
 import {
   FEEDBACK_PERMISSIONS,
   FEEDBACK_PERMISSION_META,
@@ -29,14 +28,5 @@ export default defineNitroPlugin(() => {
     icon: 'i-lucide-layout-dashboard',
     requiredPermission: 'feedback.read',
     order: 10
-  })
-
-  registerAdminSection({
-    appId: 'feedback',
-    title: 'Feedback Triage',
-    path: '/admin/feedback',
-    icon: 'i-lucide-message-square-warning',
-    requiredPermission: 'feedback.triage',
-    order: 40
   })
 })
