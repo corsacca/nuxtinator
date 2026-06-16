@@ -79,12 +79,12 @@ describe('feedback swimlanes CRUD', () => {
     const { org, auth } = await createFeedbackOrgWith(sql, ['admin'])
     const project = await createTestProject(sql, { org_id: org.id })
     const extra = await createTestSwimlane(sql, { org_id: org.id, project_id: project.id, name: 'doomed' })
-    const backlog = await getColumnByName(sql, 'BACKLOG')
+    const doing = await getColumnByName(sql, 'DOING')
     const card = await createTestCard(sql, {
       org_id: org.id,
       project_id: project.id,
       swimlane_id: extra.id,
-      column_id: backlog.id,
+      column_id: doing.id,
       title: 'migrate me'
     })
 

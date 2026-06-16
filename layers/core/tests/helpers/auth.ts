@@ -66,6 +66,17 @@ export function generateTestToken(user: TestUser): string {
   )
 }
 
+// A scope-tagged bearer token, matching `signScopedToken` in core auth. Used
+// by cross-origin flows (e.g. the feedback widget's `Authorization: Bearer`),
+// which verify the token carries the expected `scope` claim.
+export function generateScopedTestToken(user: TestUser, scope: string): string {
+  return jwt.sign(
+    { userId: user.id, email: user.email, display_name: user.display_name, scope },
+    jwtSecret(),
+    { expiresIn: '7d' }
+  )
+}
+
 export function getAuthHeaders(user: TestUser): AuthHeaders {
   const token = generateTestToken(user)
   return { headers: { cookie: `auth-token=${token}` } }

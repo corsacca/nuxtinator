@@ -5,14 +5,16 @@ import type {
   KanbanProjectModel,
   PostType
 } from './types'
+import { PHASES, DOING_COLUMN } from '../../composables/useCardUtils'
 
 type Card = KanbanCardModel
 
 interface MetaField {
   name: string
   label: string
-  type: 'text' | 'textarea' | 'number' | 'select'
-  options?: string[]
+  type: 'textarea' | 'select'
+  // Select options as { label, value } pairs (label may differ from value).
+  optionItems?: { label: string, value: string }[]
   placeholder?: string
 }
 
@@ -21,9 +23,13 @@ const props = withDefaults(defineProps<{
   card: Card | null
   columns?: KanbanColumnModel[]
   projects?: KanbanProjectModel[]
+  // Users assignable to cards (org members in multi-tenant mode, all users in
+  // single mode), supplied by the board.
+  users?: { id: string, display_name: string | null }[]
 }>(), {
   columns: () => [],
-  projects: () => []
+  projects: () => [],
+  users: () => []
 })
 
 const emit = defineEmits<{
@@ -89,61 +95,17 @@ const planField: MetaField = {
   name: 'plan',
   label: 'Plan',
   type: 'textarea',
-  placeholder: 'Step-by-step plan for this card. Import via: ./kanban-agent-v2.sh import-plan "Card Title" plan.md'
+  placeholder: 'Step-by-step plan for this card.'
 }
 
 const POST_META_FIELDS: Record<string, MetaField[]> = {
-  task: [
-    { name: 'estimated_hours', label: 'Estimated Hours', type: 'number', placeholder: '0' },
-    { name: 'blocked_by', label: 'Blocked By', type: 'text', placeholder: 'Card IDs or blocker description' },
-    { name: 'task_status', label: 'Task Status', type: 'select', options: ['todo', 'in_progress', 'blocked', 'completed'] },
-    { name: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Additional task notes' },
-    planField
-  ],
-  feature: [
-    { name: 'priority_level', label: 'Priority Level', type: 'select', options: ['p0', 'p1', 'p2', 'p3'] },
-    { name: 'estimated_effort', label: 'Estimated Effort', type: 'select', options: ['small', 'medium', 'large', 'xl'] },
-    { name: 'dependencies', label: 'Dependencies', type: 'text', placeholder: 'Comma-separated card IDs or names' },
-    { name: 'user_story', label: 'User Story', type: 'textarea', placeholder: 'As a [user], I want [goal] so that [benefit]' },
-    { name: 'requirements', label: 'Requirements', type: 'textarea', placeholder: 'Detailed requirements' },
-    { name: 'implementation_plan', label: 'Implementation Plan', type: 'textarea', placeholder: 'Step-by-step implementation plan' },
-    planField
-  ],
-  bug: [
-    { name: 'severity', label: 'Severity', type: 'select', options: ['low', 'medium', 'high', 'critical'] },
-    { name: 'priority_level', label: 'Priority Level', type: 'select', options: ['p0', 'p1', 'p2', 'p3'] },
-    { name: 'reproducible', label: 'Reproducible', type: 'select', options: ['always', 'sometimes', 'rare'] },
-    { name: 'affected_version', label: 'Affected Version', type: 'text', placeholder: 'e.g., v1.2.3' },
-    { name: 'steps_to_reproduce', label: 'Steps to Reproduce', type: 'textarea', placeholder: '1. Step one\n2. Step two\n3. ...' },
-    { name: 'bug_behavior', label: 'Bug Behavior', type: 'textarea', placeholder: 'Describe the bug behavior' },
-    { name: 'bug_repair_plan', label: 'Bug Repair Plan', type: 'textarea', placeholder: 'Plan for fixing the bug' },
-    planField
-  ],
-  artifact: [
-    { name: 'artifact_type', label: 'Artifact Type', type: 'select', options: ['documentation', 'design', 'specification', 'diagram'] },
-    { name: 'url', label: 'URL', type: 'text', placeholder: 'https://...' },
-    { name: 'version', label: 'Version', type: 'text', placeholder: 'v1.0.0' },
-    { name: 'documentation_link', label: 'Documentation Link', type: 'text', placeholder: 'Link to related docs' },
-    { name: 'related_cards', label: 'Related Cards', type: 'text', placeholder: 'Comma-separated card IDs' },
-    { name: 'artifact', label: 'Artifact Description', type: 'textarea', placeholder: 'Detailed description of the artifact' },
-    planField
-  ],
   feedback: [
-    { name: 'feedback_sub_type', label: 'Feedback Type', type: 'select', options: ['bug_fix', 'new_feature', 'change_request'] },
-    { name: 'reported_element', label: 'Reported Element', type: 'text', placeholder: 'Which element/component this refers to' },
-    { name: 'problem_description', label: 'Problem Description', type: 'textarea', placeholder: 'Describe the problem' },
-    { name: 'suggested_fix', label: 'Suggested Fix', type: 'textarea', placeholder: 'Suggested fix or improvement' },
+    { name: 'feedback_sub_type', label: 'Type', type: 'select', optionItems: [{ label: 'Bug', value: 'bug' }, { label: 'Idea', value: 'idea' }] },
+    { name: 'problem_description', label: 'Problem', type: 'textarea', placeholder: 'What is wrong' },
+    { name: 'suggested_fix', label: 'Suggested solution', type: 'textarea', placeholder: 'Change it to…' },
     planField
   ]
 }
-
-const postTypeOptions = [
-  { label: 'Task', value: 'task' },
-  { label: 'Feature', value: 'feature' },
-  { label: 'Bug', value: 'bug' },
-  { label: 'Project Artifact', value: 'artifact' },
-  { label: 'Feedback', value: 'feedback' }
-]
 
 // Reka's Select primitive (underlying Nuxt UI) reserves empty-string as the
 // "no selection" state, so we can't use it as a real option value. Use
@@ -155,15 +117,25 @@ const priorityQualOptions = [
   { label: 'Highest', value: 'highest' }
 ]
 
-const dynamicFields = computed<MetaField[]>(() => {
-  if (!draft.value) return []
-  return POST_META_FIELDS[draft.value.post_type] || []
+// Feedback content fields, minus `plan` (which renders in the Progress
+// section). The two text fields are labeled and ordered by type so the panel
+// reads the way the submitter filled it in: a bug leads with its problem, an
+// idea leads with the idea itself.
+const feedbackContentFields = computed<MetaField[]>(() => {
+  const typeField = (POST_META_FIELDS.feedback || []).find(f => f.name === 'feedback_sub_type')!
+  if (getMeta('feedback_sub_type') === 'idea') {
+    return [
+      typeField,
+      { name: 'suggested_fix', label: 'Idea', type: 'textarea', placeholder: 'The idea' },
+      { name: 'problem_description', label: 'Problem it solves', type: 'textarea', placeholder: 'Why it helps' }
+    ]
+  }
+  return [
+    typeField,
+    { name: 'problem_description', label: 'Problem', type: 'textarea', placeholder: 'What is wrong' },
+    { name: 'suggested_fix', label: 'Suggested solution', type: 'textarea', placeholder: 'Change it to…' }
+  ]
 })
-
-// Feedback content fields (everything except `plan`, which renders in the Progress section)
-const feedbackContentFields = computed<MetaField[]>(() =>
-  (POST_META_FIELDS.feedback || []).filter(f => f.name !== 'plan')
-)
 
 // -------- Feedback attachments (admin view) --------
 interface FeedbackAttachment {
@@ -230,15 +202,21 @@ function openLightbox(a: FeedbackAttachment) {
   lightboxOpen.value = true
 }
 
-const postTypeHeading = computed(() => {
-  if (!draft.value) return ''
-  const pt = draft.value.post_type
-  return pt.charAt(0).toUpperCase() + pt.slice(1) + ' Specific Fields'
-})
 
-function selectItems(options: string[]) {
-  return options.map(o => ({ label: o, value: o }))
-}
+// Assignee picker options — member display names. Assignee is stored as the
+// name string (the column and the card avatar both key off it).
+const assigneeOptions = computed<string[]>(() =>
+  props.users
+    .map(u => u.display_name)
+    .filter((n): n is string => !!n)
+)
+
+// The phase picker only applies while a card sits in the DOING column.
+const currentColumnName = computed(() =>
+  props.columns.find(c => c.id === props.card?.column_id)?.name ?? ''
+)
+const isDoing = computed(() => currentColumnName.value === DOING_COLUMN)
+const phaseSelectItems = PHASES.map(p => ({ label: p.label, value: p.value }))
 
 // -------- Meta helpers --------
 function getMeta(key: string): any {
@@ -285,23 +263,23 @@ function setMeta(key: string, value: any) {
   draft.value.post_meta = next
 }
 
-function setMetaNumber(key: string, value: any) {
-  if (value === '' || value === null || value === undefined) {
-    setMeta(key, null)
-  } else {
-    const n = Number(value)
-    setMeta(key, Number.isNaN(n) ? null : n)
-  }
-}
-
 // -------- Save / delete --------
 async function handleSave() {
   if (!draft.value || !props.card) return
   saving.value = true
   try {
     const d = draft.value
+    // Feedback cards have no standalone title field; the board headline tracks
+    // the primary content field — the problem for a bug, the idea for an idea —
+    // truncated the same way the widget derives the title on first submit.
+    const feedbackPrimary = d.post_meta?.feedback_sub_type === 'idea'
+      ? d.post_meta?.suggested_fix
+      : d.post_meta?.problem_description
+    const title = d.post_type === 'feedback' && feedbackPrimary
+      ? String(feedbackPrimary).slice(0, 140)
+      : d.title
     const patch: Partial<Card> & { post_meta?: Record<string, any> } = {
-      title: d.title,
+      title,
       post_type: d.post_type,
       description: d.description || null,
       assignee: d.assignee || null,
@@ -342,52 +320,20 @@ function determineActionFromColumn(columnName: string): string {
     'PLANNING': 'Design & Architect',
     'BUILDING': 'Implement',
     'TESTING': 'Test & Validate',
-    'DONE': 'Review & Document',
-    'CHANGE REQUESTs': 'Analyze Change Request',
-    'CHANGE REQUESTS': 'Analyze Change Request'
+    'DONE': 'Review & Document'
   }
   return actions[columnName] || 'Work On'
 }
 
-function getActionInstructions(action: string, cardType: string): string {
-  const instructions: Record<string, Record<string, string>> = {
-    'Plan': {
-      'task': 'Help me create a detailed plan with steps to complete this task.',
-      'feature': 'Help me design this feature with architecture, implementation approach, and acceptance criteria.',
-      'bug': 'Help me analyze this bug, identify root cause, and create a fix plan.',
-      'artifact': 'Help me define the structure and content for this project artifact.',
-      'feedback': 'Help me triage this feedback item and decide on next steps.'
-    },
-    'Design & Architect': {
-      'task': 'Help me break down this task into actionable steps.',
-      'feature': 'Help me architect this feature with detailed design decisions.',
-      'bug': 'Help me design the fix approach with implementation details.',
-      'artifact': 'Help me outline the artifact structure and sections.',
-      'feedback': 'Help me turn this feedback into a concrete design plan.'
-    },
-    'Implement': {
-      'task': 'Help me implement this task step by step.',
-      'feature': 'Help me build this feature according to the plan.',
-      'bug': 'Help me implement the fix for this bug.',
-      'artifact': 'Help me create the content for this artifact.',
-      'feedback': 'Help me implement the change this feedback is asking for.'
-    },
-    'Test & Validate': {
-      'task': 'Help me verify this task is complete and working.',
-      'feature': 'Help me write tests and validate this feature works correctly.',
-      'bug': 'Help me verify the bug is fixed and write regression tests.',
-      'artifact': 'Help me review and validate this artifact is complete.',
-      'feedback': 'Help me verify this feedback has been addressed.'
-    },
-    'Review & Document': {
-      'task': 'Help me document what was done and any lessons learned.',
-      'feature': 'Help me create documentation for this feature.',
-      'bug': 'Help me document the bug fix and prevention strategy.',
-      'artifact': 'Help me finalize and polish this artifact.',
-      'feedback': 'Help me summarize what changed and notify the reporter.'
-    }
+function getActionInstructions(action: string): string {
+  const instructions: Record<string, string> = {
+    'Plan': 'Help me triage this feedback item and decide on next steps.',
+    'Design & Architect': 'Help me turn this feedback into a concrete design plan.',
+    'Implement': 'Help me implement the change this feedback is asking for.',
+    'Test & Validate': 'Help me verify this feedback has been addressed.',
+    'Review & Document': 'Help me summarize what changed and notify the reporter.'
   }
-  return instructions[action]?.[cardType] || `Help me ${action.toLowerCase()} this ${cardType}.`
+  return instructions[action] || `Help me ${action.toLowerCase()} this feedback.`
 }
 
 function currentColumn(): KanbanColumnModel | null {
@@ -424,7 +370,10 @@ function formatCardContextForAgent(): string {
   const proj = currentProject()
   const columnName = col?.name || 'Unknown'
   const projectName = proj?.name || 'Unknown'
-  const action = determineActionFromColumn(columnName)
+  // In DOING the workflow stage is the card's phase; elsewhere it's the column.
+  const phase = String(card.post_meta?.phase || 'backlog')
+  const stage = col?.name === DOING_COLUMN ? phase.toUpperCase() : columnName
+  const action = determineActionFromColumn(stage)
   const qual = card.post_meta?.priority_qualitative
   const quant = card.post_meta?.priority_quantitative
   const metaFields = POST_META_FIELDS[card.post_type] || []
@@ -478,7 +427,7 @@ function formatCardContextForAgent(): string {
   lines.push('')
   lines.push('---')
   lines.push('')
-  lines.push(`**Action:** ${action} — ${getActionInstructions(action, card.post_type)}`)
+  lines.push(`**Action:** ${action} — ${getActionInstructions(action)}`)
   lines.push(`**Context Path:** \`${projectName} / ${columnName} / ${card.title}\``)
   lines.push('')
   lines.push('## Post Meta (All Fields)')
@@ -486,55 +435,6 @@ function formatCardContextForAgent(): string {
   lines.push(JSON.stringify(card.post_meta ?? {}, null, 2))
   lines.push('```')
   return lines.join('\n')
-}
-
-function formatClaudePrompt(): string {
-  const card = buildCardForContext()
-  if (!card) return ''
-  const base = formatCardContextForAgent()
-  const title = card.title || 'Untitled'
-  const col = currentColumn()
-  const action = determineActionFromColumn(col?.name || 'BACKLOG')
-
-  return `${base}
-
----
-
-## Kanban CLI Reference
-
-Use \`./kanban\` to read and update this card.
-
-### Commands for this card:
-
-\`\`\`bash
-# Read current state
-./kanban get "${title}"
-
-# Update description
-./kanban update "${title}" "new description here"
-
-# Update metadata fields
-./kanban update-meta "${title}" plan "step-by-step plan content"
-./kanban update-meta "${title}" implementation_plan "implementation details"
-
-# Import a plan from file
-./kanban import-plan "${title}" ./plan.md
-
-# Move to next column when ready
-./kanban move "${title}" "PLANNING"
-./kanban move "${title}" "BUILDING"
-./kanban move "${title}" "TESTING"
-./kanban move "${title}" "DONE"
-
-# Set priority
-./kanban set-priority "${title}" high 85
-\`\`\`
-
-### Column workflow:
-CHANGE REQUESTS -> BACKLOG -> PLANNING -> BUILDING -> TESTING -> DONE
-
-### Your task:
-**${action}** this ${card.post_type || 'task'} card. Start by reading it with \`./kanban get "${title}"\`, then fill in missing fields (plan, implementation, etc.) and move the card forward when appropriate.`
 }
 
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -562,53 +462,13 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-async function handleSendToAgent() {
+async function handleCopyForAgent() {
   const text = formatCardContextForAgent()
   const ok = await copyToClipboard(text)
   if (ok) {
     toast.add({
       title: 'Copied to clipboard',
-      description: 'Card context copied — paste into your agent.',
-      icon: 'i-lucide-send',
-      color: 'success'
-    })
-  } else {
-    toast.add({
-      title: 'Copy failed',
-      description: 'Unable to access the clipboard.',
-      color: 'error'
-    })
-  }
-}
-
-async function handleSendToClaude() {
-  const text = formatClaudePrompt()
-  const ok = await copyToClipboard(text)
-  if (ok) {
-    toast.add({
-      title: 'Copied for Claude',
-      description: 'Card context + CLI reference copied — paste into Claude.ai or Claude Code.',
-      icon: 'i-lucide-sparkles',
-      color: 'success'
-    })
-  } else {
-    toast.add({
-      title: 'Copy failed',
-      description: 'Unable to access the clipboard.',
-      color: 'error'
-    })
-  }
-}
-
-async function handleCopyPostMeta() {
-  const card = buildCardForContext()
-  if (!card) return
-  const text = JSON.stringify(card.post_meta ?? {}, null, 2)
-  const ok = await copyToClipboard(text)
-  if (ok) {
-    toast.add({
-      title: 'Post meta copied',
-      description: 'All post_meta fields copied as JSON.',
+      description: 'Card context copied — paste into your AI agent.',
       icon: 'i-lucide-clipboard',
       color: 'success'
     })
@@ -632,33 +492,13 @@ async function handleCopyPostMeta() {
           <div class="flex items-center gap-2">
             <UButton
               size="xs"
-              color="neutral"
-              variant="soft"
-              icon="i-lucide-clipboard"
-              title="Copy all post_meta fields as JSON"
-              @click="handleCopyPostMeta"
-            >
-              Copy
-            </UButton>
-            <UButton
-              size="xs"
               color="primary"
               variant="soft"
-              icon="i-lucide-send"
-              title="Copy card context to clipboard for an AI agent"
-              @click="handleSendToAgent"
+              icon="i-lucide-clipboard"
+              title="Copy this card's full context to paste into an AI assistant"
+              @click="handleCopyForAgent"
             >
-              Send to Agent
-            </UButton>
-            <UButton
-              size="xs"
-              color="warning"
-              variant="soft"
-              icon="i-lucide-sparkles"
-              title="Copy card context + CLI reference for Claude"
-              @click="handleSendToClaude"
-            >
-              Send to Claude
+              Copy for AI
             </UButton>
             <UButton variant="ghost" icon="i-lucide-x" aria-label="Close" @click="open = false" />
           </div>
@@ -707,9 +547,6 @@ async function handleCopyPostMeta() {
               <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
                 Feedback
               </h3>
-              <UFormField label="Title">
-                <UInput v-model="draft.title" placeholder="Card title" class="w-full" />
-              </UFormField>
               <UFormField v-for="f in feedbackContentFields" :key="f.name" :label="f.label">
                 <UTextarea
                   v-if="f.type === 'textarea'"
@@ -720,25 +557,10 @@ async function handleCopyPostMeta() {
                   @update:model-value="(v: any) => setMeta(f.name, v)"
                 />
                 <USelect
-                  v-else-if="f.type === 'select'"
-                  :model-value="getMeta(f.name) || undefined"
-                  :items="selectItems(f.options || [])"
-                  placeholder="-- Select --"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta(f.name, v)"
-                />
-                <UInput
-                  v-else-if="f.type === 'number'"
-                  type="number"
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || '0'"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMetaNumber(f.name, v)"
-                />
-                <UInput
                   v-else
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || ''"
+                  :model-value="getMeta(f.name) || undefined"
+                  :items="f.optionItems || []"
+                  placeholder="-- Select --"
                   class="w-full"
                   @update:model-value="(v: any) => setMeta(f.name, v)"
                 />
@@ -812,42 +634,32 @@ async function handleCopyPostMeta() {
               <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
                 Coordination
               </h3>
-              <UFormField label="Card Type">
-                <USelect v-model="draft.post_type" :items="postTypeOptions" class="w-full" />
+              <UFormField v-if="isDoing" label="Phase">
+                <USelect
+                  :model-value="getMeta('phase') || 'backlog'"
+                  :items="phaseSelectItems"
+                  class="w-full"
+                  @update:model-value="(v: any) => setMeta('phase', v)"
+                />
               </UFormField>
               <UFormField label="Assignee">
-                <UInput v-model="draft.assignee" placeholder="Assigned to" class="w-full" />
+                <USelectMenu
+                  v-model="draft.assignee"
+                  :items="assigneeOptions"
+                  placeholder="Unassigned"
+                  :clear="true"
+                  class="w-full"
+                />
               </UFormField>
-              <div class="grid grid-cols-2 gap-3">
-                <UFormField label="Start Date">
-                  <UInput v-model="draft.start_date" type="date" class="w-full" />
-                </UFormField>
-                <UFormField label="Due Date">
-                  <UInput v-model="draft.due_date" type="date" class="w-full" />
-                </UFormField>
-              </div>
-              <div class="grid grid-cols-2 gap-3">
-                <UFormField label="Priority (Qualitative)">
-                  <USelect
-                    :model-value="getMeta('priority_qualitative') || undefined"
-                    :items="priorityQualOptions"
-                    placeholder="-- Select --"
-                    class="w-full"
-                    @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
-                  />
-                </UFormField>
-                <UFormField label="Priority (Quantitative)">
-                  <UInput
-                    type="number"
-                    :model-value="getMeta('priority_quantitative')"
-                    placeholder="1-100"
-                    :min="1"
-                    :max="100"
-                    class="w-full"
-                    @update:model-value="(v: any) => setMetaNumber('priority_quantitative', v)"
-                  />
-                </UFormField>
-              </div>
+              <UFormField label="Priority">
+                <USelect
+                  :model-value="getMeta('priority_qualitative') || undefined"
+                  :items="priorityQualOptions"
+                  placeholder="-- Select --"
+                  class="w-full"
+                  @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
+                />
+              </UFormField>
               <UFormField label="Plan">
                 <UTextarea
                   :rows="3"
@@ -857,10 +669,6 @@ async function handleCopyPostMeta() {
                   @update:model-value="(v: any) => setMeta('plan', v)"
                 />
               </UFormField>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <UCheckbox v-model="draft.is_done" />
-                <span class="text-sm font-medium">Mark as Done</span>
-              </label>
               <UFormField label="Testing Results">
                 <UTextarea
                   v-model="draft.testing_results"
@@ -870,115 +678,6 @@ async function handleCopyPostMeta() {
                 />
               </UFormField>
             </section>
-          </div>
-
-          <!-- Non-feedback: original flat layout -->
-          <div v-else class="space-y-4">
-            <UFormField label="Card Type">
-              <USelect v-model="draft.post_type" :items="postTypeOptions" class="w-full" />
-            </UFormField>
-
-            <UFormField label="Title">
-              <UInput v-model="draft.title" placeholder="Card title" class="w-full" />
-            </UFormField>
-
-            <UFormField label="Assignee">
-              <UInput v-model="draft.assignee" placeholder="Assigned to" class="w-full" />
-            </UFormField>
-
-            <div class="grid grid-cols-2 gap-3">
-              <UFormField label="Start Date">
-                <UInput v-model="draft.start_date" type="date" class="w-full" />
-              </UFormField>
-              <UFormField label="Due Date">
-                <UInput v-model="draft.due_date" type="date" class="w-full" />
-              </UFormField>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <UFormField label="Priority (Qualitative)">
-                <USelect
-                  :model-value="getMeta('priority_qualitative') || undefined"
-                  :items="priorityQualOptions"
-                  placeholder="-- Select --"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
-                />
-              </UFormField>
-              <UFormField label="Priority (Quantitative)">
-                <UInput
-                  type="number"
-                  :model-value="getMeta('priority_quantitative')"
-                  placeholder="1-100"
-                  :min="1"
-                  :max="100"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMetaNumber('priority_quantitative', v)"
-                />
-              </UFormField>
-            </div>
-
-            <UFormField label="Description">
-              <UTextarea v-model="draft.description" :rows="4" placeholder="Card description" class="w-full" />
-            </UFormField>
-
-            <!-- Dynamic post-type-specific fields -->
-            <div v-if="dynamicFields.length" class="space-y-3 pt-2 border-t border-(--ui-border)">
-              <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
-                {{ postTypeHeading }}
-              </h3>
-
-              <UFormField v-for="f in dynamicFields" :key="f.name" :label="f.label">
-                <UTextarea
-                  v-if="f.type === 'textarea'"
-                  :rows="3"
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || ''"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta(f.name, v)"
-                />
-                <USelect
-                  v-else-if="f.type === 'select'"
-                  :model-value="getMeta(f.name) || undefined"
-                  :items="selectItems(f.options || [])"
-                  placeholder="-- Select --"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta(f.name, v)"
-                />
-                <UInput
-                  v-else-if="f.type === 'number'"
-                  type="number"
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || '0'"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMetaNumber(f.name, v)"
-                />
-                <UInput
-                  v-else
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || ''"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta(f.name, v)"
-                />
-              </UFormField>
-            </div>
-
-            <!-- Task done + testing results -->
-            <div class="pt-2 border-t border-(--ui-border) space-y-3">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <UCheckbox v-model="draft.is_done" />
-                <span class="text-sm font-medium">Mark as Done</span>
-              </label>
-
-              <UFormField label="Testing Results">
-                <UTextarea
-                  v-model="draft.testing_results"
-                  :rows="3"
-                  placeholder="Test results, feedback, notes..."
-                  class="w-full"
-                />
-              </UFormField>
-            </div>
           </div>
         </div>
 

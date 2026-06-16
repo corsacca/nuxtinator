@@ -3,7 +3,7 @@ import { sql } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { requireOperatorAdmin } from '#tenant/server'
 
-const MANDATORY = new Set(['BACKLOG', 'DONE'])
+const MANDATORY = new Set(['FEEDBACK INBOX', 'DOING', 'DONE', 'ARCHIVE'])
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')

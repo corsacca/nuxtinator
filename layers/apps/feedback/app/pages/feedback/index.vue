@@ -47,6 +47,7 @@ const projects = ref<Project[]>([])
 const columns = ref<Column[]>([])
 const swimlanes = ref<Swimlane[]>([])
 const cards = ref<Card[]>([])
+const assignableUsers = ref<{ id: string, display_name: string | null }[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -57,13 +58,16 @@ async function loadAll() {
   loading.value = true
   error.value = ''
   try {
-    const [projectsRes, columnsRes] = await Promise.all([
+    const [projectsRes, columnsRes, assigneesRes] = await Promise.all([
       $fetch<Project[]>('/api/feedback/projects'),
-      $fetch<Column[]>('/api/feedback/columns')
+      $fetch<Column[]>('/api/feedback/columns'),
+      $fetch<{ users: { id: string, display_name: string | null }[] }>('/api/feedback/assignees')
+        .catch(() => ({ users: [] }))
     ])
 
     projects.value = projectsRes
     columns.value = columnsRes
+    assignableUsers.value = assigneesRes.users
 
     const laneResults = await Promise.all(
       projects.value.map(p => $fetch<Swimlane[]>('/api/feedback/swimlanes', { query: { project_id: p.id } }))
@@ -219,14 +223,13 @@ async function submitSwimlane() {
 const cardModalOpen = ref(false)
 const cardForm = ref({
   title: '',
-  post_type: 'task' as 'task' | 'feature' | 'bug' | 'artifact' | 'feedback',
   columnId: '',
   swimlaneId: '',
   projectId: ''
 })
 const cardBusy = ref(false)
 function openAddCard(payload: { columnId: string; swimlaneId: string; projectId: string }) {
-  cardForm.value = { title: '', post_type: 'task', ...payload }
+  cardForm.value = { title: '', ...payload }
   cardModalOpen.value = true
 }
 async function submitCard() {
@@ -240,7 +243,8 @@ async function submitCard() {
         column_id: cardForm.value.columnId,
         swimlane_id: cardForm.value.swimlaneId,
         title: cardForm.value.title.trim(),
-        post_type: cardForm.value.post_type
+        // Feedback-only board; new cards default to a bug, editable in the panel.
+        post_meta: { feedback_sub_type: 'bug' }
       }
     })
     cards.value.push(created)
@@ -362,7 +366,7 @@ function openProjectCtx(e: { x: number; y: number; project: Project }) {
 }
 
 function openColumnCtx(e: { x: number; y: number; column: Column }) {
-  const isProtected = e.column.name === 'BACKLOG' || e.column.name === 'DONE'
+  const isProtected = ['FEEDBACK INBOX', 'DOING', 'DONE', 'ARCHIVE'].includes(e.column.name)
   ctxMenu.value = {
     open: true,
     x: e.x,
@@ -370,7 +374,6 @@ function openColumnCtx(e: { x: number; y: number; column: Column }) {
     target: { kind: 'column', column: e.column },
     items: [
       { label: 'Rename', icon: 'i-lucide-pencil', action: 'rename' },
-      { label: 'Set WIP limit', icon: 'i-lucide-gauge', action: 'wip' },
       ...(isProtected ? [] : [{ label: 'Delete', icon: 'i-lucide-trash-2', danger: true, action: 'delete' }])
     ]
   }
@@ -397,15 +400,6 @@ function onCtxSelect(action: string) {
         $fetch(`/api/feedback/columns/${t.column.id}`, { method: 'PATCH', body: { name } })
           .then(() => loadAll())
           .catch((e: any) => toast.add({ title: 'Rename failed', description: e?.data?.statusMessage, color: 'error' }))
-      }
-    } else if (action === 'wip') {
-      if (!import.meta.client) return
-      const raw = prompt('WIP limit (empty = no limit)', String(t.column.wip_limit ?? ''))
-      if (raw !== null) {
-        const wip = raw.trim() === '' ? null : Number(raw)
-        $fetch(`/api/feedback/columns/${t.column.id}/wip`, { method: 'PATCH', body: { wip_limit: wip } })
-          .then(() => loadAll())
-          .catch((e: any) => toast.add({ title: 'WIP update failed', description: e?.data?.statusMessage, color: 'error' }))
       }
     }
   }
@@ -552,6 +546,7 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
       :card="activeCard"
       :columns="columns"
       :projects="projects"
+      :users="assignableUsers"
       @save="onSaveCard"
       @delete="onDeleteCard"
     />
@@ -617,18 +612,6 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
         <div class="space-y-4">
           <UFormField label="Title" required>
             <UInput v-model="cardForm.title" placeholder="Briefly describe the card" autofocus />
-          </UFormField>
-          <UFormField label="Type">
-            <USelect
-              v-model="cardForm.post_type"
-              :items="[
-                { label: 'Task', value: 'task' },
-                { label: 'Feature', value: 'feature' },
-                { label: 'Bug', value: 'bug' },
-                { label: 'Artifact', value: 'artifact' },
-                { label: 'Feedback', value: 'feedback' }
-              ]"
-            />
           </UFormField>
         </div>
       </template>

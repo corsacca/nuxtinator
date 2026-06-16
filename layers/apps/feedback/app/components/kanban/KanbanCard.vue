@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { KanbanCardModel } from './types'
-import { isCardOverdue, priorityDotColor, postTypeBadge } from '../../composables/useCardUtils'
+import { isCardOverdue, priorityDotColor, cardPhase, phaseLabel, DOING_COLUMN } from '../../composables/useCardUtils'
 
 const props = withDefaults(
   defineProps<{
@@ -21,8 +21,6 @@ const emit = defineEmits<{
   dragend: []
 }>()
 
-const badge = computed(() => postTypeBadge(props.card.post_type))
-
 const priorityQual = computed<string | null>(() => {
   const pm = props.card.post_meta || {}
   const q = pm.priority_qualitative
@@ -33,6 +31,10 @@ const priorityQual = computed<string | null>(() => {
 const priorityDotClass = computed(() => priorityDotColor(priorityQual.value))
 const overdue = computed(() => isCardOverdue(props.card, props.columnName))
 const showOverdueIcon = computed(() => overdue.value && !props.card.is_done)
+
+// Cards in the DOING column surface which workflow phase they're in.
+const showPhase = computed(() => props.columnName === DOING_COLUMN)
+const phaseText = computed(() => phaseLabel(cardPhase(props.card)))
 
 const assigneeInitials = computed(() => {
   const a = props.card.assignee
@@ -85,7 +87,7 @@ function handleDragEnd(event: DragEvent) {
   <div
     class="relative rounded-md border bg-(--ui-bg-elevated) shadow-sm cursor-grab select-none
            transition-shadow duration-100
-           w-full min-h-[84px] p-2 pr-7
+           w-full min-h-[84px] p-2
            hover:shadow-md hover:border-(--ui-primary)"
     :class="overdue ? 'border-red-500' : 'border-(--ui-border)'"
     draggable="true"
@@ -102,14 +104,6 @@ function handleDragEnd(event: DragEvent) {
       aria-label="Overdue"
     >⚠️</span>
 
-    <div
-      class="absolute top-1 right-1 w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center"
-      :class="[badge.bg, badge.fg]"
-      :title="card.post_type"
-    >
-      {{ badge.letter }}
-    </div>
-
     <h4
       class="text-xs font-medium line-clamp-2 leading-snug"
       :class="{ 'pl-4': showOverdueIcon }"
@@ -119,6 +113,14 @@ function handleDragEnd(event: DragEvent) {
     </h4>
 
     <div class="mt-1.5 flex items-center gap-2 text-[11px] text-(--ui-text-muted)">
+      <span
+        v-if="showPhase"
+        class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-(--ui-bg-accented) text-(--ui-text) shrink-0"
+        :title="`Phase: ${phaseText}`"
+      >
+        {{ phaseText }}
+      </span>
+
       <span
         v-if="assigneeInitials"
         class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-(--ui-bg-accented) text-[9px] font-semibold text-(--ui-text) shrink-0"

@@ -1,8 +1,7 @@
 export const FEEDBACK_PERMISSIONS = [
   'feedback.access',
   'feedback.read',
-  'feedback.write',
-  'feedback.triage'
+  'feedback.write'
 ] as const
 
 export type FeedbackPermission = typeof FEEDBACK_PERMISSIONS[number]
@@ -19,10 +18,6 @@ export const FEEDBACK_PERMISSION_META: Record<string, { title: string, descripti
   'feedback.write': {
     title: 'Edit feedback boards',
     description: 'Create, edit, and move cards, projects, and swimlanes.'
-  },
-  'feedback.triage': {
-    title: 'Triage feedback submissions',
-    description: 'Update status, admin notes, and external references on feedback cards.'
   }
 }
 

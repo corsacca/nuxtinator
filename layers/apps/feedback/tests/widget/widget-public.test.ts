@@ -10,6 +10,7 @@ import {
   createFeedbackOrgWith,
   createFeedbackUser,
   getAuthHeaders,
+  generateScopedTestToken,
   createTestProject,
   createTestCard,
   getColumnByName
@@ -49,7 +50,6 @@ describe('public widget endpoints', () => {
       method: 'POST',
       body: {
         project_id: project.id,
-        reported_element: 'login button',
         problem_description: 'button is too small',
         suggested_fix: 'make it bigger',
         submitter_name: 'Anonymous Tester',
@@ -91,7 +91,6 @@ describe('public widget endpoints', () => {
       method: 'POST',
       body: {
         project_id: project.id,
-        reported_element: 'el',
         problem_description: 'pd',
         suggested_fix: 'sf'
       },
@@ -104,26 +103,34 @@ describe('public widget endpoints', () => {
     expect(meta.submitter_anonymous).toBe(false)
   })
 
-  it('POST /api/v1/feedback: 400 missing project_id / reported_element / problem_description / suggested_fix / submitter_name (anon)', async () => {
+  it('POST /api/v1/feedback: 400 missing project_id / type primary field / submitter_name (anon)', async () => {
     const { org } = await createFeedbackOrgWith(sql, ['admin'])
     const project = await createTestProject(sql, { org_id: org.id })
 
     const noProj = await $fetch('/api/v1/feedback', {
       method: 'POST',
-      body: { reported_element: 'x', problem_description: 'y', suggested_fix: 'z', submitter_name: 'n' }
+      body: { problem_description: 'y', suggested_fix: 'z', submitter_name: 'n' }
     }).catch(e => e)
     expect(noProj.statusCode).toBe(400)
 
-    const noElem = await $fetch('/api/v1/feedback', {
+    // A bug requires its problem statement.
+    const noProblem = await $fetch('/api/v1/feedback', {
       method: 'POST',
-      body: { project_id: project.id, problem_description: 'y', suggested_fix: 'z', submitter_name: 'n' }
+      body: { project_id: project.id, feedback_sub_type: 'bug', suggested_fix: 'z', submitter_name: 'n' }
     }).catch(e => e)
-    expect(noElem.statusCode).toBe(400)
+    expect(noProblem.statusCode).toBe(400)
+
+    // An idea requires the idea itself.
+    const noIdea = await $fetch('/api/v1/feedback', {
+      method: 'POST',
+      body: { project_id: project.id, feedback_sub_type: 'idea', problem_description: 'y', submitter_name: 'n' }
+    }).catch(e => e)
+    expect(noIdea.statusCode).toBe(400)
 
     // Anonymous needs submitter_name.
     const noName = await $fetch('/api/v1/feedback', {
       method: 'POST',
-      body: { project_id: project.id, reported_element: 'x', problem_description: 'y', suggested_fix: 'z' }
+      body: { project_id: project.id, problem_description: 'y', suggested_fix: 'z' }
     }).catch(e => e)
     expect(noName.statusCode).toBe(400)
   })
@@ -133,7 +140,6 @@ describe('public widget endpoints', () => {
       method: 'POST',
       body: {
         project_id: randomUUID(),
-        reported_element: 'x',
         problem_description: 'y',
         suggested_fix: 'z',
         submitter_name: 'a'
@@ -147,7 +153,6 @@ describe('public widget endpoints', () => {
       method: 'POST',
       body: {
         project_id: 'not-a-uuid',
-        reported_element: 'x',
         problem_description: 'y',
         suggested_fix: 'z',
         submitter_name: 'a'
@@ -219,19 +224,18 @@ describe('public widget endpoints', () => {
     const { org } = await createFeedbackOrgWith(sql, ['admin'])
     const project = await createTestProject(sql, { org_id: org.id })
     const submitter = await createFeedbackUser(sql)
-    const cookieAuth = getAuthHeaders(submitter)
-    // Extract the JWT from the cookie our helper generated.
-    const jwt = cookieAuth.headers.cookie.split('=')[1]
+    // The widget Bearer path verifies a feedback-scoped token (signScopedToken),
+    // not a full session cookie — mint one carrying the matching scope.
+    const token = generateScopedTestToken(submitter, 'feedback')
 
     const res = await $fetch<{ id: string }>('/api/v1/feedback', {
       method: 'POST',
       body: {
         project_id: project.id,
-        reported_element: 'el',
         problem_description: 'pd',
         suggested_fix: 'sf'
       },
-      headers: { Authorization: `Bearer ${jwt}` }
+      headers: { Authorization: `Bearer ${token}` }
     })
     expect(res.id).toBeDefined()
 
