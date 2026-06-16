@@ -47,15 +47,6 @@ function clampString(v: unknown, max = CHAR_CAP): string {
   return s.length > max ? s.slice(0, max) : s
 }
 
-function normTags(v: unknown): string[] {
-  if (!Array.isArray(v)) return []
-  return v
-    .filter((t): t is string => typeof t === 'string')
-    .map(t => t.trim())
-    .filter(Boolean)
-    .slice(0, 20)
-}
-
 interface IncomingFile {
   kind: 'screenshot' | 'attachment'
   filename: string
@@ -139,7 +130,6 @@ export default defineEventHandler(async (event) => {
   // even across rotating IPs.
   await enforceWidgetRateLimit(event, 'ratelimit.feedback.submit.project', 'project', projectId, 60, 60_000)
 
-  const reported_element = clampString(body.reported_element)
   const problem_description = clampString(body.problem_description)
   const suggested_fix = clampString(body.suggested_fix)
   const submitter_name = clampString(body.submitter_name, 100)
@@ -158,9 +148,9 @@ export default defineEventHandler(async (event) => {
   }
   if (!authUser && !submitter_name) throw createError({ statusCode: 400, statusMessage: 'submitter_name required' })
 
-  // Title comes from the type's primary field; reported_element is no longer
-  // collected by the widget but is honored as a fallback if a caller sends it.
-  const title = (reported_element || (sub === 'idea' ? suggested_fix : problem_description)).slice(0, 140)
+  // Title comes from the type's primary field — the idea itself, or the bug's
+  // problem statement.
+  const title = (sub === 'idea' ? suggested_fix : problem_description).slice(0, 140)
 
   // Upload to S3 BEFORE the transaction so a DB hiccup doesn't leave stray
   // attachment rows pointing at S3 blobs we'd then need to GC.
@@ -187,10 +177,8 @@ export default defineEventHandler(async (event) => {
 
   const postMeta = {
     feedback_sub_type: sub,
-    reported_element,
     problem_description,
     suggested_fix,
-    tags: normTags(body.tags),
     screenshot_url: typeof body.screenshot_url === 'string' ? body.screenshot_url : '',
     page_url: typeof body.page_url === 'string' ? body.page_url : '',
     page_path: typeof body.page_path === 'string' ? body.page_path : '',
@@ -204,7 +192,6 @@ export default defineEventHandler(async (event) => {
     submitter_name,
     submitter_anonymous: !authUser,
     submitted_at: nowIso,
-    status: 'new',
     has_screenshot: uploaded.some(u => u.kind === 'screenshot'),
     attachment_count: uploaded.filter(u => u.kind === 'attachment').length
   }
@@ -286,11 +273,9 @@ export default defineEventHandler(async (event) => {
       status: 'new',
       created_at: result.card.created_at,
       project_id: projectId,
-      reported_element,
       problem_description,
       suggested_fix,
       feedback_sub_type: sub,
-      tags: postMeta.tags,
       attachments: responseAttachments
     }
   } catch (err) {

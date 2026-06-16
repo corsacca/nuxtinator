@@ -1,4 +1,4 @@
-import type { KanbanCardModel, PostType } from '../components/kanban/types'
+import type { KanbanCardModel } from '../components/kanban/types'
 
 /**
  * Cards in the DOING column carry a workflow phase in post_meta.phase. These
@@ -92,27 +92,5 @@ export function priorityDotColor(qualitative: string | null | undefined): string
       return 'bg-gray-400'
     default:
       return ''
-  }
-}
-
-/**
- * Post-type badge: single-letter label + bg/fg tailwind classes.
- */
-export function postTypeBadge(
-  postType: PostType | string | null | undefined
-): { letter: string; bg: string; fg: string } {
-  switch (postType) {
-    case 'task':
-      return { letter: 'T', bg: 'bg-blue-500', fg: 'text-white' }
-    case 'feature':
-      return { letter: 'F', bg: 'bg-purple-500', fg: 'text-white' }
-    case 'bug':
-      return { letter: 'B', bg: 'bg-red-500', fg: 'text-white' }
-    case 'artifact':
-      return { letter: 'A', bg: 'bg-orange-500', fg: 'text-white' }
-    case 'feedback':
-      return { letter: '!', bg: 'bg-amber-500', fg: 'text-white' }
-    default:
-      return { letter: '?', bg: 'bg-gray-400', fg: 'text-white' }
   }
 }

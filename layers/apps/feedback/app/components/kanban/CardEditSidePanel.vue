@@ -12,10 +12,8 @@ type Card = KanbanCardModel
 interface MetaField {
   name: string
   label: string
-  type: 'text' | 'textarea' | 'number' | 'select'
-  options?: string[]
-  // Select options whose display label differs from the stored value. Takes
-  // precedence over `options` when present.
+  type: 'textarea' | 'select'
+  // Select options as { label, value } pairs (label may differ from value).
   optionItems?: { label: string, value: string }[]
   placeholder?: string
 }
@@ -204,9 +202,6 @@ function openLightbox(a: FeedbackAttachment) {
   lightboxOpen.value = true
 }
 
-function selectItems(options: string[]) {
-  return options.map(o => ({ label: o, value: o }))
-}
 
 // Assignee picker options — member display names. Assignee is stored as the
 // name string (the column and the card avatar both key off it).
@@ -268,15 +263,6 @@ function setMeta(key: string, value: any) {
   draft.value.post_meta = next
 }
 
-function setMetaNumber(key: string, value: any) {
-  if (value === '' || value === null || value === undefined) {
-    setMeta(key, null)
-  } else {
-    const n = Number(value)
-    setMeta(key, Number.isNaN(n) ? null : n)
-  }
-}
-
 // -------- Save / delete --------
 async function handleSave() {
   if (!draft.value || !props.card) return
@@ -334,52 +320,20 @@ function determineActionFromColumn(columnName: string): string {
     'PLANNING': 'Design & Architect',
     'BUILDING': 'Implement',
     'TESTING': 'Test & Validate',
-    'DONE': 'Review & Document',
-    'CHANGE REQUESTs': 'Analyze Change Request',
-    'CHANGE REQUESTS': 'Analyze Change Request'
+    'DONE': 'Review & Document'
   }
   return actions[columnName] || 'Work On'
 }
 
-function getActionInstructions(action: string, cardType: string): string {
-  const instructions: Record<string, Record<string, string>> = {
-    'Plan': {
-      'task': 'Help me create a detailed plan with steps to complete this task.',
-      'feature': 'Help me design this feature with architecture, implementation approach, and acceptance criteria.',
-      'bug': 'Help me analyze this bug, identify root cause, and create a fix plan.',
-      'artifact': 'Help me define the structure and content for this project artifact.',
-      'feedback': 'Help me triage this feedback item and decide on next steps.'
-    },
-    'Design & Architect': {
-      'task': 'Help me break down this task into actionable steps.',
-      'feature': 'Help me architect this feature with detailed design decisions.',
-      'bug': 'Help me design the fix approach with implementation details.',
-      'artifact': 'Help me outline the artifact structure and sections.',
-      'feedback': 'Help me turn this feedback into a concrete design plan.'
-    },
-    'Implement': {
-      'task': 'Help me implement this task step by step.',
-      'feature': 'Help me build this feature according to the plan.',
-      'bug': 'Help me implement the fix for this bug.',
-      'artifact': 'Help me create the content for this artifact.',
-      'feedback': 'Help me implement the change this feedback is asking for.'
-    },
-    'Test & Validate': {
-      'task': 'Help me verify this task is complete and working.',
-      'feature': 'Help me write tests and validate this feature works correctly.',
-      'bug': 'Help me verify the bug is fixed and write regression tests.',
-      'artifact': 'Help me review and validate this artifact is complete.',
-      'feedback': 'Help me verify this feedback has been addressed.'
-    },
-    'Review & Document': {
-      'task': 'Help me document what was done and any lessons learned.',
-      'feature': 'Help me create documentation for this feature.',
-      'bug': 'Help me document the bug fix and prevention strategy.',
-      'artifact': 'Help me finalize and polish this artifact.',
-      'feedback': 'Help me summarize what changed and notify the reporter.'
-    }
+function getActionInstructions(action: string): string {
+  const instructions: Record<string, string> = {
+    'Plan': 'Help me triage this feedback item and decide on next steps.',
+    'Design & Architect': 'Help me turn this feedback into a concrete design plan.',
+    'Implement': 'Help me implement the change this feedback is asking for.',
+    'Test & Validate': 'Help me verify this feedback has been addressed.',
+    'Review & Document': 'Help me summarize what changed and notify the reporter.'
   }
-  return instructions[action]?.[cardType] || `Help me ${action.toLowerCase()} this ${cardType}.`
+  return instructions[action] || `Help me ${action.toLowerCase()} this feedback.`
 }
 
 function currentColumn(): KanbanColumnModel | null {
@@ -473,7 +427,7 @@ function formatCardContextForAgent(): string {
   lines.push('')
   lines.push('---')
   lines.push('')
-  lines.push(`**Action:** ${action} — ${getActionInstructions(action, card.post_type)}`)
+  lines.push(`**Action:** ${action} — ${getActionInstructions(action)}`)
   lines.push(`**Context Path:** \`${projectName} / ${columnName} / ${card.title}\``)
   lines.push('')
   lines.push('## Post Meta (All Fields)')
@@ -603,25 +557,10 @@ async function handleCopyForAgent() {
                   @update:model-value="(v: any) => setMeta(f.name, v)"
                 />
                 <USelect
-                  v-else-if="f.type === 'select'"
-                  :model-value="getMeta(f.name) || undefined"
-                  :items="f.optionItems || selectItems(f.options || [])"
-                  placeholder="-- Select --"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta(f.name, v)"
-                />
-                <UInput
-                  v-else-if="f.type === 'number'"
-                  type="number"
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || '0'"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMetaNumber(f.name, v)"
-                />
-                <UInput
                   v-else
-                  :model-value="getMeta(f.name)"
-                  :placeholder="f.placeholder || ''"
+                  :model-value="getMeta(f.name) || undefined"
+                  :items="f.optionItems || []"
+                  placeholder="-- Select --"
                   class="w-full"
                   @update:model-value="(v: any) => setMeta(f.name, v)"
                 />

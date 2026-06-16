@@ -287,10 +287,10 @@ function truncate(s, n = 60) {
 }
 
 // List title comes from each type's primary field (an idea's idea, a bug's
-// problem); reported_element is kept only as a fallback for older records.
+// problem).
 function itemTitle(s) {
   const primary = s.feedback_sub_type === 'idea' ? s.suggested_fix : s.problem_description
-  return s.reported_element || primary || s.problem_description || s.suggested_fix || 'Feedback'
+  return primary || s.problem_description || s.suggested_fix || 'Feedback'
 }
 
 function handleLogout() {
@@ -651,12 +651,8 @@ watch(open, (v) => {
                       <dt v-if="s.suggested_fix">Suggested solution</dt>
                       <dd v-if="s.suggested_fix">{{ s.suggested_fix }}</dd>
                     </template>
-                    <dt v-if="s.tags?.length">Tags</dt>
-                    <dd v-if="s.tags?.length">{{ s.tags.join(', ') }}</dd>
                     <dt v-if="s.page_path">Page</dt>
                     <dd v-if="s.page_path">{{ s.page_path }}</dd>
-                    <dt v-if="s.external_reference">Ref</dt>
-                    <dd v-if="s.external_reference">{{ s.external_reference }}</dd>
                     <dt v-if="s.attachments?.length">Attachments</dt>
                     <dd v-if="s.attachments?.length" class="fw-item-attachments">
                       <a

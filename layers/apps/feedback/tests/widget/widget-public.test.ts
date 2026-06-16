@@ -50,7 +50,6 @@ describe('public widget endpoints', () => {
       method: 'POST',
       body: {
         project_id: project.id,
-        reported_element: 'login button',
         problem_description: 'button is too small',
         suggested_fix: 'make it bigger',
         submitter_name: 'Anonymous Tester',
@@ -92,7 +91,6 @@ describe('public widget endpoints', () => {
       method: 'POST',
       body: {
         project_id: project.id,
-        reported_element: 'el',
         problem_description: 'pd',
         suggested_fix: 'sf'
       },
@@ -142,7 +140,6 @@ describe('public widget endpoints', () => {
       method: 'POST',
       body: {
         project_id: randomUUID(),
-        reported_element: 'x',
         problem_description: 'y',
         suggested_fix: 'z',
         submitter_name: 'a'
@@ -156,7 +153,6 @@ describe('public widget endpoints', () => {
       method: 'POST',
       body: {
         project_id: 'not-a-uuid',
-        reported_element: 'x',
         problem_description: 'y',
         suggested_fix: 'z',
         submitter_name: 'a'

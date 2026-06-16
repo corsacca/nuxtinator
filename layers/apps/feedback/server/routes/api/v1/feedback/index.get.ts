@@ -73,7 +73,9 @@ export default defineEventHandler(async (event) => {
 
     return rows.map((r) => {
       const meta = (r.post_meta ?? {}) as Record<string, any>
-      const status = meta.status ?? COLUMN_TO_STATUS[r.column_name ?? ''] ?? 'new'
+      // Status follows the card's column — it advances as the team moves the
+      // card across the board (Inbox → Doing → Done / Archive).
+      const status = COLUMN_TO_STATUS[r.column_name ?? ''] ?? 'new'
       return {
         id: r.id,
         project_id: r.project_id,
@@ -81,14 +83,10 @@ export default defineEventHandler(async (event) => {
         created_at: r.created_at,
         updated_at: r.updated_at,
         feedback_sub_type: meta.feedback_sub_type ?? 'bug',
-        reported_element: meta.reported_element ?? '',
         problem_description: meta.problem_description ?? '',
         suggested_fix: meta.suggested_fix ?? '',
-        tags: Array.isArray(meta.tags) ? meta.tags : [],
         page_url: meta.page_url ?? '',
         page_path: meta.page_path ?? '',
-        external_reference: meta.external_reference ?? null,
-        admin_notes: meta.admin_notes ?? null,
         attachments: attachmentsByCard.get(r.id) ?? []
       }
     })

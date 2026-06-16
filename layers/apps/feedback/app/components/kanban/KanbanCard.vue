@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { KanbanCardModel } from './types'
-import { isCardOverdue, priorityDotColor, postTypeBadge, cardPhase, phaseLabel, DOING_COLUMN } from '../../composables/useCardUtils'
+import { isCardOverdue, priorityDotColor, cardPhase, phaseLabel, DOING_COLUMN } from '../../composables/useCardUtils'
 
 const props = withDefaults(
   defineProps<{
@@ -20,8 +20,6 @@ const emit = defineEmits<{
   dragstart: [payload: { card: KanbanCardModel; event: DragEvent }]
   dragend: []
 }>()
-
-const badge = computed(() => postTypeBadge(props.card.post_type))
 
 const priorityQual = computed<string | null>(() => {
   const pm = props.card.post_meta || {}
@@ -89,7 +87,7 @@ function handleDragEnd(event: DragEvent) {
   <div
     class="relative rounded-md border bg-(--ui-bg-elevated) shadow-sm cursor-grab select-none
            transition-shadow duration-100
-           w-full min-h-[84px] p-2 pr-7
+           w-full min-h-[84px] p-2
            hover:shadow-md hover:border-(--ui-primary)"
     :class="overdue ? 'border-red-500' : 'border-(--ui-border)'"
     draggable="true"
@@ -105,14 +103,6 @@ function handleDragEnd(event: DragEvent) {
       title="Overdue"
       aria-label="Overdue"
     >⚠️</span>
-
-    <div
-      class="absolute top-1 right-1 w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center"
-      :class="[badge.bg, badge.fg]"
-      :title="card.post_type"
-    >
-      {{ badge.letter }}
-    </div>
 
     <h4
       class="text-xs font-medium line-clamp-2 leading-snug"
