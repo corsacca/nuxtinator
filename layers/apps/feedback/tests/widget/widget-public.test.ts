@@ -10,6 +10,7 @@ import {
   createFeedbackOrgWith,
   createFeedbackUser,
   getAuthHeaders,
+  generateScopedTestToken,
   createTestProject,
   createTestCard,
   getColumnByName
@@ -227,19 +228,18 @@ describe('public widget endpoints', () => {
     const { org } = await createFeedbackOrgWith(sql, ['admin'])
     const project = await createTestProject(sql, { org_id: org.id })
     const submitter = await createFeedbackUser(sql)
-    const cookieAuth = getAuthHeaders(submitter)
-    // Extract the JWT from the cookie our helper generated.
-    const jwt = cookieAuth.headers.cookie.split('=')[1]
+    // The widget Bearer path verifies a feedback-scoped token (signScopedToken),
+    // not a full session cookie — mint one carrying the matching scope.
+    const token = generateScopedTestToken(submitter, 'feedback')
 
     const res = await $fetch<{ id: string }>('/api/v1/feedback', {
       method: 'POST',
       body: {
         project_id: project.id,
-        reported_element: 'el',
         problem_description: 'pd',
         suggested_fix: 'sf'
       },
-      headers: { Authorization: `Bearer ${jwt}` }
+      headers: { Authorization: `Bearer ${token}` }
     })
     expect(res.id).toBeDefined()
 

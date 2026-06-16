@@ -186,6 +186,11 @@ export async function cleanupFeedbackTestData(sql: ReturnType<typeof postgres>):
     WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'test-feedback-%@example.com')
   `
 
+  // Widget rate-limit counters live in activity_logs keyed by IP, with a NULL
+  // user_id for anonymous submissions — so the user-scoped delete above misses
+  // them and they bleed across tests, tripping the per-IP limit. Clear them.
+  await sql`DELETE FROM activity_logs WHERE event_type LIKE 'ratelimit.feedback%'`
+
   // Now the orgs + users themselves. Tenancy CASCADE handles memberships,
   // org_apps, etc.; users cascade catches activity_logs that we didn't
   // explicitly wipe.
