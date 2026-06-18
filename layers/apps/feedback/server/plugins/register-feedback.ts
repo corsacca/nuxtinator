@@ -16,7 +16,7 @@ export default defineNitroPlugin(() => {
     id: 'feedback',
     title: 'Feedback',
     path: '/feedback',
-    icon: 'i-lucide-inbox',
+    icon: 'i-lucide-bug',
     requiredPermission: 'feedback.access',
     order: 30
   })
