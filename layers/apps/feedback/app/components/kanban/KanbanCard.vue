@@ -36,23 +36,43 @@ const showOverdueIcon = computed(() => overdue.value && !props.card.is_done)
 const showPhase = computed(() => props.columnName === DOING_COLUMN)
 const phaseText = computed(() => phaseLabel(cardPhase(props.card)))
 
-const assigneeInitials = computed(() => {
-  const a = props.card.assignee
-  if (!a) return ''
-  const trimmed = String(a).trim()
-  if (!trimmed) return ''
-  const parts = trimmed.split(/\s+/)
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    return (parts[0][0]! + parts[1][0]!).toUpperCase()
-  }
-  return trimmed.slice(0, 2).toUpperCase()
-})
-
 const shortDueDate = computed(() => {
   if (!props.card.due_date) return ''
   const d = new Date(props.card.due_date)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+})
+
+// Compact creation date ("Jun 19"); the full timestamp lives in the tooltip.
+const createdDate = computed(() => {
+  if (!props.card.created_at) return ''
+  const d = new Date(props.card.created_at)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+})
+
+const createdAtFull = computed(() => {
+  if (!props.card.created_at) return ''
+  const d = new Date(props.card.created_at)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+})
+
+// Submitter applies only to feedback cards; prefer the captured name, fall
+// back to the email, and only show "Anonymous" when neither is present.
+const submitterName = computed(() => {
+  if (props.card.post_type !== 'feedback') return ''
+  const pm = props.card.post_meta || {}
+  const name = pm.submitter_name
+  if (name && String(name).trim()) return String(name).trim()
+  const email = pm.submitter_email
+  if (email && String(email).trim()) return String(email).trim()
+  return 'Anonymous'
+})
+
+const assigneeName = computed(() => {
+  const a = props.card.assignee
+  return a ? String(a).trim() : ''
 })
 
 function handleClick() {
@@ -122,11 +142,21 @@ function handleDragEnd(event: DragEvent) {
       </span>
 
       <span
-        v-if="assigneeInitials"
-        class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-(--ui-bg-accented) text-[9px] font-semibold text-(--ui-text) shrink-0"
-        :title="card.assignee || ''"
+        v-if="assigneeName"
+        class="inline-flex items-center gap-1 min-w-0 shrink"
+        :title="`Assigned to ${assigneeName}`"
       >
-        {{ assigneeInitials }}
+        <UIcon name="i-lucide-user-check" class="w-3 h-3 shrink-0" />
+        <span class="truncate">{{ assigneeName }}</span>
+      </span>
+
+      <span
+        v-if="createdDate"
+        class="inline-flex items-center gap-0.5 shrink-0"
+        :title="`Created ${createdAtFull}`"
+      >
+        <UIcon name="i-lucide-clock" class="w-3 h-3" />
+        <span>{{ createdDate }}</span>
       </span>
 
       <span
@@ -155,6 +185,15 @@ function handleDragEnd(event: DragEvent) {
         title="Done"
         aria-label="Done"
       >✓</span>
+    </div>
+
+    <div
+      v-if="submitterName"
+      class="mt-1 flex items-center gap-1 text-[11px] text-(--ui-text-muted) min-w-0"
+      :title="`Submitted by ${submitterName}`"
+    >
+      <UIcon name="i-lucide-user" class="w-3 h-3 shrink-0" />
+      <span class="truncate">{{ submitterName }}</span>
     </div>
   </div>
 </template>

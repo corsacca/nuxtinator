@@ -9,6 +9,7 @@ export interface KanbanCardModel {
   post_type: PostType
   description: string | null
   assignee: string | null
+  created_at: string
   start_date: string | null
   due_date: string | null
   priority: string | null

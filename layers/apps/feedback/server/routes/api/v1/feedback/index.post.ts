@@ -20,6 +20,7 @@ import { enforceWidgetRateLimit, widgetClientIp } from '../../../../utils/rate-l
 import { withProjectOrgContext } from '#tenant/server'
 import { logCreate } from '#core/server/utils/activity-logger'
 import { uploadToS3, generateSignedUrl, deleteFromS3 } from '#core/server/utils/storage'
+import { notifyNewFeedbackCard } from '../../../../utils/notify-recipients'
 
 const ALLOWED_SUB_TYPES = ['bug', 'idea'] as const
 type SubType = typeof ALLOWED_SUB_TYPES[number]
@@ -220,6 +221,12 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 500, statusMessage: 'FEEDBACK INBOX column missing' })
       }
 
+      const project = await tx
+        .selectFrom('projects')
+        .select(['name', 'post_meta'])
+        .where('id', '=', projectId)
+        .executeTakeFirst()
+
       const card = await tx
         .insertInto('cards')
         .values({
@@ -247,6 +254,17 @@ export default defineEventHandler(async (event) => {
           .returningAll()
           .execute()
         : []
+
+      // Notify the project's configured digest recipients about the new inbox
+      // card. Writes in this txn so a card and its notices commit together;
+      // core's daily digest sweep turns these into one email per recipient.
+      await notifyNewFeedbackCard(tx, {
+        cardTitle: title,
+        projectName: project?.name ?? null,
+        subType: sub,
+        actorId: authUser?.userId ?? null,
+        projectPostMeta: project?.post_meta
+      })
 
       return { card, attachmentRows }
     })

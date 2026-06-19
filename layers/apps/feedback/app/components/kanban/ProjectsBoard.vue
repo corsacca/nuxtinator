@@ -23,7 +23,6 @@ const emit = defineEmits<{
   cardDrop: [payload: { card: Card; toColumnId: string; toSwimlaneId: string; toProjectId: string }]
   addSwimlane: [projectId: string]
   renameProject: [project: Project]
-  deleteProject: [project: Project]
   reorderColumn: [payload: { draggedId: string; targetId: string }]
   reorderProjects: [payload: { orderedIds: string[] }]
   projectContextMenu: [payload: { x: number; y: number; project: Project }]
@@ -36,30 +35,15 @@ function isProjectExpanded(project: Project): boolean {
   return (project as any).is_expanded === true
 }
 
-// Transient "copied" indicator so the admin gets visual confirmation when they
-// grab a project UUID for the feedback web component's `projectId` prop.
-const copiedProjectId = ref<string | null>(null)
-async function copyProjectId(project: Project) {
-  const id = project.id
-  try {
-    await navigator.clipboard.writeText(id)
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = id
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-  }
-  copiedProjectId.value = id
-  setTimeout(() => {
-    if (copiedProjectId.value === id) copiedProjectId.value = null
-  }, 1500)
-}
-
 function defaultLaneOf(projectId: string): Swimlane | undefined {
   const lanes = lanesOf(projectId)
   return lanes.find(l => l.is_default) ?? lanes[0]
+}
+
+// A project always has a default swimlane; the expand/collapse chevron only
+// reveals something new when there's at least one additional lane.
+function hasMultipleLanes(projectId: string): boolean {
+  return lanesOf(projectId).length > 1
 }
 
 function allLaneIdsOf(projectId: string): string[] {
@@ -259,6 +243,7 @@ const gridTemplate = computed(
             @contextmenu.prevent="emit('projectContextMenu', { x: $event.clientX, y: $event.clientY, project })"
           >
             <button
+              v-if="hasMultipleLanes(project.id)"
               type="button"
               class="shrink-0 text-(--ui-text-muted) hover:text-(--ui-text) p-0.5"
               :title="`Expand ${project.name} — show swimlanes`"
@@ -266,20 +251,12 @@ const gridTemplate = computed(
             >
               <UIcon name="i-lucide-chevron-right" class="w-4 h-4" />
             </button>
+            <span v-else class="shrink-0 w-5" aria-hidden="true" />
             <span class="text-sm font-semibold truncate flex-1 min-w-0">{{ project.name }}</span>
             <span class="text-[11px] text-(--ui-text-muted) shrink-0">
               {{ projectCardCount(project.id) }}
             </span>
             <div class="ml-auto hidden group-hover/projrow:flex items-center gap-1">
-              <UButton
-                :icon="copiedProjectId === project.id ? 'i-lucide-check' : 'i-lucide-copy'"
-                variant="ghost"
-                :color="copiedProjectId === project.id ? 'success' : 'neutral'"
-                size="xs"
-                :aria-label="`Copy project ID for feedback web component (${project.id})`"
-                :title="copiedProjectId === project.id ? 'Copied!' : `Copy project ID — ${project.id}`"
-                @click.stop="copyProjectId(project)"
-              />
               <UButton
                 icon="i-lucide-plus"
                 variant="ghost"
@@ -295,14 +272,6 @@ const gridTemplate = computed(
                 size="xs"
                 aria-label="Rename project"
                 @click.stop="emit('renameProject', project)"
-              />
-              <UButton
-                icon="i-lucide-trash-2"
-                variant="ghost"
-                color="error"
-                size="xs"
-                aria-label="Delete project"
-                @click.stop="emit('deleteProject', project)"
               />
             </div>
           </div>
@@ -348,6 +317,7 @@ const gridTemplate = computed(
             >
               <template v-if="idx === 0">
                 <button
+                  v-if="hasMultipleLanes(project.id)"
                   type="button"
                   class="shrink-0 text-(--ui-text-muted) hover:text-(--ui-text) p-0.5"
                   :title="`Collapse ${project.name}`"
@@ -355,20 +325,12 @@ const gridTemplate = computed(
                 >
                   <UIcon name="i-lucide-chevron-down" class="w-4 h-4" />
                 </button>
+                <span v-else class="shrink-0 w-5" aria-hidden="true" />
                 <span class="text-sm font-semibold truncate flex-1 min-w-0">{{ project.name }}</span>
                 <span class="text-[11px] text-(--ui-text-muted) shrink-0">
                   {{ projectCardCount(project.id) }}
                 </span>
                 <div class="ml-auto hidden group-hover/projrow:flex items-center gap-1">
-                  <UButton
-                    :icon="copiedProjectId === project.id ? 'i-lucide-check' : 'i-lucide-copy'"
-                    variant="ghost"
-                    :color="copiedProjectId === project.id ? 'success' : 'neutral'"
-                    size="xs"
-                    :aria-label="`Copy project ID for feedback web component (${project.id})`"
-                    :title="copiedProjectId === project.id ? 'Copied!' : `Copy project ID — ${project.id}`"
-                    @click.stop="copyProjectId(project)"
-                  />
                   <UButton
                     icon="i-lucide-plus"
                     variant="ghost"
@@ -384,14 +346,6 @@ const gridTemplate = computed(
                     size="xs"
                     aria-label="Rename project"
                     @click.stop="emit('renameProject', project)"
-                  />
-                  <UButton
-                    icon="i-lucide-trash-2"
-                    variant="ghost"
-                    color="error"
-                    size="xs"
-                    aria-label="Delete project"
-                    @click.stop="emit('deleteProject', project)"
                   />
                 </div>
               </template>

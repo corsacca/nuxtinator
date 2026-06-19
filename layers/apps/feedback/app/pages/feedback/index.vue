@@ -124,8 +124,15 @@ const projectForm = ref({
   name: '',
   description: '',
   allowedOrigins: '',
+  notifyUserIds: [] as string[],
   mode: 'create' as 'create' | 'edit'
 })
+
+// Candidate recipients for the per-project notify picker, shaped for
+// USelectMenu (value = user id, label = display name).
+const userItems = computed(() =>
+  assignableUsers.value.map(u => ({ id: u.id, label: u.display_name || 'Unnamed user' }))
+)
 const projectBusy = ref(false)
 
 // The allowed-origins textarea accepts one origin per line (commas/spaces also
@@ -135,15 +142,17 @@ function parseOriginsInput(value: string): string[] {
 }
 
 function openCreateProject() {
-  projectForm.value = { id: '', name: '', description: '', allowedOrigins: '', mode: 'create' }
+  projectForm.value = { id: '', name: '', description: '', allowedOrigins: '', notifyUserIds: [], mode: 'create' }
   projectModalOpen.value = true
 }
 function openRenameProject(p: Project) {
+  const notify = p.post_meta?.notify_user_ids
   projectForm.value = {
     id: p.id,
     name: p.name,
     description: p.description ?? '',
     allowedOrigins: (p.allowed_origins ?? []).join('\n'),
+    notifyUserIds: Array.isArray(notify) ? notify.filter((v): v is string => typeof v === 'string') : [],
     mode: 'edit'
   }
   projectModalOpen.value = true
@@ -164,12 +173,18 @@ async function submitProject() {
       const lanes = await $fetch<Swimlane[]>('/api/feedback/swimlanes', { query: { project_id: p.id } })
       swimlanes.value.push(...lanes)
     } else {
+      // Merge into the project's existing post_meta so the notify list rides
+      // alongside other keys (e.g. sort_order) — the PATCH replaces post_meta
+      // wholesale, so sending a partial bag would drop them.
+      const existing = projects.value.find(x => x.id === projectForm.value.id)
+      const post_meta = { ...(existing?.post_meta ?? {}), notify_user_ids: projectForm.value.notifyUserIds }
       const updated = await $fetch<Project>(`/api/feedback/projects/${projectForm.value.id}`, {
         method: 'PATCH',
         body: {
           name: projectForm.value.name.trim(),
           description: projectForm.value.description,
-          allowed_origins: parseOriginsInput(projectForm.value.allowedOrigins)
+          allowed_origins: parseOriginsInput(projectForm.value.allowedOrigins),
+          post_meta
         }
       })
       const i = projects.value.findIndex(x => x.id === updated.id)
@@ -192,6 +207,36 @@ async function deleteProject(p: Project) {
   } catch (e: any) {
     toast.add({ title: 'Delete failed', description: e?.data?.statusMessage, color: 'error' })
   }
+}
+
+// Delete the project currently open in the edit modal, then dismiss the modal
+// once the delete flow resolves (it no-ops if the user cancels the confirm).
+async function deleteProjectFromModal() {
+  const p = projects.value.find(x => x.id === projectForm.value.id)
+  if (!p) return
+  const before = projects.value.length
+  await deleteProject(p)
+  if (projects.value.length < before) projectModalOpen.value = false
+}
+
+// Transient "copied" indicator so the admin gets visual confirmation when they
+// grab the project UUID for the feedback web component's `projectId` prop.
+const copiedProjectId = ref<string | null>(null)
+async function copyProjectId(id: string) {
+  try {
+    await navigator.clipboard.writeText(id)
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = id
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+  copiedProjectId.value = id
+  setTimeout(() => {
+    if (copiedProjectId.value === id) copiedProjectId.value = null
+  }, 1500)
 }
 
 // ---------- Swimlane modal ----------
@@ -530,7 +575,6 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
           @card-drop="onCardDrop"
           @add-swimlane="openAddSwimlane"
           @rename-project="openRenameProject"
-          @delete-project="deleteProject"
           @reorder-column="onReorderColumn"
           @reorder-projects="onReorderProjects"
           @project-context-menu="openProjectCtx"
@@ -555,10 +599,34 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
       <template #body>
         <div class="space-y-4">
           <UFormField label="Name" required>
-            <UInput v-model="projectForm.name" placeholder="e.g., Map A" autofocus />
+            <UInput v-model="projectForm.name" placeholder="e.g., Map A" autofocus class="w-full" />
           </UFormField>
           <UFormField label="Description">
-            <UTextarea v-model="projectForm.description" :rows="2" />
+            <UTextarea v-model="projectForm.description" :rows="2" class="w-full" />
+          </UFormField>
+          <UFormField
+            v-if="projectForm.mode === 'edit'"
+            label="Project key"
+            help="Pass this value as the feedback web component's `projectId` prop when embedding the widget."
+          >
+            <UInput
+              :model-value="projectForm.id"
+              readonly
+              class="w-full"
+              @focus="$event.target.select()"
+            >
+              <template #trailing>
+                <UButton
+                  :icon="copiedProjectId === projectForm.id ? 'i-lucide-check' : 'i-lucide-copy'"
+                  variant="link"
+                  :color="copiedProjectId === projectForm.id ? 'success' : 'neutral'"
+                  size="xs"
+                  :aria-label="`Copy project ID for feedback web component (${projectForm.id})`"
+                  :title="copiedProjectId === projectForm.id ? 'Copied!' : 'Copy project ID'"
+                  @click="copyProjectId(projectForm.id)"
+                />
+              </template>
+            </UInput>
           </UFormField>
           <UFormField
             v-if="projectForm.mode === 'edit'"
@@ -569,16 +637,44 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
               v-model="projectForm.allowedOrigins"
               :rows="3"
               placeholder="https://app.example.com&#10;https://docs.example.com"
+              class="w-full"
+            />
+          </UFormField>
+          <UFormField
+            v-if="projectForm.mode === 'edit'"
+            label="Notify on new feedback"
+            help="These users get the daily digest of new feedback for this project. Leave empty to fall back to the default recipients in Feedback settings."
+          >
+            <USelectMenu
+              v-model="projectForm.notifyUserIds"
+              :items="userItems"
+              value-key="id"
+              label-key="label"
+              multiple
+              :search-input="{ placeholder: 'Search users...' }"
+              placeholder="Use default recipients"
+              class="w-full"
             />
           </UFormField>
         </div>
       </template>
       <template #footer>
-        <div class="flex justify-end gap-2">
-          <UButton variant="ghost" @click="projectModalOpen = false">Cancel</UButton>
-          <UButton :loading="projectBusy" :disabled="!projectForm.name.trim()" @click="submitProject">
-            {{ projectForm.mode === 'create' ? 'Create' : 'Save' }}
+        <div class="flex items-center gap-2">
+          <UButton
+            v-if="projectForm.mode === 'edit'"
+            color="error"
+            variant="soft"
+            icon="i-lucide-trash-2"
+            @click="deleteProjectFromModal"
+          >
+            Delete
           </UButton>
+          <div class="ml-auto flex gap-2">
+            <UButton variant="ghost" @click="projectModalOpen = false">Cancel</UButton>
+            <UButton :loading="projectBusy" :disabled="!projectForm.name.trim()" @click="submitProject">
+              {{ projectForm.mode === 'create' ? 'Create' : 'Save' }}
+            </UButton>
+          </div>
         </div>
       </template>
     </UModal>
