@@ -86,7 +86,7 @@ async function loadAll() {
 }
 
 const pollPaused = computed(
-  () => cardPanelOpen.value || projectModalOpen.value || swimlaneModalOpen.value || cardModalOpen.value
+  () => cardPanelOpen.value || projectModalOpen.value || swimlaneModalOpen.value || cardModalOpen.value || settingsModalOpen.value
 )
 
 async function refreshCards() {
@@ -237,6 +237,39 @@ async function copyProjectId(id: string) {
   setTimeout(() => {
     if (copiedProjectId.value === id) copiedProjectId.value = null
   }, 1500)
+}
+
+// ---------- Feedback settings (org-wide defaults) ----------
+const settingsModalOpen = ref(false)
+const settingsBusy = ref(false)
+// Org-wide fallback recipient list for projects that haven't chosen their own.
+const defaultNotifyUserIds = ref<string[]>([])
+
+async function openSettings() {
+  settingsModalOpen.value = true
+  try {
+    const res = await $fetch<{ user_ids: string[] }>('/api/feedback/notify-settings')
+    defaultNotifyUserIds.value = res.user_ids
+  } catch (e: any) {
+    toast.add({ title: 'Failed to load settings', description: e?.data?.statusMessage, color: 'error' })
+  }
+}
+
+async function saveSettings() {
+  settingsBusy.value = true
+  try {
+    const res = await $fetch<{ user_ids: string[] }>('/api/feedback/notify-settings', {
+      method: 'PUT',
+      body: { user_ids: defaultNotifyUserIds.value }
+    })
+    defaultNotifyUserIds.value = res.user_ids
+    settingsModalOpen.value = false
+    toast.add({ title: 'Settings saved', color: 'success' })
+  } catch (e: any) {
+    toast.add({ title: 'Save failed', description: e?.data?.statusMessage, color: 'error' })
+  } finally {
+    settingsBusy.value = false
+  }
 }
 
 // ---------- Swimlane modal ----------
@@ -529,6 +562,13 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
           @click="loadAll"
         />
         <UButton
+          variant="ghost"
+          size="sm"
+          icon="i-lucide-settings"
+          aria-label="Feedback settings"
+          @click="openSettings"
+        />
+        <UButton
           variant="soft"
           size="sm"
           icon="i-lucide-plus"
@@ -675,6 +715,34 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
               {{ projectForm.mode === 'create' ? 'Create' : 'Save' }}
             </UButton>
           </div>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="settingsModalOpen" title="Feedback settings">
+      <template #body>
+        <div class="space-y-4">
+          <UFormField
+            label="Default notification recipients"
+            help="These users get the daily digest of new feedback for any project that hasn't chosen its own recipients. Leave empty to notify no one by default."
+          >
+            <USelectMenu
+              v-model="defaultNotifyUserIds"
+              :items="userItems"
+              value-key="id"
+              label-key="label"
+              multiple
+              :search-input="{ placeholder: 'Search users...' }"
+              placeholder="No default recipients"
+              class="w-full"
+            />
+          </UFormField>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton variant="ghost" @click="settingsModalOpen = false">Cancel</UButton>
+          <UButton :loading="settingsBusy" @click="saveSettings">Save</UButton>
         </div>
       </template>
     </UModal>

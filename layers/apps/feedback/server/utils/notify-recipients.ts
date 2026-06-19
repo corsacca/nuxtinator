@@ -1,8 +1,9 @@
 // Resolves who is notified about new inbox feedback and enqueues the notice.
 //
 // Recipients come from the project's own `post_meta.notify_user_ids`. A project
-// with no list notifies no one. (A configurable default for projects that
-// haven't chosen recipients will come from a separate settings system.)
+// with no list falls back to the org-wide default recipients
+// (`feedback:default_notify_user_ids` in the shared settings store); if that's
+// empty too, no one is notified.
 //
 // Delivery is intentionally not handled here. Each recipient gets a core
 // notification with `email: 'digest'`, and core's daily digest sweep batches
@@ -12,8 +13,17 @@
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { createNotification } from '#core/server/utils/notifications'
+import { getSetting } from '#core/server/utils/settings-store'
 
-function sanitizeIds(value: unknown): string[] {
+// Settings namespace + key for the org-wide default recipient list. Declared in
+// code (register-feedback.ts), stored as overrides only.
+export const FEEDBACK_SETTINGS_NAMESPACE = 'feedback'
+export const DEFAULT_NOTIFY_SETTING_KEY = 'default_notify_user_ids'
+
+// Coerce an arbitrary stored/incoming value into a deduped list of user-id
+// strings. Used both as the setting's registered `parse` and to read the
+// per-project list.
+export function sanitizeNotifyUserIds(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   const out: string[] = []
   for (const v of value) {
@@ -26,7 +36,7 @@ function sanitizeIds(value: unknown): string[] {
 export function resolveFeedbackNotifyRecipientIds(
   projectPostMeta: Record<string, any> | null | undefined
 ): string[] {
-  return sanitizeIds(projectPostMeta?.notify_user_ids)
+  return sanitizeNotifyUserIds(projectPostMeta?.notify_user_ids)
 }
 
 export interface NewFeedbackNotice {
@@ -45,7 +55,13 @@ export async function notifyNewFeedbackCard(
   tx: Transaction<Database>,
   notice: NewFeedbackNotice
 ): Promise<void> {
-  const recipientIds = resolveFeedbackNotifyRecipientIds(notice.projectPostMeta)
+  // Per-project list wins; if the project hasn't chosen recipients, fall back
+  // to the org-wide default from the shared settings store (RLS scopes the read
+  // to this card's org inside the caller's transaction).
+  let recipientIds = resolveFeedbackNotifyRecipientIds(notice.projectPostMeta)
+  if (recipientIds.length === 0) {
+    recipientIds = await getSetting<string[]>(tx, FEEDBACK_SETTINGS_NAMESPACE, DEFAULT_NOTIFY_SETTING_KEY)
+  }
   if (recipientIds.length === 0) return
 
   const label = notice.subType === 'idea' ? 'idea' : 'bug'

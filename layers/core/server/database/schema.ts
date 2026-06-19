@@ -55,6 +55,29 @@ export interface AppsTable {
   updated_at: ColumnType<Date, string | undefined, string>
 }
 
+// Shared key-value settings store. One row per (namespace, key) holding a
+// human-chosen OVERRIDE value as jsonb. Defaults and labels never live here —
+// each layer declares them in code via `registerSetting()`; reads merge the
+// registry default with the row when present (see settings-store.ts). The
+// `namespace` is the owning layer's app id (e.g. 'feedback'), so keys can't
+// collide across layers.
+//
+// In multi-tenant mode the tenancy layer retrofits an `org_id` column + RLS
+// (tenancy_013_retrofit_core_settings), scoping every row to one org; in
+// single-tenant mode there is no org_id and the store is deployment-global.
+// `org_id` is intentionally absent from this type — RLS and the column default
+// keep it invisible to queries, the same way app-layer tenant tables omit it.
+export interface CoreSettingsTable {
+  id: Generated<string>
+  namespace: string
+  key: string
+  // jsonb. Reads return the parsed JS value (object | array | scalar). All
+  // writes go through `setSetting`, which serializes with an explicit ::jsonb
+  // cast — never assign a raw JS value to this column directly.
+  value: ColumnType<unknown, unknown, unknown>
+  updated_at: ColumnType<Date, string | undefined, string>
+}
+
 export type NotificationEmailMode = 'immediate' | 'digest' | 'none'
 
 export interface NotificationsTable {
@@ -79,4 +102,5 @@ export interface Database {
   custom_roles: CustomRolesTable
   apps: AppsTable
   notifications: NotificationsTable
+  core_settings: CoreSettingsTable
 }
