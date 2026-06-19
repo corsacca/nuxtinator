@@ -155,7 +155,7 @@ function handleDragEnd(event: DragEvent) {
         class="inline-flex items-center gap-0.5 shrink-0"
         :title="`Created ${createdAtFull}`"
       >
-        <UIcon name="i-lucide-clock" class="w-3 h-3" />
+        <UIcon name="i-lucide-calendar" class="w-3 h-3" />
         <span>{{ createdDate }}</span>
       </span>
 
