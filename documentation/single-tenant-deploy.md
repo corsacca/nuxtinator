@@ -31,7 +31,7 @@ Just don't include `layer('@nuxtinator/tenancy')` in `extends:`:
 export default defineNuxtConfig({
   extends: [
     layer('@nuxtinator/core'),
-    layer('@nuxtinator/email-mailgun'),  // optional — pick an email backend
+    layer('@nuxtinator/email-cloudflare'),  // optional — pick an email backend
     layer('@nuxtinator/oauth'),          // optional — only if you need OAuth/MCP
     layer('@nuxtinator/mcp'),            // optional
     layer('@nuxtinator/calendar'),
@@ -57,8 +57,8 @@ APP_TITLE="Your App"
 NUXT_PUBLIC_SITE_URL=https://app.example.com
 
 # Auth + email — same as multi-tenant.
-MAILGUN_API_KEY=...
-MAILGUN_DOMAIN=...
+CLOUDFLARE_ACCOUNT_ID=...
+CLOUDFLARE_EMAIL_API_TOKEN=...
 SMTP_FROM=...
 SMTP_FROM_NAME=...
 ```

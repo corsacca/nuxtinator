@@ -72,7 +72,7 @@ const REF = process.env.NUXTINATOR_REF || 'master'
 export const LAYERS = [
   { id: 'core',           pkg: '@nuxtinator/core',           url: `github:corsacca/nuxtinator/layers/core#${REF}` },
   { id: 'tenancy',        pkg: '@nuxtinator/tenancy',        url: `github:corsacca/nuxtinator/layers/tenancy#${REF}` },
-  { id: 'email-mailgun',  pkg: '@nuxtinator/email-mailgun',  url: `github:corsacca/nuxtinator/layers/email-mailgun#${REF}` },
+  { id: 'email-cloudflare', pkg: '@nuxtinator/email-cloudflare', url: `github:corsacca/nuxtinator/layers/email-cloudflare#${REF}` },
   // ...one entry per layer...
   { id: 'dev',            pkg: '@nuxtinator/dev',            url: `github:corsacca/nuxtinator/layers/dev#${REF}` }
 ] as const
@@ -84,7 +84,7 @@ Rules of thumb:
 
 - **`core` is mandatory.** It owns the registries, auth, admin shell, and the single-mode `#tenant` kernel.
 - **`tenancy` is the big switch.** With it: orgs, memberships, RLS, two DB roles, `/@:slug/...` URLs. Without it: single-tenant, one DB role, plain URLs. App layers work the same in both modes — see [layers.md](layers.md#the-tenant-kernel).
-- **Email backends are pluggable.** Currently shipped: `email-mailgun`. Pick zero or one. With none loaded, code that imports `#email` throws helpfully on first call (so unused features stay quiet, but auth flows that send mail will fail loudly).
+- **Email backends are pluggable.** Currently shipped: `email-cloudflare` (default) and `email-mailgun`. Pick zero or one. With none loaded, code that imports `#email` throws helpfully on first call (so unused features stay quiet, but auth flows that send mail will fail loudly).
 - **App layers are à la carte.** Keep what you want, delete what you don't. Each is self-contained.
 - **Drop `dev` for production builds** — it adds the `/kitchen` sandbox.
 
@@ -113,6 +113,7 @@ Add more depending on which layers you enabled:
 | Layer | Extra env |
 |---|---|
 | `tenancy` | `APP_DATABASE_URL` (the `app_user` role; falls back to `DATABASE_URL` in single-deployment) |
+| `email-cloudflare` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_EMAIL_API_TOKEN`, `SMTP_FROM`, `SMTP_FROM_NAME` |
 | `email-mailgun` | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `SMTP_FROM`, `SMTP_FROM_NAME` |
 | `oauth` | `OAUTH_CONSENT_COOKIE_SECRET` |
 | `feedback` | `NUXT_PUBLIC_FEEDBACK_PROJECT_ID` |

@@ -29,7 +29,7 @@ const REF = process.env.NUXTINATOR_REF || 'master'
 export const LAYERS = [
   { id: 'core',            pkg: '@nuxtinator/core',           url: `github:corsacca/nuxtinator/layers/core#${REF}` },
   { id: 'tenancy',         pkg: '@nuxtinator/tenancy',        url: `github:corsacca/nuxtinator/layers/tenancy#${REF}` },
-  { id: 'email-mailgun',   pkg: '@nuxtinator/email-mailgun',  url: `github:corsacca/nuxtinator/layers/email-mailgun#${REF}` },
+  { id: 'email-cloudflare', pkg: '@nuxtinator/email-cloudflare', url: `github:corsacca/nuxtinator/layers/email-cloudflare#${REF}` }, // email backend — swap to layers/email-mailgun for Mailgun
   { id: 'oauth',           pkg: '@nuxtinator/oauth',          url: `github:corsacca/nuxtinator/layers/oauth#${REF}` },
   { id: 'mcp',             pkg: '@nuxtinator/mcp',            url: `github:corsacca/nuxtinator/layers/mcp#${REF}` },
   { id: 'calendar',        pkg: '@nuxtinator/calendar',       url: `github:corsacca/nuxtinator/layers/apps/calendar#${REF}` },

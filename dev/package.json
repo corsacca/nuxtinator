@@ -27,7 +27,7 @@
     "@nuxtinator/context": "workspace:*",
     "@nuxtinator/core": "workspace:*",
     "@nuxtinator/dev": "workspace:*",
-    "@nuxtinator/email-mailgun": "workspace:*",
+    "@nuxtinator/email-cloudflare": "workspace:*",
     "@nuxtinator/feedback": "workspace:*",
     "@nuxtinator/files": "workspace:*",
     "@nuxtinator/kanban": "workspace:*",
