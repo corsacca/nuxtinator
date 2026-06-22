@@ -26,15 +26,19 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 410, statusMessage: 'Invitation has expired' })
   }
 
-  // Show the inviter what orgs they're being added to. memberships are
-  // joined off the user id (not the token); they were already created at
-  // invite time.
-  const orgs = await db
-    .selectFrom('memberships')
-    .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
-    .select(['orgs.slug as slug', 'orgs.name as name'])
-    .where('memberships.user_id', '=', user.id)
-    .execute()
+  // Show the invitee what orgs they're being added to. Memberships are joined
+  // off the user id (not the token); they were already created at invite time.
+  // Orgs are a multi-tenant concept — the orgs/memberships tables only exist
+  // when the tenancy layer is loaded, so single-tenant invites carry no orgs.
+  let orgs: Array<{ slug: string, name: string }> = []
+  if (useRuntimeConfig(event).public.tenancy === true) {
+    orgs = await (db as any)
+      .selectFrom('memberships')
+      .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
+      .select(['orgs.slug as slug', 'orgs.name as name'])
+      .where('memberships.user_id', '=', user.id)
+      .execute()
+  }
 
   return {
     email: user.email,

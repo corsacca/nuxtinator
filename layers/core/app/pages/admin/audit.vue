@@ -27,10 +27,14 @@ interface LogRow {
   metadata: Record<string, unknown>
 }
 
-const { data: orgsData } = await useFetch<{ orgs: AdminOrg[] }>(
-  '/api/admin/orgs',
-  { default: () => ({ orgs: [] }) }
-)
+// The org-scope filter is multi-tenant only — `/api/admin/orgs` exists when the
+// tenancy layer is loaded. In single-tenant mode every log is host-global, so
+// skip the fetch and hide the filter.
+const tenancyEnabled = computed(() => useRuntimeConfig().public.tenancy === true)
+
+const { data: orgsData } = tenancyEnabled.value
+  ? await useFetch<{ orgs: AdminOrg[] }>('/api/admin/orgs', { default: () => ({ orgs: [] }) })
+  : { data: ref({ orgs: [] as AdminOrg[] }) }
 const orgs = computed(() => orgsData.value?.orgs ?? [])
 
 type Scope = 'all' | 'host' | string
@@ -91,7 +95,10 @@ const formatWhen = (ts: string) => {
       Activity log
     </h1>
 
-    <div class="flex flex-wrap gap-2">
+    <div
+      v-if="tenancyEnabled"
+      class="flex flex-wrap gap-2"
+    >
       <UButton
         :variant="scope === 'all' ? 'solid' : 'outline'"
         size="sm"

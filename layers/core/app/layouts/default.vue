@@ -3,6 +3,11 @@ const { user } = useAuth()
 const { isHostAdmin } = usePermissions()
 const config = useRuntimeConfig()
 
+// OrgSwitcher ships with the tenancy layer and doesn't exist in single-tenant
+// builds. Resolve it only when tenancy is loaded so Vue doesn't warn about an
+// unresolvable component; in single-tenant mode it renders nothing.
+const orgSwitcher = config.public.tenancy ? resolveComponent('OrgSwitcher') : null
+
 const { apps } = await useApps()
 const activeApp = useActiveApp(apps)
 const route = useRoute()
@@ -30,7 +35,10 @@ watch(() => route.path, () => {
             aria-label="Open sidebar"
             @click="mobileSidebarOpen = true"
           />
-          <OrgSwitcher />
+          <component
+            :is="orgSwitcher"
+            v-if="orgSwitcher"
+          />
           <NuxtLink
             to="/"
             class="text-base font-semibold truncate"
@@ -68,7 +76,10 @@ watch(() => route.path, () => {
            AppRail (which starts at `w-14` directly below the header). -->
       <header class="hidden lg:flex sticky top-0 z-40 bg-(--ui-bg-elevated) border-b border-(--ui-border) py-3 px-4 items-center justify-between gap-4">
         <div class="flex items-center gap-3 min-w-0">
-          <OrgSwitcher />
+          <component
+            :is="orgSwitcher"
+            v-if="orgSwitcher"
+          />
           <NuxtLink
             to="/"
             class="text-xl font-semibold hover:text-(--ui-text-muted) transition-colors truncate"

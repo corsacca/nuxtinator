@@ -31,6 +31,11 @@ export default defineEventHandler(async (event) => {
   const { userId: hostAdminId } = await requireOperatorAdmin(event)
   const admin = requireAuth(event)
 
+  // Org attachments are a multi-tenant concept; the orgs/memberships tables only
+  // exist when the tenancy layer is loaded. In single-tenant mode an invite just
+  // creates the user — any attachments in the body are ignored.
+  const tenancyEnabled = useRuntimeConfig(event).public.tenancy === true
+
   const body = await readBody(event)
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
   const display_name = typeof body?.display_name === 'string' ? body.display_name.trim() : ''
@@ -39,33 +44,37 @@ export default defineEventHandler(async (event) => {
   if (!EMAIL_RE.test(email)) {
     throw createError({ statusCode: 400, statusMessage: 'A valid email is required' })
   }
-  if (!attachmentsRaw || attachmentsRaw.length === 0) {
+  if (tenancyEnabled && (!attachmentsRaw || attachmentsRaw.length === 0)) {
     throw createError({ statusCode: 400, statusMessage: 'attachments must include at least one org' })
   }
 
+  // Attachments only carry meaning in multi-tenant mode; leave the list empty in
+  // single-tenant mode so every membership-related step below is a no-op.
   const attachments: Attachment[] = []
-  for (const a of attachmentsRaw) {
-    if (typeof a?.orgId !== 'string' || !Array.isArray(a?.roles)) {
-      throw createError({ statusCode: 400, statusMessage: 'each attachment requires { orgId, roles }' })
+  if (tenancyEnabled) {
+    for (const a of attachmentsRaw ?? []) {
+      if (typeof a?.orgId !== 'string' || !Array.isArray(a?.roles)) {
+        throw createError({ statusCode: 400, statusMessage: 'each attachment requires { orgId, roles }' })
+      }
+      if (a.roles.some((r: unknown) => typeof r !== 'string')) {
+        throw createError({ statusCode: 400, statusMessage: 'roles must be strings' })
+      }
+      attachments.push({ orgId: a.orgId, roles: Array.from(new Set(a.roles)) })
     }
-    if (a.roles.some((r: unknown) => typeof r !== 'string')) {
-      throw createError({ statusCode: 400, statusMessage: 'roles must be strings' })
-    }
-    attachments.push({ orgId: a.orgId, roles: Array.from(new Set(a.roles)) })
-  }
 
-  // Validate every attachment's org exists + roles are known in that org.
-  for (const att of attachments) {
-    const org = await db.selectFrom('orgs').select('id').where('id', '=', att.orgId).executeTakeFirst()
-    if (!org) {
-      throw createError({ statusCode: 400, statusMessage: `Org ${att.orgId} does not exist` })
-    }
-    const { valid, unknown } = await validateRoleNames(db, att.roles)
-    if (!valid) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: `Unknown role(s) for org ${att.orgId}: ${unknown.join(', ')}`
-      })
+    // Validate every attachment's org exists + roles are known in that org.
+    for (const att of attachments) {
+      const org = await (db as any).selectFrom('orgs').select('id').where('id', '=', att.orgId).executeTakeFirst()
+      if (!org) {
+        throw createError({ statusCode: 400, statusMessage: `Org ${att.orgId} does not exist` })
+      }
+      const { valid, unknown } = await validateRoleNames(db, att.roles)
+      if (!valid) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: `Unknown role(s) for org ${att.orgId}: ${unknown.join(', ')}`
+        })
+      }
     }
   }
 
@@ -90,17 +99,19 @@ export default defineEventHandler(async (event) => {
 
     // 409 the entire request if the user is already a member of any of the
     // requested orgs — saves the operator from a partial-success state.
-    const dupes = await db
-      .selectFrom('memberships')
-      .select('org_id')
-      .where('user_id', '=', userId)
-      .where('org_id', 'in', attachments.map(a => a.orgId))
-      .execute()
-    if (dupes.length > 0) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: `User is already a member of: ${dupes.map(d => d.org_id).join(', ')}`
-      })
+    if (tenancyEnabled && attachments.length > 0) {
+      const dupes = await (db as any)
+        .selectFrom('memberships')
+        .select('org_id')
+        .where('user_id', '=', userId)
+        .where('org_id', 'in', attachments.map(a => a.orgId))
+        .execute() as Array<{ org_id: string }>
+      if (dupes.length > 0) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: `User is already a member of: ${dupes.map(d => d.org_id).join(', ')}`
+        })
+      }
     }
   } else {
     if (display_name.length < 2) {
@@ -141,7 +152,7 @@ export default defineEventHandler(async (event) => {
 
   await db.transaction().execute(async (trx) => {
     if (memberships.length > 0) {
-      await trx.insertInto('memberships').values(memberships).execute()
+      await (trx as any).insertInto('memberships').values(memberships).execute()
     }
   })
 

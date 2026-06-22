@@ -97,14 +97,19 @@ export default defineEventHandler(async (event) => {
     console.warn('[hook user.verified] handler threw:', err)
   }
 
-  // Pick a redirect target so the client doesn't need a second round-trip.
-  const memberships = await db
-    .selectFrom('memberships')
-    .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
-    .select(['orgs.slug as slug'])
-    .where('memberships.user_id', '=', user.id)
-    .execute()
-  const redirect = memberships.length === 1 ? `/@${memberships[0]!.slug}/` : '/orgs'
+  // Pick a redirect target so the client doesn't need a second round-trip. In
+  // single-tenant mode there are no orgs (the orgs/memberships tables only exist
+  // when the tenancy layer is loaded), so land on home.
+  let redirect = '/'
+  if (useRuntimeConfig(event).public.tenancy === true) {
+    const memberships = await (db as any)
+      .selectFrom('memberships')
+      .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
+      .select(['orgs.slug as slug'])
+      .where('memberships.user_id', '=', user.id)
+      .execute() as Array<{ slug: string }>
+    redirect = memberships.length === 1 ? `/@${memberships[0]!.slug}/` : '/orgs'
+  }
 
   return { success: true, redirect }
 })

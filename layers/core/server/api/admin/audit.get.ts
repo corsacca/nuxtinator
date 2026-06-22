@@ -13,31 +13,52 @@ export default defineEventHandler(async (event) => {
   const orgIdFilter = typeof q.orgId === 'string' && q.orgId.length > 0 ? q.orgId : null
   const hostOnly = q.hostOnly === '1' || q.hostOnly === 'true'
 
-  let qb = db
+  // The `orgs` table and `activity_logs.org_id` column only exist when the
+  // tenancy layer is loaded. In single-tenant mode every row is host-global, so
+  // the org join, org columns, and org-scope filters are all dropped — the
+  // response simply omits the org fields (the client renders them as "—"). The
+  // `as any` cast keeps this compiling without tenancy's schema augmentation.
+  const tenancyEnabled = useRuntimeConfig(event).public.tenancy === true
+
+  const baseCols = [
+    'activity_logs.id as id',
+    'activity_logs.timestamp as timestamp',
+    'activity_logs.event_type as event_type',
+    'activity_logs.table_name as table_name',
+    'activity_logs.record_id as record_id',
+    'activity_logs.user_id as user_id',
+    'activity_logs.metadata as metadata',
+    'users.email as user_email',
+    'users.display_name as user_display_name'
+  ]
+
+  let qb = (db as any)
     .selectFrom('activity_logs')
     .leftJoin('users', 'users.id', 'activity_logs.user_id')
-    .leftJoin('orgs', 'orgs.id', 'activity_logs.org_id')
-    .select([
-      'activity_logs.id as id',
-      'activity_logs.timestamp as timestamp',
-      'activity_logs.event_type as event_type',
-      'activity_logs.table_name as table_name',
-      'activity_logs.record_id as record_id',
-      'activity_logs.user_id as user_id',
-      'activity_logs.org_id as org_id',
-      'activity_logs.metadata as metadata',
-      'users.email as user_email',
-      'users.display_name as user_display_name',
-      'orgs.slug as org_slug',
-      'orgs.name as org_name'
-    ])
+
+  if (tenancyEnabled) {
+    qb = qb
+      .leftJoin('orgs', 'orgs.id', 'activity_logs.org_id')
+      .select([
+        ...baseCols,
+        'activity_logs.org_id as org_id',
+        'orgs.slug as org_slug',
+        'orgs.name as org_name'
+      ])
+  } else {
+    qb = qb.select(baseCols)
+  }
+
+  qb = qb
     .orderBy('activity_logs.timestamp', 'desc')
     .limit(limit + 1)
 
-  if (orgIdFilter) {
-    qb = qb.where('activity_logs.org_id', '=', orgIdFilter)
-  } else if (hostOnly) {
-    qb = qb.where('activity_logs.org_id', 'is', null)
+  if (tenancyEnabled) {
+    if (orgIdFilter) {
+      qb = qb.where('activity_logs.org_id', '=', orgIdFilter)
+    } else if (hostOnly) {
+      qb = qb.where('activity_logs.org_id', 'is', null)
+    }
   }
   if (before) {
     qb = qb.where('activity_logs.timestamp', '<', new Date(before))

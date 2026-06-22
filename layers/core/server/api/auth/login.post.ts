@@ -76,19 +76,24 @@ export default defineEventHandler(async (event) => {
   // Log successful login
   logLogin(user.id, userAgent)
 
-  // Pick a redirect target based on the user's memberships:
-  //   * exactly one membership → land in that org
-  //   * else → land on the org picker
-  // Login flow respects ?redirect=… on the client side; this is the default.
-  const memberships = await db
-    .selectFrom('memberships')
-    .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
-    .select(['orgs.slug as slug', 'orgs.suspended_at as suspended_at'])
-    .where('memberships.user_id', '=', user.id)
-    .execute()
+  // Pick a redirect target. In multi-tenant mode it follows the user's
+  // memberships (exactly one → land in that org; else → the org picker). In
+  // single-tenant mode there are no orgs, so land on home. The orgs/memberships
+  // tables only exist when the tenancy layer is loaded, so the query is gated on
+  // the tenancy flag. Login flow respects ?redirect=… on the client side; this
+  // is the default.
+  let redirect = '/'
+  if (useRuntimeConfig(event).public.tenancy === true) {
+    const memberships = await (db as any)
+      .selectFrom('memberships')
+      .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
+      .select(['orgs.slug as slug', 'orgs.suspended_at as suspended_at'])
+      .where('memberships.user_id', '=', user.id)
+      .execute() as Array<{ slug: string, suspended_at: Date | null }>
 
-  const active = memberships.filter(m => !m.suspended_at)
-  const redirect = active.length === 1 ? `/@${active[0]!.slug}/` : '/orgs'
+    const active = memberships.filter(m => !m.suspended_at)
+    redirect = active.length === 1 ? `/@${active[0]!.slug}/` : '/orgs'
+  }
 
   return {
     success: true,

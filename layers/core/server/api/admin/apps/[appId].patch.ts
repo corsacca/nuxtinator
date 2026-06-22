@@ -31,6 +31,11 @@ export default defineEventHandler(async (event) => {
   const oldStatus = existing.status
   if (oldStatus === status) return { id: appId, status }
 
+  // Per-org materialization (orgs/org_apps) is multi-tenant only — those tables
+  // exist when the tenancy layer is loaded. In single-tenant mode the app status
+  // alone gates visibility, so the status update is all there is to do.
+  const tenancyEnabled = useRuntimeConfig(event).public.tenancy === true
+
   const now = new Date().toISOString()
   const flipsToDefault = status === 'default' && oldStatus !== 'default'
   let materializedOrgIds: string[] = []
@@ -38,17 +43,17 @@ export default defineEventHandler(async (event) => {
   await db.transaction().execute(async (trx) => {
     await trx.updateTable('apps').set({ status, updated_at: now }).where('id', '=', appId).execute()
 
-    if (flipsToDefault) {
+    if (flipsToDefault && tenancyEnabled) {
       // Find orgs with no row for this app; insert auto rows for each.
-      const orgs = await trx
+      const orgs = await (trx as any)
         .selectFrom('orgs')
-        .leftJoin('org_apps', join => join.onRef('org_apps.org_id', '=', 'orgs.id').on('org_apps.app_id', '=', appId))
+        .leftJoin('org_apps', (join: any) => join.onRef('org_apps.org_id', '=', 'orgs.id').on('org_apps.app_id', '=', appId))
         .select('orgs.id as id')
         .where('org_apps.app_id', 'is', null)
-        .execute()
+        .execute() as Array<{ id: string }>
       materializedOrgIds = orgs.map(o => o.id)
       if (materializedOrgIds.length > 0) {
-        await trx
+        await (trx as any)
           .insertInto('org_apps')
           .values(materializedOrgIds.map(id => ({
             org_id: id,
