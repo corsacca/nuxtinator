@@ -1,3 +1,5 @@
+import { useActiveOrg } from '#tenant'
+
 export interface NavItem {
   appId: string
   title: string

@@ -3,6 +3,8 @@
 // installed apps. When there's no active org (e.g. on `/orgs`, `/account/...`)
 // the composable returns an empty list rather than calling the endpoint.
 
+import { useActiveOrg } from '#tenant'
+
 export interface AppEntry {
   id: string
   title: string

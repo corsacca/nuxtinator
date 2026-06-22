@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useActiveOrg } from '#tenant'
 import ProjectsBoard from '../../components/kanban/ProjectsBoard.vue'
 import CardEditSidePanel from '../../components/kanban/CardEditSidePanel.vue'
 import KanbanContextMenu from '../../components/kanban/KanbanContextMenu.vue'
