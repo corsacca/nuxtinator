@@ -15,15 +15,24 @@ interface NavResponse {
 
 export async function useAppNav(appId: MaybeRefOrGetter<string>) {
   const appIdRef = computed(() => toValue(appId))
+  const tenancyOn = !!useRuntimeConfig().public.tenancy
+  const { user } = useAuth()
   const { slug } = useActiveOrg()
 
-  const url = computed(() => slug.value ? `/api/o/${slug.value}/_nav` : '')
+  // Both feeds require auth. Single-tenant: host-level feed (no org).
+  // Multi-tenant: per-org feed, which also needs an active slug — empty URL
+  // until both are present so we don't 401/404.
+  const url = computed(() => {
+    if (!user.value) return ''
+    if (!tenancyOn) return '/api/_nav'
+    return slug.value ? `/api/o/${slug.value}/_nav` : ''
+  })
 
   const { data, refresh, pending, error } = await useFetch<NavResponse>(url, {
     key: 'app-nav',
     query: computed(() => ({ app: appIdRef.value })),
-    watch: [appIdRef, slug],
-    immediate: !!slug.value,
+    watch: [appIdRef, slug, user],
+    immediate: !!user.value && (!tenancyOn || !!slug.value),
     default: () => ({ items: [] as NavItem[] })
   })
 

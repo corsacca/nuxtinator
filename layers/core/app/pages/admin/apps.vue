@@ -19,6 +19,10 @@ interface AdminApp {
 
 const toast = useToast()
 
+// Multi-tenant exposes three availability tiers per org; single-tenant has no
+// orgs, so an app is simply on or off for this instance.
+const tenancyEnabled = computed(() => useRuntimeConfig().public.tenancy === true)
+
 const { data, pending, refresh } = await useFetch<{ apps: AdminApp[] }>(
   '/api/admin/apps',
   { default: () => ({ apps: [] }) }
@@ -58,7 +62,12 @@ const onSetStatus = async (app: AdminApp, status: AppStatus) => {
         Apps
       </h1>
       <p class="text-sm text-(--ui-text-muted)">
-        Set the global availability for each app. Each option is described in the dropdown.
+        <template v-if="tenancyEnabled">
+          Set the global availability for each app. Each option is described in the dropdown.
+        </template>
+        <template v-else>
+          Enable or disable each app for this instance.
+        </template>
       </p>
     </header>
 
@@ -103,7 +112,25 @@ const onSetStatus = async (app: AdminApp, status: AppStatus) => {
             </div>
           </div>
         </div>
+        <!-- Single-tenant: a plain on/off switch. "On" stores `default` (shown
+             in the launcher); "off" stores `disabled` (hidden). The `available`
+             tier is multi-tenant-only (it means "org admin must opt in"), so it
+             isn't offered here. -->
+        <div
+          v-if="!tenancyEnabled"
+          class="flex items-center gap-2 shrink-0"
+        >
+          <span class="text-sm text-(--ui-text-muted)">
+            {{ app.status === 'disabled' ? 'Disabled' : 'Enabled' }}
+          </span>
+          <USwitch
+            :model-value="app.status !== 'disabled'"
+            size="lg"
+            @update:model-value="(v: boolean) => onSetStatus(app, v ? 'default' : 'disabled')"
+          />
+        </div>
         <USelectMenu
+          v-else
           :model-value="app.status"
           :items="STATUS_OPTIONS"
           value-key="value"

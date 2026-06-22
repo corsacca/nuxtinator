@@ -126,9 +126,10 @@ export default defineEventHandler(async (event) => {
       success: true,
       autoLoggedIn: true,
       requiresVerification: false,
-      // First user has no orgs yet — land them on the picker, where they
-      // can create the first org via the host-admin endpoint.
-      redirect: '/orgs',
+      // Multi-tenant: first user has no orgs yet — land them on the picker,
+      // where they create the first org via the host-admin endpoint. Single-
+      // tenant: no orgs exist, so land on home.
+      redirect: useRuntimeConfig(event).public.tenancy === true ? '/orgs' : '/',
       user: {
         id: userId,
         email,

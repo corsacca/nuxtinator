@@ -56,7 +56,8 @@ export const useAuth = () => {
         } else if (response.redirect && response.redirect.startsWith('/')) {
           await navigateTo(response.redirect)
         } else {
-          await navigateTo('/orgs')
+          // No server-provided redirect: single-tenant home, else the org picker.
+          await navigateTo(useRuntimeConfig().public.tenancy ? '/orgs' : '/')
         }
 
         return { success: true }
