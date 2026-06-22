@@ -46,4 +46,13 @@ export default defineNitroPlugin(() => {
     requiredPermission: 'feedback.read',
     order: 10
   })
+
+  registerNavItem({
+    appId: 'feedback',
+    title: 'Queue',
+    path: '/feedback/queue',
+    icon: 'i-lucide-list-checks',
+    requiredPermission: 'feedback.write',
+    order: 20
+  })
 })
