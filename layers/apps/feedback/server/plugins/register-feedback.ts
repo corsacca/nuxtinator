@@ -46,4 +46,16 @@ export default defineNitroPlugin(() => {
     requiredPermission: 'feedback.read',
     order: 10
   })
+
+  // Signal Clusters: a grouped, faceted triage view of the inbox. Acts on
+  // patterns (by type, page, device, platform, submitter, project) rather than
+  // individual cards. Read-time aggregation over existing card fields only.
+  registerNavItem({
+    appId: 'feedback',
+    title: 'Clusters',
+    path: '/feedback/clusters',
+    icon: 'i-lucide-layers',
+    requiredPermission: 'feedback.read',
+    order: 20
+  })
 })
