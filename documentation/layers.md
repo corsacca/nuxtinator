@@ -347,7 +347,8 @@ registerAdminSection({
 
 ### Database tables
 
-Create a `server/database/schema.d.ts` and use Kysely module augmentation:
+Create a `server/database/schema.d.ts` and merge your tables into core's global
+`NuxtinatorDatabaseTables` registry:
 
 ```ts
 // layers/apps/tasks/server/database/schema.d.ts
@@ -362,12 +363,22 @@ export interface TasksTable {
   done: Generated<boolean>
 }
 
-declare module '~/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     tasks: TasksTable
   }
 }
 ```
+
+Use `declare global`, **not** `declare module '#core/server/database/schema'`.
+Core joins `NuxtinatorDatabaseTables` into its `Database` type, and global
+interface merging is resolution-independent — it works the same whether `#core`
+resolves via a workspace symlink, an npm package, or a `#core/* → _layers/*`
+tsconfig `paths` alias in a downstream host. Path-aliased `declare module`
+augmentation silently fails to merge in `_layers/`-style consumer hosts, leaving
+every layer table invisible to Kysely. (To retrofit an extra column onto a core
+table the same way, merge into the matching `Nuxtinator<Table>Columns` registry
+core declares in [layers/core/server/database/schema.ts](../layers/core/server/database/schema.ts) — that's how the tenancy layer adds `org_id`.)
 
 Note: don't include `org_id` here. The tenancy layer's per-app retrofit migration (see next section) adds it at the SQL level when loaded; in single mode it never exists. App code that reads from `tasks` works in both modes — RLS scopes the rows in multi mode automatically.
 

@@ -1,5 +1,6 @@
-// Module augmentation: extends the host Database interface with the
-// List of 100 contacts table.
+// Adds the List of 100 contacts table to the host schema by merging into
+// core's global `NuxtinatorDatabaseTables` registry (resolution-independent —
+// see core's server/database/schema.ts).
 import type { ColumnType, Generated } from 'kysely'
 
 export type FaithStatus = 'believer' | 'non_believer' | 'unknown'
@@ -19,8 +20,8 @@ export interface ListOf100ContactsTable {
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
-declare module '#core/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     list_of_100_contacts: ListOf100ContactsTable
   }
 }

@@ -1,4 +1,6 @@
-// Module augmentation: extends the host's Database interface with messages tables.
+// Adds the messages tables to the host schema by merging into core's global
+// `NuxtinatorDatabaseTables` registry (resolution-independent — see core's
+// server/database/schema.ts).
 import type { ColumnType, Generated } from 'kysely'
 
 export type ConversationKind = 'channel' | 'dm'
@@ -111,8 +113,8 @@ export interface MessagesMentionsTable {
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
-declare module '#core/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     messages_conversations: MessagesConversationsTable
     messages_conversation_members: MessagesConversationMembersTable
     messages_channel_subscriptions: MessagesChannelSubscriptionsTable

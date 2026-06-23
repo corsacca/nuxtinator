@@ -14,7 +14,7 @@
 //     thing tenancy adds on top is BYPASSRLS DB-role plumbing for cross-org
 //     reach.
 
-import type { H3Event, EventHandler } from 'h3'
+import type { H3Event, EventHandler, EventHandlerRequest } from 'h3'
 import type { Transaction } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { requireAuth } from '#core/server/utils/auth'
@@ -66,14 +66,14 @@ async function runWithSingleContext<T>(
   })
 }
 
-export function defineTenantHandler<T>(fn: TenantHandler<T>): EventHandler<unknown, Promise<T>>
-export function defineTenantHandler<T>(opts: DefineTenantHandlerOpts, fn: TenantHandler<T>): EventHandler<unknown, Promise<T>>
+export function defineTenantHandler<T>(fn: TenantHandler<T>): EventHandler<EventHandlerRequest, Promise<T>>
+export function defineTenantHandler<T>(opts: DefineTenantHandlerOpts, fn: TenantHandler<T>): EventHandler<EventHandlerRequest, Promise<T>>
 export function defineTenantHandler<T>(
   optsOrFn: DefineTenantHandlerOpts | TenantHandler<T>,
   maybeFn?: TenantHandler<T>
-): EventHandler<unknown, Promise<T>> {
+): EventHandler<EventHandlerRequest, Promise<T>> {
   const fn = (typeof optsOrFn === 'function' ? optsOrFn : maybeFn) as TenantHandler<T>
-  return defineEventHandler<unknown, Promise<T>>(event => runWithSingleContext(event, fn))
+  return defineEventHandler<EventHandlerRequest, Promise<T>>(event => runWithSingleContext(event, fn))
 }
 
 // Function-call style — for handlers already wrapped in `defineEventHandler`.

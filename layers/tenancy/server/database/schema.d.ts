@@ -1,6 +1,11 @@
-// Tenancy layer schema augmentation. Adds the org/membership/app-enable
-// tables to the host's `Database` interface via Kysely module augmentation.
-// Pulled into the host's compile when the tenancy layer is in `extends:`.
+// Tenancy layer schema augmentation. Adds the org/membership/app-enable tables
+// and retrofits `org_id` onto two core tables, by merging into core's global
+// schema registries (`NuxtinatorDatabaseTables` for tables, the per-table
+// `Nuxtinator*Columns` registries for columns). Global interface merging is
+// resolution-independent, so it merges the same way whether `#core` resolves
+// via a workspace symlink, an npm package, or a `_layers/` path alias in a
+// downstream host. Pulled into the host's compile when the tenancy layer is in
+// `extends:`.
 import type { ColumnType, Generated } from 'kysely'
 
 export interface OrgsTable {
@@ -42,21 +47,21 @@ export interface OrgRoleOverridesTable {
   updated_at: ColumnType<Date, string | undefined, string>
 }
 
-declare module '#core/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     orgs: OrgsTable
     memberships: MembershipsTable
     org_apps: OrgAppsTable
     org_role_overrides: OrgRoleOverridesTable
   }
 
-  // The tenancy layer also retrofits `org_id` onto two existing host tables;
-  // declare the column here so TS knows about it inside the layer's code.
-  interface CustomRolesTable {
+  // The tenancy layer also retrofits `org_id` onto two existing core tables;
+  // declare the columns here so TS knows about them inside the layer's code.
+  interface NuxtinatorCustomRolesColumns {
     org_id: string
   }
 
-  interface ActivityLogsTable {
+  interface NuxtinatorActivityLogsColumns {
     org_id: string | null
   }
 }

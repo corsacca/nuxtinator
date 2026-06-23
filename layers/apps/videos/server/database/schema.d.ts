@@ -1,4 +1,6 @@
-// Module augmentation: extends the host's Database interface with the videos table.
+// Adds the videos table to the host schema by merging into core's global
+// `NuxtinatorDatabaseTables` registry (resolution-independent — see core's
+// server/database/schema.ts).
 import type { ColumnType, Generated } from 'kysely'
 
 export type VideoVisibility = 'private' | 'org' | 'public'
@@ -26,8 +28,8 @@ export interface VideosTable {
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
-declare module '#core/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     videos: VideosTable
   }
 }

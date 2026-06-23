@@ -85,8 +85,8 @@ export interface FeedbackAttachmentsTable {
   created_at: ColumnType<Date, string | Date | undefined, string | Date>
 }
 
-declare module '#core/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     projects: ProjectsTable
     columns: ColumnsTable
     swimlanes: SwimlanesTable

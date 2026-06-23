@@ -1,5 +1,7 @@
-// Module augmentation: extends the consumer's Database interface with OAuth tables.
-// Consumer must declare `Database` as `interface` (not `type`) at ~~/server/database/schema.
+// Adds the OAuth tables to the host schema by merging into core's global
+// `NuxtinatorDatabaseTables` registry. Global interface merging is
+// resolution-independent, so it works whether `#core` resolves via a workspace
+// symlink, an npm package, or a `_layers/` path alias in a downstream host.
 import type { ColumnType, Generated } from 'kysely'
 
 export interface OauthClientsTable {
@@ -99,8 +101,8 @@ export interface OauthConsentsTable {
   revoked: Generated<boolean>
 }
 
-declare module '#core/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     oauth_clients: OauthClientsTable
     oauth_token_families: OauthTokenFamiliesTable
     oauth_pending_requests: OauthPendingRequestsTable

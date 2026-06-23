@@ -92,7 +92,7 @@ export default defineEventHandler(async (event) => {
 
   const nitro = useNitroApp()
   try {
-    await nitro.hooks.callHook('user.verified' as any, { userId: user.id, email: user.email })
+    await nitro.hooks.callHook('user.verified', { userId: user.id, email: user.email })
   } catch (err) {
     console.warn('[hook user.verified] handler threw:', err)
   }

@@ -1,4 +1,6 @@
-// Module augmentation: extends the host's Database interface with files tables.
+// Adds the files tables to the host schema by merging into core's global
+// `NuxtinatorDatabaseTables` registry (resolution-independent — see core's
+// server/database/schema.ts).
 import type { ColumnType, Generated } from 'kysely'
 
 // A files item is an authored markdown `doc`, an uploaded binary `file`, or a
@@ -47,8 +49,8 @@ export interface FilesVersionsTable {
   edited_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
-declare module '#core/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     files_items: FilesItemsTable
     files_versions: FilesVersionsTable
   }

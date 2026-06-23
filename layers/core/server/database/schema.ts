@@ -1,5 +1,37 @@
 import type { ColumnType, Generated } from 'kysely'
 
+// Resolution-independent schema augmentation.
+//
+// Optional layers (tenancy, oauth, every app layer) extend the host's schema
+// by merging into the global interfaces declared here — never by augmenting
+// this module through the `#core` path alias. Global interface merging does not
+// go through module resolution, so it merges identically whether a layer is
+// resolved via a workspace symlink, an npm tarball, a git URL, or a
+// `#core/* → _layers/*` tsconfig `paths` alias in a downstream host.
+// Path-aliased `declare module '#core/server/database/schema'` augmentation, by
+// contrast, silently fails to merge in `_layers/`-style consumer hosts (the
+// path alias is not honored when resolving a `declare module` target there),
+// which left every layer table invisible to Kysely.
+//
+// A layer adds tables:
+//   declare global {
+//     interface NuxtinatorDatabaseTables { my_table: MyTable }
+//   }
+// and retrofits extra columns onto a core table:
+//   declare global {
+//     interface NuxtinatorCustomRolesColumns { org_id: string }
+//   }
+declare global {
+  // Tables contributed by optional layers. Empty here; each layer merges its
+  // own tables in. Joined into `Database` below.
+  interface NuxtinatorDatabaseTables {}
+
+  // Extra columns optional layers retrofit onto core tables. The tenancy layer
+  // adds `org_id` here when loaded; both are empty otherwise.
+  interface NuxtinatorCustomRolesColumns {}
+  interface NuxtinatorActivityLogsColumns {}
+}
+
 export interface UsersTable {
   id: Generated<string>
   created: ColumnType<Date, string | undefined, string>
@@ -26,7 +58,7 @@ export interface PasswordResetRequestsTable {
   used: Generated<boolean>
 }
 
-export interface ActivityLogsTable {
+export interface ActivityLogsTable extends NuxtinatorActivityLogsColumns {
   id: Generated<string>
   timestamp: ColumnType<Date, Date | string | undefined, Date | string>
   event_type: string
@@ -37,7 +69,7 @@ export interface ActivityLogsTable {
   metadata: Generated<Record<string, unknown>>
 }
 
-export interface CustomRolesTable {
+export interface CustomRolesTable extends NuxtinatorCustomRolesColumns {
   id: Generated<string>
   created: ColumnType<Date, string | undefined, string>
   updated: ColumnType<Date, string | undefined, string>
@@ -95,7 +127,9 @@ export interface NotificationsTable {
   emailed_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
 }
 
-export interface Database {
+// The seven always-on core tables. Optional-layer tables live in the global
+// `NuxtinatorDatabaseTables` registry and are joined in by `Database` below.
+export interface CoreDatabase {
   users: UsersTable
   password_reset_requests: PasswordResetRequestsTable
   activity_logs: ActivityLogsTable
@@ -104,3 +138,8 @@ export interface Database {
   notifications: NotificationsTable
   core_settings: CoreSettingsTable
 }
+
+// The full schema Kysely sees: core tables plus whatever optional layers
+// registered. The `& NuxtinatorDatabaseTables` join is resolution-independent —
+// see the note at the top of this file.
+export type Database = CoreDatabase & NuxtinatorDatabaseTables

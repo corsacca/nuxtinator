@@ -58,11 +58,19 @@ interface CoreHookMap {
   }) => void | Promise<void>
 }
 
+// Nitro publishes the hook map under several entry points across versions
+// (`nitropack`, `nitropack/types`, `nitropack/runtime`). Augment all three so
+// `nitroApp.hooks.callHook(...)` is typed against the host hooks no matter
+// which entry a given Nitro release routes `useNitroApp()` through.
 declare module 'nitropack/types' {
   interface NitroRuntimeHooks extends CoreHookMap {}
 }
 
 declare module 'nitropack' {
+  interface NitroRuntimeHooks extends CoreHookMap {}
+}
+
+declare module 'nitropack/runtime' {
   interface NitroRuntimeHooks extends CoreHookMap {}
 }
 

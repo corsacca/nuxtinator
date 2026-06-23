@@ -62,8 +62,8 @@ export interface ContextSectionCommentRepliesTable {
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
-declare module '#core/server/database/schema' {
-  interface Database {
+declare global {
+  interface NuxtinatorDatabaseTables {
     context_portfolios: ContextPortfoliosTable
     context_sections: ContextSectionsTable
     context_section_versions: ContextSectionVersionsTable
