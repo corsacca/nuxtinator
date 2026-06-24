@@ -1,13 +1,14 @@
 // POST /api/videos/share/:token/view
 // Mostly-public: bump view_count for a public video, skipping if the
 // requester is the owner. Mirrors the lookup mode of share/[token].get.ts —
-// authenticated owners can hit this for their own private videos (a no-op,
-// but doesn't 404).
+// authenticated requests resolve the video's own org via withRecordOrgContext
+// so RLS exposes it (an owner viewing their own non-public video is a no-op,
+// not a 404); anonymous requests use the public-only read.
 
 import { sql } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { getAuthUser } from '#core/server/utils/auth'
-import { withOrgContext } from '#tenant/server'
+import { withRecordOrgContext } from '#tenant/server'
 
 export default defineEventHandler(async (event) => {
   const token = getRouterParam(event, 'token')
@@ -16,12 +17,16 @@ export default defineEventHandler(async (event) => {
   const auth = getAuthUser(event)
 
   const video = auth
-    ? await withOrgContext(event, async (tx) => {
-        return await tx.selectFrom('videos')
-          .select(['user_id', 'visibility'])
-          .where('share_token', '=', token)
-          .executeTakeFirst()
-      })
+    ? await withRecordOrgContext(
+        event,
+        { table: 'videos', id: token, idColumn: 'share_token', validateUuid: false, notFoundMessage: 'Video not found' },
+        async (tx) => {
+          return await tx.selectFrom('videos')
+            .select(['user_id', 'visibility'])
+            .where('share_token', '=', token)
+            .executeTakeFirst()
+        }
+      )
     : await db.selectFrom('videos')
         .select(['user_id', 'visibility'])
         .where('share_token', '=', token)

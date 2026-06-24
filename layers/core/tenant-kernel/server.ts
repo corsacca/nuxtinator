@@ -194,7 +194,7 @@ export async function withProjectOrgContext<T>(
 // without an authenticated tenant request.
 export async function withRecordOrgContext<T>(
   _event: H3Event,
-  _opts: { table: string, id: string, idColumn?: string, notFoundMessage?: string },
+  _opts: { table: string, id: string, idColumn?: string, notFoundMessage?: string, validateUuid?: boolean },
   fn: (tx: Transaction<Database>) => Promise<T>
 ): Promise<T> {
   return await db.transaction().execute(fn)

@@ -691,7 +691,6 @@ export const useVideoUpload = () => {
         if (ctx) {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
           canvas.toBlob((blob) => {
-            window.URL.revokeObjectURL(video.src)
             if (blob) {
               resolve(blob)
             } else {
@@ -704,10 +703,12 @@ export const useVideoUpload = () => {
       }
 
       video.onerror = () => {
-        window.URL.revokeObjectURL(video.src)
         reject(new Error('Failed to load video for thumbnail'))
       }
 
+      // videoUrl is the recording's preview blob URL, owned by the caller and
+      // still needed for preview/download/retry after this runs. Don't revoke
+      // it here — revoking would kill the live recording if the upload fails.
       video.src = videoUrl
     })
   }

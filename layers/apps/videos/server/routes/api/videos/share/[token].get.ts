@@ -4,17 +4,21 @@
 // videos via the same URL — useful right after upload when the recorder UI
 // hands the user the share link before they've decided whether to publish.
 //
-// Implementation:
-//   - Anonymous requests use the regular `db`. RLS only exposes public rows
-//     when no `app.current_org` GUC is set (see videos_tenant_read policy).
-//   - Authenticated requests run inside the user's tenant context so the
-//     SELECT can return rows scoped to the active org. The handler then
-//     enforces the owner-or-public check in application code.
+// Implementation — the `/watch/:token` URL is org-exempt, so requests arrive
+// with no active-org context regardless of who's asking:
+//   - Anonymous requests use the regular `db`. RLS exposes only public rows
+//     when no `app.current_org` GUC is set (see videos_tenant_read policy), so
+//     a private token resolves to "not found" without leaking its existence.
+//   - Authenticated requests resolve the video's *own* org from the token via
+//     `withRecordOrgContext` (BYPASSRLS lookup + GUC set) so RLS exposes the
+//     row, then enforce the owner-or-public check in application code. This is
+//     what lets an owner preview their own private/org video from the share
+//     link — including right after upload, before they've published it.
 
 import { db } from '#core/server/utils/database'
 import { generateDownloadUrl } from '../../../../utils/video-storage'
 import { getAuthUser } from '#core/server/utils/auth'
-import { withOrgContext } from '#tenant/server'
+import { withRecordOrgContext } from '#tenant/server'
 
 const SELECT_COLS = [
   'id', 'user_id', 'title', 's3_key', 'duration', 'file_size',
@@ -29,12 +33,16 @@ export default defineEventHandler(async (event) => {
   const auth = getAuthUser(event)
 
   const video = auth
-    ? await withOrgContext(event, async (tx) => {
-        return await tx.selectFrom('videos')
-          .select(SELECT_COLS)
-          .where('share_token', '=', token)
-          .executeTakeFirst()
-      })
+    ? await withRecordOrgContext(
+        event,
+        { table: 'videos', id: token, idColumn: 'share_token', validateUuid: false, notFoundMessage: 'Video not found' },
+        async (tx) => {
+          return await tx.selectFrom('videos')
+            .select(SELECT_COLS)
+            .where('share_token', '=', token)
+            .executeTakeFirst()
+        }
+      )
     : await db.selectFrom('videos')
         .select(SELECT_COLS)
         .where('share_token', '=', token)

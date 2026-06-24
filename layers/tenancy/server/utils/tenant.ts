@@ -316,8 +316,11 @@ export async function withProjectOrgContext<T>(
 // the sanctioned path.
 //
 // The caller passes the table name + id; the helper interpolates the table
-// name via `sql.ref()` to prevent SQL injection. UUIDs are required so the
-// id is validated up front.
+// name via `sql.ref()` to prevent SQL injection. The id is matched as a bound
+// parameter, so non-UUID keys are injection-safe too. By default the id must
+// be UUID-shaped — a guard against feeding a malformed value into a uuid-typed
+// key column (which would surface as a 22P02 cast error). Callers keying on a
+// text column (e.g. a hex share token) pass `validateUuid: false`.
 //
 // Throws 404 with `notFoundMessage` if the record doesn't exist.
 export async function withRecordOrgContext<T>(
@@ -327,14 +330,16 @@ export async function withRecordOrgContext<T>(
     id: string
     idColumn?: string
     notFoundMessage?: string
+    validateUuid?: boolean
   },
   fn: (tx: Transaction<Database>) => Promise<T>
 ): Promise<T> {
   const { table, id } = opts
   const idColumn = opts.idColumn ?? 'id'
   const notFoundMessage = opts.notFoundMessage ?? 'Not found'
+  const validateUuid = opts.validateUuid ?? true
 
-  if (!UUID_RE.test(id)) {
+  if (validateUuid && !UUID_RE.test(id)) {
     throw createError({ statusCode: 404, statusMessage: notFoundMessage })
   }
 
