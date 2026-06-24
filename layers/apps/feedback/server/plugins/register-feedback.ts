@@ -46,4 +46,16 @@ export default defineNitroPlugin(() => {
     requiredPermission: 'feedback.read',
     order: 10
   })
+
+  // Inbox triage — a dense, keyboard-driven reading list that sits in front of
+  // the board. Only accepted items become board cards. Writing (accept/reject/
+  // snooze) gates on feedback.write.
+  registerNavItem({
+    appId: 'feedback',
+    title: 'Triage',
+    path: '/feedback/triage',
+    icon: 'i-lucide-inbox',
+    requiredPermission: 'feedback.write',
+    order: 20
+  })
 })
