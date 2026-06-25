@@ -404,6 +404,55 @@ async function onDeleteCard(cardId: string) {
   }
 }
 
+// Archive = move the card into the ARCHIVE column, optimistic with rollback
+// (same shape as onCardDrop). The swimlane/project stay put.
+async function archiveCard(card: Card) {
+  const archiveCol = columns.value.find(c => c.name === 'ARCHIVE')
+  if (!archiveCol) {
+    toast.add({ title: 'Archive failed', description: 'No ARCHIVE column found', color: 'error' })
+    return
+  }
+  if (card.column_id === archiveCol.id) return
+  const idx = cards.value.findIndex(c => c.id === card.id)
+  if (idx < 0) return
+  const prev = cards.value[idx]!
+  cards.value.splice(idx, 1, { ...prev, column_id: archiveCol.id })
+  try {
+    const updated = await $fetch<Card>(`/api/feedback/cards/${card.id}/move`, {
+      method: 'PATCH',
+      body: {
+        column_id: archiveCol.id,
+        swimlane_id: card.swimlane_id,
+        project_id: card.project_id
+      }
+    })
+    const i = cards.value.findIndex(c => c.id === updated.id)
+    if (i >= 0) cards.value.splice(i, 1, updated)
+  } catch (e: any) {
+    cards.value.splice(idx, 1, prev)
+    toast.add({ title: 'Archive failed', description: e?.data?.statusMessage, color: 'error' })
+  }
+}
+
+// Archiving from the edit panel persists the card's edits (labels, etc.) first,
+// then moves it into the ARCHIVE column so the move endpoint logs the history.
+async function onArchiveCard(patch: Partial<Card>) {
+  const card = activeCard.value
+  if (!card) return
+  try {
+    const saved = await $fetch<Card>(`/api/feedback/cards/${card.id}`, {
+      method: 'PATCH',
+      body: patch
+    })
+    const i = cards.value.findIndex(c => c.id === saved.id)
+    if (i >= 0) cards.value.splice(i, 1, saved)
+    cardPanelOpen.value = false
+    await archiveCard(saved)
+  } catch (e: any) {
+    toast.add({ title: 'Archive failed', description: e?.data?.statusMessage, color: 'error' })
+  }
+}
+
 // --- Context menu ---
 const ctxMenu = ref<{
   open: boolean
@@ -418,6 +467,7 @@ const ctxMenu = ref<{
 }>({ open: false, x: 0, y: 0, items: [], target: null })
 
 function openCardCtx(e: { card: Card; x: number; y: number }) {
+  const isArchived = columns.value.find(c => c.id === e.card.column_id)?.name === 'ARCHIVE'
   ctxMenu.value = {
     open: true,
     x: e.x,
@@ -425,6 +475,7 @@ function openCardCtx(e: { card: Card; x: number; y: number }) {
     target: { kind: 'card', card: e.card },
     items: [
       { label: 'Edit Card', icon: 'i-lucide-pencil', action: 'edit' },
+      ...(isArchived ? [] : [{ label: 'Archive Card', icon: 'i-lucide-archive', action: 'archive' }]),
       { label: 'Delete Card', icon: 'i-lucide-trash-2', danger: true, action: 'delete' }
     ]
   }
@@ -464,6 +515,7 @@ function onCtxSelect(action: string) {
   if (!t) return
   if (t.kind === 'card') {
     if (action === 'edit') openCard(t.card)
+    else if (action === 'archive') archiveCard(t.card)
     else if (action === 'delete') onDeleteCard(t.card.id)
     return
   }
@@ -634,6 +686,7 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
       :users="assignableUsers"
       @save="onSaveCard"
       @delete="onDeleteCard"
+      @archive="onArchiveCard"
     />
 
     <UModal v-model:open="projectModalOpen" :title="projectForm.mode === 'create' ? 'New project' : 'Rename project'">

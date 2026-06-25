@@ -24,6 +24,73 @@ export function phaseLabel(value: string | null | undefined): string {
 }
 
 /**
+ * The text shown as a card's board headline. An explicit title wins; a feedback
+ * card with no title falls back to its primary content — the idea for an idea,
+ * the problem for a bug — so the headline tracks that content as it's edited.
+ * Anything else with no title reads as "(Untitled)".
+ */
+export function cardHeadline(card: KanbanCardModel): string {
+  const t = card.title?.trim()
+  if (t) return t
+  if (card.post_type === 'feedback') {
+    const pm = card.post_meta || {}
+    const primary = pm.feedback_sub_type === 'idea' ? pm.suggested_fix : pm.problem_description
+    const s = primary != null ? String(primary).trim() : ''
+    if (s) return s
+  }
+  return '(Untitled)'
+}
+
+/**
+ * Triage labels a card can carry. The catalog (key → display text → color)
+ * lives in code; only the chosen keys persist, in post_meta.labels. Adding or
+ * renaming a label is a code change here — never a migration or data backfill.
+ */
+export const FEEDBACK_LABELS = [
+  { value: 'cant-reproduce', label: "Can't reproduce", color: 'amber' },
+  { value: 'duplicate', label: 'Duplicate', color: 'violet' },
+  { value: 'wont-fix', label: "Won't fix", color: 'gray' },
+  { value: 'needs-info', label: 'Needs info', color: 'blue' },
+  { value: 'confirmed', label: 'Confirmed', color: 'green' }
+] as const
+
+export type FeedbackLabel = (typeof FEEDBACK_LABELS)[number]
+
+export function labelDef(value: string): FeedbackLabel | null {
+  return FEEDBACK_LABELS.find(l => l.value === value) ?? null
+}
+
+/**
+ * The label keys applied to a card, filtered to ones the catalog still knows
+ * about (drops keys for labels removed from the catalog).
+ */
+export function cardLabels(card: KanbanCardModel): string[] {
+  const v = card.post_meta?.labels
+  if (!Array.isArray(v)) return []
+  return v.filter((x): x is string => typeof x === 'string' && FEEDBACK_LABELS.some(l => l.value === x))
+}
+
+/**
+ * Tailwind classes for a label pill. Full static strings (not interpolated) so
+ * the JIT compiler keeps them.
+ */
+export function labelPillClass(value: string): string {
+  switch (labelDef(value)?.color) {
+    case 'amber':
+      return 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+    case 'violet':
+      return 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300'
+    case 'blue':
+      return 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+    case 'green':
+      return 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300'
+    case 'gray':
+    default:
+      return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+  }
+}
+
+/**
  * Check if a card is overdue.
  */
 export function isCardOverdue(

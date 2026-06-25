@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { KanbanCardModel } from './types'
-import { isCardOverdue, priorityDotColor, cardPhase, phaseLabel, DOING_COLUMN } from '../../composables/useCardUtils'
+import { isCardOverdue, priorityDotColor, cardPhase, phaseLabel, cardHeadline, cardLabels, labelDef, labelPillClass, DOING_COLUMN } from '../../composables/useCardUtils'
 
 const props = withDefaults(
   defineProps<{
@@ -28,6 +28,8 @@ const priorityQual = computed<string | null>(() => {
   return props.card.priority ? String(props.card.priority).toLowerCase() : null
 })
 
+const headline = computed(() => cardHeadline(props.card))
+const labels = computed(() => cardLabels(props.card))
 const priorityDotClass = computed(() => priorityDotColor(priorityQual.value))
 const overdue = computed(() => isCardOverdue(props.card, props.columnName))
 const showOverdueIcon = computed(() => overdue.value && !props.card.is_done)
@@ -111,7 +113,7 @@ function handleDragEnd(event: DragEvent) {
            hover:shadow-md hover:border-(--ui-primary)"
     :class="overdue ? 'border-red-500' : 'border-(--ui-border)'"
     draggable="true"
-    :title="card.title || '(Untitled)'"
+    :title="headline"
     @click="handleClick"
     @contextmenu.prevent="handleContextMenu"
     @dragstart="handleDragStart"
@@ -127,10 +129,21 @@ function handleDragEnd(event: DragEvent) {
     <h4
       class="text-xs font-medium line-clamp-2 leading-snug"
       :class="{ 'pl-4': showOverdueIcon }"
-      :title="card.title || '(Untitled)'"
+      :title="headline"
     >
-      {{ card.title || '(Untitled)' }}
+      {{ headline }}
     </h4>
+
+    <div v-if="labels.length" class="mt-1 flex flex-wrap gap-1">
+      <span
+        v-for="l in labels"
+        :key="l"
+        class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
+        :class="labelPillClass(l)"
+      >
+        {{ labelDef(l)?.label ?? l }}
+      </span>
+    </div>
 
     <div class="mt-1.5 flex items-center gap-2 text-[11px] text-(--ui-text-muted)">
       <span

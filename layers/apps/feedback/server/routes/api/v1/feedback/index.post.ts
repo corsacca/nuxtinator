@@ -149,9 +149,10 @@ export default defineEventHandler(async (event) => {
   }
   if (!authUser && !submitter_name) throw createError({ statusCode: 400, statusMessage: 'submitter_name required' })
 
-  // Title comes from the type's primary field — the idea itself, or the bug's
-  // problem statement.
-  const title = (sub === 'idea' ? suggested_fix : problem_description).slice(0, 140)
+  // Submitted cards have no explicit title — the board headline tracks the
+  // primary content (the idea itself, or the bug's problem) until someone sets
+  // one. This derived string is used only as the new-card notification headline.
+  const notificationTitle = (sub === 'idea' ? suggested_fix : problem_description).slice(0, 140)
 
   // Upload to S3 BEFORE the transaction so a DB hiccup doesn't leave stray
   // attachment rows pointing at S3 blobs we'd then need to GC.
@@ -233,7 +234,6 @@ export default defineEventHandler(async (event) => {
           project_id: projectId,
           swimlane_id: swimlane.id,
           column_id: inboxColumn.id,
-          title,
           post_type: 'feedback',
           post_meta: postMeta
         })
@@ -259,7 +259,7 @@ export default defineEventHandler(async (event) => {
       // card. Writes in this txn so a card and its notices commit together;
       // core's daily digest sweep turns these into one email per recipient.
       await notifyNewFeedbackCard(tx, {
-        cardTitle: title,
+        cardTitle: notificationTitle,
         projectName: project?.name ?? null,
         subType: sub,
         actorId: authUser?.userId ?? null,

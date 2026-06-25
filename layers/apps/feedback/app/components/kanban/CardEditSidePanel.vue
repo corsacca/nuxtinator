@@ -5,7 +5,7 @@ import type {
   KanbanProjectModel,
   PostType
 } from './types'
-import { PHASES, DOING_COLUMN } from '../../composables/useCardUtils'
+import { PHASES, DOING_COLUMN, FEEDBACK_LABELS, cardHeadline } from '../../composables/useCardUtils'
 
 type Card = KanbanCardModel
 
@@ -36,6 +36,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   save: [patch: Partial<Card> & { post_meta?: Record<string, any> }]
   delete: [cardId: string]
+  archive: [patch: Partial<Card> & { post_meta?: Record<string, any> }]
 }>()
 
 const toast = useToast()
@@ -116,6 +117,17 @@ const priorityQualOptions = [
   { label: 'High', value: 'high' },
   { label: 'Highest', value: 'highest' }
 ]
+
+// Triage labels live in post_meta.labels as an array of catalog keys. The
+// picker reads/writes that array; display text comes from the code catalog.
+const labelOptions = FEEDBACK_LABELS.map(l => ({ label: l.label, value: l.value as string }))
+const draftLabels = computed<string[]>({
+  get: () => {
+    const v = draft.value?.post_meta?.labels
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  },
+  set: (vals: string[]) => setMeta('labels', vals)
+})
 
 // Feedback content fields, minus `plan` (which renders in the Progress
 // section). The two text fields are labeled and ordered by type so the panel
@@ -216,6 +228,7 @@ const currentColumnName = computed(() =>
   props.columns.find(c => c.id === props.card?.column_id)?.name ?? ''
 )
 const isDoing = computed(() => currentColumnName.value === DOING_COLUMN)
+const isArchived = computed(() => currentColumnName.value === 'ARCHIVE')
 const phaseSelectItems = PHASES.map(p => ({ label: p.label, value: p.value }))
 
 // -------- Meta helpers --------
@@ -264,36 +277,34 @@ function setMeta(key: string, value: any) {
 }
 
 // -------- Save / delete --------
+// The card edits as a PATCH body. Title is an optional, user-owned headline; a
+// blank title is stored as-is and the board falls back to the card's primary
+// content (the problem for a bug, the idea for an idea) at display time — see
+// cardHeadline.
+function buildPatch(): Partial<Card> & { post_meta?: Record<string, any> } {
+  const d = draft.value!
+  return {
+    title: d.title.trim(),
+    post_type: d.post_type,
+    description: d.description || null,
+    assignee: d.assignee || null,
+    start_date: d.start_date || null,
+    due_date: d.due_date || null,
+    is_done: d.is_done,
+    testing_results: d.testing_results || null,
+    // Deep-merge: preserve any existing post_meta keys we didn't edit
+    post_meta: {
+      ...(props.card!.post_meta ?? {}),
+      ...d.post_meta
+    }
+  }
+}
+
 async function handleSave() {
   if (!draft.value || !props.card) return
   saving.value = true
   try {
-    const d = draft.value
-    // Feedback cards have no standalone title field; the board headline tracks
-    // the primary content field — the problem for a bug, the idea for an idea —
-    // truncated the same way the widget derives the title on first submit.
-    const feedbackPrimary = d.post_meta?.feedback_sub_type === 'idea'
-      ? d.post_meta?.suggested_fix
-      : d.post_meta?.problem_description
-    const title = d.post_type === 'feedback' && feedbackPrimary
-      ? String(feedbackPrimary).slice(0, 140)
-      : d.title
-    const patch: Partial<Card> & { post_meta?: Record<string, any> } = {
-      title,
-      post_type: d.post_type,
-      description: d.description || null,
-      assignee: d.assignee || null,
-      start_date: d.start_date || null,
-      due_date: d.due_date || null,
-      is_done: d.is_done,
-      testing_results: d.testing_results || null,
-      // Deep-merge: preserve any existing post_meta keys we didn't edit
-      post_meta: {
-        ...(props.card.post_meta ?? {}),
-        ...d.post_meta
-      }
-    }
-    emit('save', patch)
+    emit('save', buildPatch())
   } finally {
     saving.value = false
   }
@@ -311,6 +322,11 @@ function handleDeleteConfirm() {
 
 function handleDeleteCancel() {
   showDeleteConfirm.value = false
+}
+
+function handleArchive() {
+  if (!draft.value || !props.card) return
+  emit('archive', buildPatch())
 }
 
 // -------- Agent bridge: format + clipboard --------
@@ -387,8 +403,9 @@ function formatCardContextForAgent(): string {
     .filter(Boolean)
     .join('\n')
 
+  const headline = cardHeadline(card)
   const lines: string[] = []
-  lines.push(`# [${card.post_type}] ${card.title || 'Untitled'}`)
+  lines.push(`# [${card.post_type}] ${headline}`)
   lines.push('')
   lines.push(`**Project:** ${projectName}`)
   lines.push(`**Column:** ${columnName}`)
@@ -428,7 +445,7 @@ function formatCardContextForAgent(): string {
   lines.push('---')
   lines.push('')
   lines.push(`**Action:** ${action} — ${getActionInstructions(action)}`)
-  lines.push(`**Context Path:** \`${projectName} / ${columnName} / ${card.title}\``)
+  lines.push(`**Context Path:** \`${projectName} / ${columnName} / ${headline}\``)
   lines.push('')
   lines.push('## Post Meta (All Fields)')
   lines.push('```json')
@@ -547,6 +564,13 @@ async function handleCopyForAgent() {
               <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
                 Feedback
               </h3>
+              <UFormField label="Title" help="Shown on the board. Leave blank to use the problem text.">
+                <UInput
+                  v-model="draft.title"
+                  placeholder="Leave blank to use the problem text"
+                  class="w-full"
+                />
+              </UFormField>
               <UFormField v-for="f in feedbackContentFields" :key="f.name" :label="f.label">
                 <UTextarea
                   v-if="f.type === 'textarea'"
@@ -660,6 +684,17 @@ async function handleCopyForAgent() {
                   @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
                 />
               </UFormField>
+              <UFormField label="Labels">
+                <USelectMenu
+                  v-model="draftLabels"
+                  :items="labelOptions"
+                  value-key="value"
+                  label-key="label"
+                  multiple
+                  placeholder="No labels"
+                  class="w-full"
+                />
+              </UFormField>
               <UFormField label="Plan">
                 <UTextarea
                   :rows="3"
@@ -693,9 +728,14 @@ async function handleCopyForAgent() {
             </div>
           </div>
           <div v-else class="flex items-center justify-between gap-2">
-            <UButton color="error" variant="outline" icon="i-lucide-trash-2" @click="handleDeleteClick">
-              Delete
-            </UButton>
+            <div class="flex items-center gap-2">
+              <UButton color="error" variant="outline" icon="i-lucide-trash-2" @click="handleDeleteClick">
+                Delete
+              </UButton>
+              <UButton v-if="!isArchived" color="neutral" variant="soft" icon="i-lucide-archive" @click="handleArchive">
+                Archive
+              </UButton>
+            </div>
             <div class="flex items-center gap-2">
               <UButton variant="ghost" @click="open = false">Cancel</UButton>
               <UButton :loading="saving" icon="i-lucide-save" @click="handleSave">Save</UButton>
