@@ -13,8 +13,6 @@
     "layers/oauth",
     "layers/mcp",
     "layers/dev",
-    "layers/apps/calendar",
-    "layers/apps/kanban",
     "layers/apps/messages",
     "layers/apps/videos",
     "layers/apps/feedback",

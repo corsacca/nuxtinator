@@ -34,26 +34,12 @@
     "source": "github:corsacca/nuxtinator/layers/mcp",
     "tagPrefix": "@nuxtinator/mcp@"
   },
-  "calendar": {
-    "pkg": "@nuxtinator/calendar",
-    "version": "latest",
-    "ref": "master",
-    "source": "github:corsacca/nuxtinator/layers/apps/calendar",
-    "tagPrefix": "@nuxtinator/calendar@"
-  },
   "feedback": {
     "pkg": "@nuxtinator/feedback",
     "version": "latest",
     "ref": "master",
     "source": "github:corsacca/nuxtinator/layers/apps/feedback",
     "tagPrefix": "@nuxtinator/feedback@"
-  },
-  "kanban": {
-    "pkg": "@nuxtinator/kanban",
-    "version": "latest",
-    "ref": "master",
-    "source": "github:corsacca/nuxtinator/layers/apps/kanban",
-    "tagPrefix": "@nuxtinator/kanban@"
   },
   "list-of-100": {
     "pkg": "@nuxtinator/list-of-100",

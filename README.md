@@ -61,8 +61,6 @@ Dev server: <http://localhost:2080>.
 | [email-mailgun](layers/email-mailgun/) | Choice | Mailgun (HTTP API in prod, MailHog locally). Provides `#email`. | — |
 | [oauth](layers/oauth/) | Optional | OAuth 2.1 issuer (token, consent, admin endpoints). | — |
 | [mcp](layers/mcp/) | Optional | MCP server transport. Depends on `oauth`. | — |
-| [apps/calendar](layers/apps/calendar/) | Optional | Calendar app (events, reminders). | — |
-| [apps/kanban](layers/apps/kanban/) | Optional | Kanban boards app. | — |
 | [apps/messages](layers/apps/messages/) | Optional | Team messaging app (channels, DMs, comments, reactions). | — |
 | [apps/videos](layers/apps/videos/) | Optional | Video recording + playback app. | — |
 | [dev](layers/dev/) | Optional | UI sandbox at `/kitchen`. Useful in dev, comment out for prod. | — |

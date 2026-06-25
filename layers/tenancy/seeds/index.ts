@@ -98,12 +98,12 @@ async function seedOrgCustomRoles(
     {
       name: 'Editor',
       description: 'Read + write across messages and apps.',
-      permissions: ['messages.access', 'messages.read', 'messages.write', 'calendar.access', 'calendar.read', 'calendar.write', 'kanban.access', 'kanban.read', 'kanban.write']
+      permissions: ['messages.access', 'messages.read', 'messages.write']
     },
     {
       name: 'Viewer',
       description: 'Read-only across all apps.',
-      permissions: ['messages.access', 'messages.read', 'calendar.access', 'calendar.read', 'kanban.access', 'kanban.read']
+      permissions: ['messages.access', 'messages.read']
     }
   ]
 

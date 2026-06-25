@@ -26,8 +26,6 @@ export const LAYERS = [
   { id: 'email-mailgun',   pkg: '@nuxtinator/email-mailgun' },
   { id: 'oauth',           pkg: '@nuxtinator/oauth' },
   { id: 'mcp',             pkg: '@nuxtinator/mcp' },
-  { id: 'calendar',        pkg: '@nuxtinator/calendar' },
-  { id: 'kanban',          pkg: '@nuxtinator/kanban' },
   { id: 'messages',        pkg: '@nuxtinator/messages' },
   { id: 'videos',          pkg: '@nuxtinator/videos' },
   { id: 'feedback',        pkg: '@nuxtinator/feedback' },

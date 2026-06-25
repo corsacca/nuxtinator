@@ -34,8 +34,8 @@ export default defineNuxtConfig({
     layer('@nuxtinator/email-mailgun'),  // optional — pick an email backend
     layer('@nuxtinator/oauth'),          // optional — only if you need OAuth/MCP
     layer('@nuxtinator/mcp'),            // optional
-    layer('@nuxtinator/calendar'),
-    layer('@nuxtinator/kanban')
+    layer('@nuxtinator/messages'),
+    layer('@nuxtinator/videos')
     // no layer('@nuxtinator/tenancy')
   ],
   // ...
@@ -110,7 +110,7 @@ PgBouncer or any pooling mode works in single mode. There's no `SET LOCAL` to wo
 
 ## Permissions in single mode
 
-The host ships zero permissions. App layers register their own (e.g. `calendar.access`, `kanban.write`).
+The host ships zero permissions. App layers register their own (e.g. `messages.access`, `messages.write`).
 
 User permission resolution:
 1. If `users.is_admin = true`, the user has every registered permission.
