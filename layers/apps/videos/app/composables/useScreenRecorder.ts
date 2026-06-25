@@ -48,6 +48,10 @@ export const useScreenRecorder = () => {
   const showWebcam = ref(true)
   const includeAudio = ref(true)
 
+  // Microphone selection. `null` means use the system default device.
+  const selectedAudioDeviceId = ref<string | null>(null)
+  const availableMics = ref<MediaDeviceInfo[]>([])
+
   // Internal state
   const tabRecordingFallback = ref(false)
   const displaySurfaceType = ref<string | null>(null)
@@ -171,6 +175,31 @@ export const useScreenRecorder = () => {
     }
   }
 
+  // Enumerate available microphones. Labels are only populated once the user has
+  // granted microphone permission at least once, so callers should refresh this
+  // after a successful permission prompt.
+  const loadAudioDevices = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      availableMics.value = devices.filter(d => d.kind === 'audioinput')
+    } catch (err) {
+      console.error('Could not enumerate audio devices:', err)
+    }
+  }
+
+  // Build the microphone track constraints, pinning the user-selected device when set.
+  const micConstraints = (): MediaTrackConstraints => {
+    const constraints: MediaTrackConstraints = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    }
+    if (selectedAudioDeviceId.value) {
+      constraints.deviceId = { exact: selectedAudioDeviceId.value }
+    }
+    return constraints
+  }
+
   // Start recording with countdown
   const startRecording = async (mode: RecordingMode = 'screen', preferredDisplaySurface?: 'monitor' | 'window' | 'browser') => {
     try {
@@ -227,11 +256,7 @@ export const useScreenRecorder = () => {
             width: { ideal: 1280 },
             height: { ideal: 720 },
           },
-          audio: mode === 'webcam' ? {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          } : false,
+          audio: mode === 'webcam' ? micConstraints() : false,
         })
 
         if (mode === 'webcam') {
@@ -243,11 +268,7 @@ export const useScreenRecorder = () => {
       if (includeAudio.value && mode !== 'webcam') {
         try {
           audioStream.value = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            },
+            audio: micConstraints(),
             video: false,
           })
         } catch (err) {
@@ -643,11 +664,14 @@ export const useScreenRecorder = () => {
     recordingMode,
     showWebcam,
     includeAudio,
+    selectedAudioDeviceId,
+    availableMics,
 
     // Streams
     webcamStream,
 
     // Methods
+    loadAudioDevices,
     startRecording,
     finalizeRecording,
     cancelPositioning,

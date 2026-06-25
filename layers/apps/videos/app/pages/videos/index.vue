@@ -52,14 +52,33 @@ const loadVideos = async () => {
 watch(scope, () => loadVideos())
 onMounted(() => loadVideos())
 
-const deleteVideo = async (id: string) => {
-  if (!confirm('Are you sure you want to delete this recording?')) return
+const deleteTarget = ref<Video | null>(null)
+const deleting = ref(false)
+const deleteError = ref<string | null>(null)
+const deleteModalOpen = computed({
+  get: () => deleteTarget.value !== null,
+  set: (val: boolean) => { if (!val) { deleteTarget.value = null; deleteError.value = null } }
+})
+
+const requestDelete = (video: Video) => {
+  deleteTarget.value = video
+  deleteError.value = null
+}
+
+const confirmDelete = async () => {
+  if (!deleteTarget.value) return
+  const id = deleteTarget.value.id
+  deleting.value = true
+  deleteError.value = null
   try {
     await $fetch(`/api/videos/${id}`, { method: 'DELETE', credentials: 'include' })
     videos.value = videos.value.filter(v => v.id !== id)
+    deleteTarget.value = null
   } catch (err: any) {
     console.error('Error deleting video:', err)
-    alert(err.data?.message || 'Failed to delete video')
+    deleteError.value = err.data?.message || 'Failed to delete video'
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -215,13 +234,18 @@ useHead({ title: 'Video Library' })
             </div>
 
             <div class="video-actions">
-              <UButton :to="`/watch/${video.shareToken}`" size="sm" icon="i-lucide-play" class="flex-1" square />
+              <UButton :to="`/watch/${video.shareToken}`" size="sm" icon="i-lucide-play" class="flex-1" block>
+                Play
+              </UButton>
               <UButton @click="copyLink(video)" variant="outline" size="sm"
                 :icon="copied === video.id ? 'i-lucide-check' : 'i-lucide-copy'"
-                :title="copied === video.id ? 'Copied!' : 'Copy Link'"
-                class="flex-1" square />
-              <UButton @click="deleteVideo(video.id)" color="error" variant="outline" size="sm"
-                icon="i-lucide-trash-2" class="flex-1" square />
+                class="flex-1" block>
+                {{ copied === video.id ? 'Copied!' : 'Copy' }}
+              </UButton>
+              <UButton @click="requestDelete(video)" color="error" variant="outline" size="sm"
+                icon="i-lucide-trash-2" class="flex-1" block>
+                Delete
+              </UButton>
             </div>
           </div>
         </div>
@@ -231,6 +255,58 @@ useHead({ title: 'Video Library' })
         <p class="video-count">{{ videos.length }} recording{{ videos.length === 1 ? '' : 's' }}</p>
       </div>
     </div>
+
+    <UModal
+      v-model:open="deleteModalOpen"
+      :dismissible="!deleting"
+    >
+      <template #content>
+        <div class="p-6 space-y-5">
+          <div class="flex items-start gap-3">
+            <div class="shrink-0 size-10 rounded-full bg-(--ui-error)/10 flex items-center justify-center">
+              <UIcon
+                name="i-lucide-triangle-alert"
+                class="size-5 text-(--ui-error)"
+              />
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-lg font-semibold">
+                Delete recording?
+              </h3>
+              <p class="text-sm text-(--ui-text-muted) mt-1">
+                This will permanently delete
+                <span class="font-medium text-(--ui-text)">{{ deleteTarget?.title || 'this recording' }}</span>.
+                This action cannot be undone.
+              </p>
+              <p
+                v-if="deleteError"
+                class="text-sm text-(--ui-error) mt-2"
+              >
+                {{ deleteError }}
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-3 pt-2">
+            <UButton
+              variant="ghost"
+              color="neutral"
+              :disabled="deleting"
+              @click="deleteModalOpen = false"
+            >
+              Cancel
+            </UButton>
+            <UButton
+              color="error"
+              icon="i-lucide-trash-2"
+              :loading="deleting"
+              @click="confirmDelete"
+            >
+              Delete
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
 

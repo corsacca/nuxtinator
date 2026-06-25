@@ -15,7 +15,6 @@ const videoTitle = ref('')
 const isOwner = ref(false)
 const isEditing = ref(false)
 const editTitle = ref('')
-const videoDbId = ref('')
 const viewCount = ref(0)
 const playCount = ref(0)
 const hasTrackedPlay = ref(false)
@@ -53,7 +52,6 @@ onMounted(async () => {
     videoUrl.value = response.videoUrl
     videoTitle.value = response.title || 'Untitled Video'
     isOwner.value = response.isOwner || false
-    videoDbId.value = response.videoId
     viewCount.value = response.viewCount || 0
     playCount.value = response.playCount || 0
 
@@ -109,7 +107,7 @@ const saveTitle = async () => {
     return
   }
   try {
-    await $fetch(`/api/videos/${videoDbId.value}`, {
+    await $fetch(`/api/videos/share/${token.value}`, {
       method: 'PATCH',
       credentials: 'include',
       body: { title: editTitle.value.trim() }

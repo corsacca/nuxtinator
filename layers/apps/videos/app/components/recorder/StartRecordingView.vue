@@ -81,6 +81,23 @@
           </div>
         </template>
       </UCheckbox>
+
+      <div v-if="audioWillBeCaptured" class="mic-select">
+        <label class="mic-select-label">Microphone</label>
+        <USelect
+          :model-value="selectedAudioDeviceId ?? DEFAULT_MIC"
+          :items="micItems"
+          icon="i-lucide-mic"
+          size="lg"
+          class="mic-select-input"
+          :ui="{ content: 'w-auto min-w-(--reka-select-trigger-width) max-w-[90vw]' }"
+          @update:model-value="(v: string) => $emit('update:selectedAudioDeviceId', v === DEFAULT_MIC ? null : v)"
+        />
+        <RecorderMicLevelMeter
+          :device-id="selectedAudioDeviceId"
+          :active="audioWillBeCaptured && micReady"
+        />
+      </div>
     </div>
 
     <UButton @click="$emit('start-recording')" size="xl" class="mt-4">
@@ -105,13 +122,34 @@ import type { RecordingMode } from '../../composables/useScreenRecorder'
 const props = defineProps<{
   selectedMode: RecordingMode
   includeAudio: boolean
+  selectedAudioDeviceId: string | null
+  availableMics: MediaDeviceInfo[]
+  micReady: boolean
 }>()
 
 const emit = defineEmits<{
   'update:selectedMode': [mode: RecordingMode]
   'update:includeAudio': [value: boolean]
+  'update:selectedAudioDeviceId': [value: string | null]
   'start-recording': []
 }>()
+
+// Whether the microphone will actually be captured for the selected mode.
+// Webcam mode always records its mic; screen/both modes only when the toggle is on.
+const audioWillBeCaptured = computed(() => props.selectedMode === 'webcam' || props.includeAudio)
+
+// Sentinel for "let the browser pick" — USelect forbids an empty-string item value,
+// so we use a non-device token and map it back to null when emitting.
+const DEFAULT_MIC = '__default__'
+
+// Dropdown options: a system-default entry plus every detected input.
+const micItems = computed(() => [
+  { label: 'System Default', value: DEFAULT_MIC },
+  ...props.availableMics.map((device, i) => ({
+    label: device.label || `Microphone ${i + 1}`,
+    value: device.deviceId,
+  })),
+])
 
 const handleModeSelection = (mode: RecordingMode) => {
   // If the same mode is already selected, start recording
@@ -179,8 +217,29 @@ const handleModeSelection = (mode: RecordingMode) => {
   border: 1px solid var(--ui-border);
   border-radius: 0.5rem;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1.25rem;
+}
+
+.mic-select {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.mic-select-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+}
+
+.mic-select-input {
+  width: 100%;
 }
 
 .recording-settings :deep(> div) {

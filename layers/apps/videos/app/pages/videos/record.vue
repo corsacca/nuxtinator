@@ -21,6 +21,9 @@ const {
   recordingMode,
   showWebcam,
   includeAudio,
+  selectedAudioDeviceId,
+  availableMics,
+  loadAudioDevices,
   countdown,
   isPreparingRecording,
   isPipActive,
@@ -58,6 +61,8 @@ const requestMicrophonePermission = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true })
     microphonePermission.value = 'granted'
     stream.getTracks().forEach(track => track.stop())
+    // Device labels become available only after permission is granted.
+    await loadAudioDevices()
   } catch (err: any) {
     microphonePermission.value = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' ? 'denied' : 'prompt'
   }
@@ -77,9 +82,14 @@ onMounted(async () => {
       microphonePermission.value = mic.state as 'granted' | 'denied' | 'prompt'
       mic.addEventListener('change', () => {
         microphonePermission.value = mic.state as 'granted' | 'denied' | 'prompt'
+        if (mic.state === 'granted') loadAudioDevices()
       })
     } catch { microphonePermission.value = 'prompt' }
   }
+
+  // Populate the microphone list and keep it current as devices are plugged in/out.
+  await loadAudioDevices()
+  navigator.mediaDevices?.addEventListener('devicechange', loadAudioDevices)
 })
 
 const handleStartRecording = () => {
@@ -95,6 +105,7 @@ const handleFinalizeRecording = async () => {
 }
 
 onUnmounted(() => {
+  navigator.mediaDevices?.removeEventListener('devicechange', loadAudioDevices)
   if (webcamStream.value && !isRecording.value) {
     webcamStream.value.getTracks().forEach(track => track.stop())
   }
@@ -135,6 +146,9 @@ useHead({ title: 'Record Video' })
           v-if="!isRecording && !recordedVideoUrl && countdown === 0 && !isPreparingRecording && !isPositioning"
           v-model:selected-mode="selectedMode"
           v-model:include-audio="includeAudio"
+          v-model:selected-audio-device-id="selectedAudioDeviceId"
+          :available-mics="availableMics"
+          :mic-ready="microphonePermission === 'granted'"
           @start-recording="handleStartRecording"
         />
 
