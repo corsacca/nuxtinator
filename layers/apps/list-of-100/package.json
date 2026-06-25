@@ -1,5 +1,6 @@
 {
   "name": "@nuxtinator/list-of-100",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "exports": {

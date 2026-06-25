@@ -26,6 +26,24 @@ bun run typecheck
 
 `_layers/` is a build artifact — gitignored, re-fetched by `sync-layers`. Don't commit it; don't edit files inside it (changes are lost on the next setup). On a fresh clone, `_layers/` is absent until you run `bun run setup`.
 
+## Layer versions & updates
+
+Each entry in [layers.ts](layers.ts) carries a `version` policy (default `'latest'` = auto-update to the newest release; omit it for that). Set it per layer to control how updates flow:
+
+- `'^1.4.0'` — take minor + patch automatically, **hold majors**
+- `'~1.4.0'` — patch only
+- `'1.4.0'` — exact pin
+- `'master'` / a branch / a SHA — track a raw ref (bleeding edge)
+
+`version` is resolved to a concrete git tag and recorded in **`layers.lock.json`** (committed — it's what makes a deploy reproducible and busts the build cache). `sync-layers` fetches exactly what the lock pins; it does not re-resolve ranges on every build.
+
+```bash
+bun run layers:check    # dry run — what newer versions are available in range
+bun run layers:update   # advance layers.lock.json to the newest in-range versions
+```
+
+A scheduled GitHub Action ([.github/workflows/layer-updates.yml](.github/workflows/layer-updates.yml)) runs `layers:update` weekly and opens a PR with the lockfile change — merge it to deploy the update. It works with no secrets on public sources; add a `LAYER_UPDATE_TOKEN` (fine-grained PAT) so the PR runs CI and can auto-merge, and a `LAYER_SOURCE_TOKEN` (read-only) for a private layer source. Major updates outside a layer's range are reported, not auto-applied — widen the range in `layers.ts` to adopt one.
+
 ## Cross-layer imports (aliases)
 
 Import shared functionality by alias, not relative path into `_layers/`:
@@ -137,7 +155,7 @@ For the full file-by-file template — DB schema augmentation, per-app tenancy r
 
 - **SSR is off** — this is a SPA.
 - **Auth is JWT.** The **first user to register is auto-promoted to operator-admin.**
-- **Updating nuxtinator:** set `NUXTINATOR_REF=<tag-or-sha>` in `.env`, then `bun run setup` again (layers are force-refetched at the new ref).
+- **Updating nuxtinator:** set each layer's `version` in `layers.ts` and run `bun run layers:update` (see "Layer versions & updates"). To pin *every* layer to one ref at once, set `NUXTINATOR_REF=<tag-or-sha>` in `.env` — it overrides resolution for all layers.
 - **Per-layer local override:** `NUXTINATOR_<ID>_PATH=../sibling-checkout` in `.env` points one layer at a working copy without touching `layers.ts`.
 
 ## Don't

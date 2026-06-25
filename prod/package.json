@@ -6,6 +6,8 @@
   "workspaces": ["_layers/*"],
   "scripts": {
     "sync-layers": "bun run scripts/sync-layers.ts",
+    "layers:check": "bun run scripts/layers-update.ts",
+    "layers:update": "bun run scripts/layers-update.ts --write",
     "setup": "bun install && bun run sync-layers && bun install",
     "dev": "nuxt dev",
     "build": "nuxt build",
@@ -32,6 +34,8 @@
     "@nuxt/eslint": "^1.15.2",
     "eslint": "^10.2.1",
     "giget": "^1.2.0",
+    "semver": "^7.6.0",
+    "@types/semver": "^7.5.0",
     "typescript": "^6.0.3",
     "vue-tsc": "^3.2.7"
   }

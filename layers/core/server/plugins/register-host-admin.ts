@@ -34,6 +34,14 @@ export default defineNitroPlugin(() => {
 
   registerAdminSection({
     appId: 'host',
+    title: 'Updates',
+    path: '/admin/updates',
+    icon: 'i-lucide-arrow-up-circle',
+    order: 25
+  })
+
+  registerAdminSection({
+    appId: 'host',
     title: 'Activity',
     path: '/admin/audit',
     icon: 'i-lucide-history',

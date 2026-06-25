@@ -1,48 +1,58 @@
 // Which nuxtinator layers this project uses.
 //
-// This file is the SINGLE SOURCE OF TRUTH for REMOTE layer selection — layers
-// fetched from a git host into _layers/<id>/. Both nuxt.config.ts (the
-// `extends:` array) and scripts/sync-layers.ts (the fetcher) read from it.
+// SINGLE SOURCE OF TRUTH for remote layer selection. Both nuxt.config.ts (the
+// `extends:` array) and scripts/sync-layers.ts read from it.
 //
 // YOUR OWN apps don't go here. Drop them in ./apps/<id>/ — nuxt.config.ts globs
-// that directory into `extends`, so a new app loads with no entry in this file,
-// no fetch, and no install step. See ./apps/README.md. Use this file only for
-// layers pulled from a remote repo.
+// that directory into `extends`, so a new app loads with no entry here, no
+// fetch, no install. Use this file only for layers pulled from a remote repo.
 //
-// Each entry has three fields:
-//   id   — directory name under _layers/<id>/ (also the bare slug used in
-//          the NUXTINATOR_<ID>_PATH env-var override)
-//   pkg  — package name Nuxt's extends: resolves to. Must match the layer's
-//          own package.json `name` field. For first-party layers this is
-//          @nuxtinator/<id>; for third-party layers, whatever scope they use.
-//   url  — a giget source: `github:owner/repo[/subdir][#ref]`,
-//          `gitlab:owner/repo#ref`, `bitbucket:…`, `sourcehut:…`, or an
-//          `https://…tarball.tar.gz`. giget has NO `file:` provider — for a
-//          local app use ./apps/<id>/ (above), not a file: URL here.
+// Each entry:
+//   id        — directory under _layers/<id>/ (also the NUXTINATOR_<ID>_PATH slug)
+//   pkg       — package name Nuxt's extends: resolves (matches the layer's package.json `name`)
+//   repo      — owner/name of the source repo (listed on every entry for clarity; defaults to corsacca/nuxtinator)
+//   subdir    — path to the layer inside its source repo
+//   tagPrefix — tag namespace (default: `@nuxtinator/<id>@`); own-repo layers use 'v'
+//   version   — update policy (default 'latest'):
+//                 'latest'  newest released tag, else master — auto-update (the default)
+//                 '^1.4.0'  newest 1.x: take minor + patch automatically, hold majors
+//                 '~1.4.0'  newest 1.4.x: patch only
+//                 '1.4.0'   exact pin
+//                 'master' / a branch / a SHA — track a raw ref (bleeding edge)
 //
-// Load order matters. Keep core first; tenancy second so its multi-mode
-// kernel overrides core's single-mode; email backend; oauth; mcp; app
-// layers; dev last (remove dev before production build).
+// `version` is resolved to a concrete tag by scripts/sync-layers.ts (via
+// layers:update) and recorded in layers.lock.json (committed). Set NUXTINATOR_REF
+// in .env to override the ref for ALL layers at once (a global pin escape hatch).
+//
+// Load order matters. core first; tenancy second so its multi-mode kernel
+// overrides core's single-mode; email backend; oauth; mcp; app layers; dev last.
 
-const REF = process.env.NUXTINATOR_REF || 'master'
+import type { LayerSpec } from './scripts/lib/resolve'
 
-export const LAYERS = [
-  { id: 'core',            pkg: '@nuxtinator/core',           url: `github:corsacca/nuxtinator/layers/core#${REF}` },
-  { id: 'tenancy',         pkg: '@nuxtinator/tenancy',        url: `github:corsacca/nuxtinator/layers/tenancy#${REF}` },
-  { id: 'email-mailgun',   pkg: '@nuxtinator/email-mailgun',  url: `github:corsacca/nuxtinator/layers/email-mailgun#${REF}` },
-  { id: 'oauth',           pkg: '@nuxtinator/oauth',          url: `github:corsacca/nuxtinator/layers/oauth#${REF}` },
-  { id: 'mcp',             pkg: '@nuxtinator/mcp',            url: `github:corsacca/nuxtinator/layers/mcp#${REF}` },
-  { id: 'calendar',        pkg: '@nuxtinator/calendar',       url: `github:corsacca/nuxtinator/layers/apps/calendar#${REF}` },
-  { id: 'feedback',        pkg: '@nuxtinator/feedback',       url: `github:corsacca/nuxtinator/layers/apps/feedback#${REF}` },
-  { id: 'kanban',          pkg: '@nuxtinator/kanban',         url: `github:corsacca/nuxtinator/layers/apps/kanban#${REF}` },
-  { id: 'list-of-100',     pkg: '@nuxtinator/list-of-100',    url: `github:corsacca/nuxtinator/layers/apps/list-of-100#${REF}` },
-  { id: 'messages',        pkg: '@nuxtinator/messages',       url: `github:corsacca/nuxtinator/layers/apps/messages#${REF}` },
-  { id: 'videos',          pkg: '@nuxtinator/videos',         url: `github:corsacca/nuxtinator/layers/apps/videos#${REF}` },
-  { id: 'files',           pkg: '@nuxtinator/files',          url: `github:corsacca/nuxtinator/layers/apps/files#${REF}` },
-  { id: 'context',         pkg: '@nuxtinator/context',        url: `github:corsacca/nuxtinator/layers/apps/context#${REF}` },
-  { id: 'dev',             pkg: '@nuxtinator/dev',            url: `github:corsacca/nuxtinator/layers/dev#${REF}` }
+export const LAYERS: readonly LayerSpec[] = [
+  { id: 'core',          pkg: '@nuxtinator/core',          repo: 'corsacca/nuxtinator', subdir: 'layers/core' },
+  { id: 'tenancy',       pkg: '@nuxtinator/tenancy',       repo: 'corsacca/nuxtinator', subdir: 'layers/tenancy' },
+  { id: 'email-mailgun', pkg: '@nuxtinator/email-mailgun', repo: 'corsacca/nuxtinator', subdir: 'layers/email-mailgun' },
+  { id: 'oauth',         pkg: '@nuxtinator/oauth',         repo: 'corsacca/nuxtinator', subdir: 'layers/oauth' },
+  { id: 'mcp',           pkg: '@nuxtinator/mcp',           repo: 'corsacca/nuxtinator', subdir: 'layers/mcp' },
+  { id: 'calendar',      pkg: '@nuxtinator/calendar',      repo: 'corsacca/nuxtinator', subdir: 'layers/apps/calendar' },
+  { id: 'feedback',      pkg: '@nuxtinator/feedback',      repo: 'corsacca/nuxtinator', subdir: 'layers/apps/feedback' },
+  { id: 'kanban',        pkg: '@nuxtinator/kanban',        repo: 'corsacca/nuxtinator', subdir: 'layers/apps/kanban' },
+  { id: 'list-of-100',   pkg: '@nuxtinator/list-of-100',   repo: 'corsacca/nuxtinator', subdir: 'layers/apps/list-of-100' },
+  { id: 'messages',      pkg: '@nuxtinator/messages',      repo: 'corsacca/nuxtinator', subdir: 'layers/apps/messages' },
+  { id: 'videos',        pkg: '@nuxtinator/videos',        repo: 'corsacca/nuxtinator', subdir: 'layers/apps/videos' },
+  { id: 'files',         pkg: '@nuxtinator/files',         repo: 'corsacca/nuxtinator', subdir: 'layers/apps/files' },
+  { id: 'context',       pkg: '@nuxtinator/context',       repo: 'corsacca/nuxtinator', subdir: 'layers/apps/context' },
+  { id: 'dev',           pkg: '@nuxtinator/dev',           repo: 'corsacca/nuxtinator', subdir: 'layers/dev' }
 
-  // Example remote third-party layer (uncomment + edit to use). For your OWN
-  // apps, use ./apps/<id>/ instead — see ./apps/README.md.
-  // { id: 'contacts',     pkg: '@disciple-tools/contacts',   url: 'github:disciple-tools/contacts-layer#v0.5.0' }
-] as const
+  // Pin a first-party layer to auto-take 1.x minors/patches but hold majors:
+  //   { id: 'feedback', pkg: '@nuxtinator/feedback', repo: 'corsacca/nuxtinator', subdir: 'layers/apps/feedback', version: '^1.0.0' },
+  //
+  // A third-party layer that is the only one in its repo — tags are usually plain `v1.2.3`:
+  //   { id: 'contacts', pkg: '@acme/contacts', repo: 'acme/contacts-layer', subdir: '.', tagPrefix: 'v', version: '^0.5.0' },
+  //
+  // Third-party layers sharing ONE repo (a monorepo, like this one): same `repo`, different
+  // `subdir`, and a per-layer `tagPrefix` so each keeps its own version line:
+  //   { id: 'crm',     pkg: '@acme/crm',     repo: 'acme/suite', subdir: 'layers/crm',     tagPrefix: '@acme/crm@',     version: '^2.0.0' },
+  //   { id: 'billing', pkg: '@acme/billing', repo: 'acme/suite', subdir: 'layers/billing', tagPrefix: '@acme/billing@', version: '^2.0.0' }
+]

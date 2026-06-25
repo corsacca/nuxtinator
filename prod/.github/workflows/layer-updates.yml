@@ -1,0 +1,60 @@
+# Opens a PR when a layer has a newer version within its declared range.
+#
+# Out of the box (public sources, no secrets): this opens update PRs using the
+# built-in token. To let those PRs run CI so they can auto-merge, add a
+# fine-grained PAT as the LAYER_UPDATE_TOKEN secret. For a PRIVATE layer source,
+# add a read-only token as LAYER_SOURCE_TOKEN.
+#
+# Note: scheduled workflows run only on the default branch, and GitHub disables
+# them after 60 days of repo inactivity (re-enable in the Actions tab).
+name: Check layer updates
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch: {} # adds a manual "Run workflow" button
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  layer-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - name: Resolve layer updates into the lockfile
+        run: bun run layers:update
+        env:
+          LAYER_SOURCE_TOKEN: ${{ secrets.LAYER_SOURCE_TOKEN }} # only for private sources
+      - uses: peter-evans/create-pull-request@v6
+        id: cpr
+        with:
+          token: ${{ secrets.LAYER_UPDATE_TOKEN || github.token }}
+          branch: layer-updates
+          title: 'Layer updates available'
+          commit-message: 'chore: bump layer versions'
+          body: |
+            Automated layer update — `layers.lock.json` was advanced to the
+            newest versions within each layer's declared range in `layers.ts`.
+
+            Merging this rebuilds the app on the new layer code. Major updates
+            outside a layer's range are not included here; widen the range in
+            `layers.ts` to adopt one.
+          labels: layer-update
+
+      # In-range (minor/patch) updates only change layers.lock.json, so every PR
+      # this bot opens is safe to auto-merge once CI is green. Requires "Allow
+      # auto-merge" enabled on the repo and a LAYER_UPDATE_TOKEN (PAT) so the PR
+      # triggers CI — without those it no-ops. Major updates are reported by
+      # layers:update but never applied, so they never reach this step.
+      - name: Enable auto-merge
+        if: steps.cpr.outputs.pull-request-number
+        continue-on-error: true
+        run: gh pr merge --auto --squash "${{ steps.cpr.outputs.pull-request-number }}"
+        env:
+          GH_TOKEN: ${{ secrets.LAYER_UPDATE_TOKEN || github.token }}

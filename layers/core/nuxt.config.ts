@@ -24,7 +24,8 @@ export default defineNuxtConfig({
   modules: [
     fileURLToPath(new URL('./modules/migrations.ts', import.meta.url)),
     fileURLToPath(new URL('./modules/tenant-kernel.ts', import.meta.url)),
-    fileURLToPath(new URL('./modules/email-kernel.ts', import.meta.url))
+    fileURLToPath(new URL('./modules/email-kernel.ts', import.meta.url)),
+    fileURLToPath(new URL('./modules/layer-versions.ts', import.meta.url))
   ],
 
   css: [fileURLToPath(new URL('./app/assets/css/main.css', import.meta.url))],

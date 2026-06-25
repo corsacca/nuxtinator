@@ -2,6 +2,9 @@
   "name": "go-saas-monorepo",
   "private": true,
   "type": "module",
+  "scripts": {
+    "release": "bun run scripts/release.ts"
+  },
   "workspaces": [
     "dev",
     "layers/core",
