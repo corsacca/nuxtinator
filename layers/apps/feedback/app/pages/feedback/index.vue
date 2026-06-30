@@ -589,7 +589,7 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
 </script>
 
 <template>
-  <div class="h-full flex flex-col min-h-0">
+  <div class="flex flex-col h-[calc(100vh-57px)] min-h-0 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
     <div class="shrink-0 bg-(--ui-bg-elevated) border-b border-(--ui-border) px-4 py-2 flex items-center gap-2">
       <div class="flex items-center gap-3 min-w-0 flex-1">
         <UIcon name="i-lucide-inbox" class="shrink-0" />
