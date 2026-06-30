@@ -21,16 +21,16 @@
 // Adding a layer = add an entry here AND a workspace:* dep in package.json.
 
 export const LAYERS = [
-  { id: 'core',            pkg: '@nuxtinator/core' },
-  { id: 'tenancy',         pkg: '@nuxtinator/tenancy' },
-  { id: 'email-mailgun',   pkg: '@nuxtinator/email-mailgun' },
-  { id: 'oauth',           pkg: '@nuxtinator/oauth' },
-  { id: 'mcp',             pkg: '@nuxtinator/mcp' },
-  { id: 'messages',        pkg: '@nuxtinator/messages' },
-  { id: 'videos',          pkg: '@nuxtinator/videos' },
-  { id: 'feedback',        pkg: '@nuxtinator/feedback' },
-  { id: 'list-of-100',     pkg: '@nuxtinator/list-of-100' },
-  { id: 'files',           pkg: '@nuxtinator/files' },
-  { id: 'context',         pkg: '@nuxtinator/context' },
-  { id: 'dev',             pkg: '@nuxtinator/dev' }
+  { id: 'core', pkg: '@nuxtinator/core' },
+  { id: 'tenancy', pkg: '@nuxtinator/tenancy' },
+  { id: 'email-mailgun', pkg: '@nuxtinator/email-mailgun' },
+  { id: 'oauth', pkg: '@nuxtinator/oauth' },
+  { id: 'mcp', pkg: '@nuxtinator/mcp' },
+  { id: 'messages', pkg: '@nuxtinator/messages' },
+  { id: 'videos', pkg: '@nuxtinator/videos' },
+  { id: 'feedback', pkg: '@nuxtinator/feedback' },
+  { id: 'list-of-100', pkg: '@nuxtinator/list-of-100' },
+  { id: 'files', pkg: '@nuxtinator/files' },
+  { id: 'context', pkg: '@nuxtinator/context' },
+  { id: 'dev', pkg: '@nuxtinator/dev' }
 ] as const

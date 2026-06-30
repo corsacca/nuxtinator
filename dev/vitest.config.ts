@@ -5,16 +5,16 @@
 //
 // Add new layers by appending another `layerProject(...)` entry.
 
+import { defineConfig } from 'vitest/config'
+import { loadEnv } from 'vite'
+import { resolve } from 'node:path'
+
 // MUST be set before vitest defaults NODE_ENV to 'test'. The Nuxt/Nitro
 // build inlines `process.env.NODE_ENV` into the bundle, and the email layer
 // switches Mailpit vs. Mailgun on `=== 'development'`. With NODE_ENV='test'
 // at build time, the bundled `isDevelopment` is forever false → real Mailgun
 // → tests fail. Setting it here pins it through the build.
 process.env.NODE_ENV = 'development'
-
-import { defineConfig } from 'vitest/config'
-import { loadEnv } from 'vite'
-import { resolve } from 'node:path'
 
 const env = loadEnv('test', process.cwd(), '')
 
