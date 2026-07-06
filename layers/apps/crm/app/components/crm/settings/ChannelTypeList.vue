@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // Merged channel-type catalog (code-registered + admin-created) with an
-// inline add form. Channel types are org-global — a new one is immediately
-// available to communication_channel fields and the channel widget. The
-// value format is one of the five code-owned normalization formats and is
-// locked after create.
+// inline add form and per-row delete for custom types. Channel types are
+// org-global — a new one is immediately available to communication_channel
+// fields and the channel widget. The value format is one of the five
+// code-owned normalization formats and is locked after create.
 import type { CrmChannelValueFormat } from '../../../composables/useCrmSchemaAdmin'
 
-const { channelTypes, loadChannelTypes, createChannelType } = useCrmSchemaAdmin()
+const { channelTypes, loadChannelTypes, createChannelType, deleteChannelType } = useCrmSchemaAdmin()
 
 const loadError = ref<string | null>(null)
 onMounted(async () => {
@@ -73,6 +73,30 @@ async function submit() {
     saving.value = false
   }
 }
+
+// Two-step delete for custom channel types (code-registered ones have no
+// delete affordance). The server 409s while claimed addresses of the type
+// still exist — their consent history hangs off them.
+const confirmingDeleteKey = ref<string | null>(null)
+const deletingKey = ref<string | null>(null)
+const deleteError = ref<string | null>(null)
+
+async function removeType(key: string) {
+  if (confirmingDeleteKey.value !== key) {
+    confirmingDeleteKey.value = key
+    return
+  }
+  deletingKey.value = key
+  deleteError.value = null
+  try {
+    await deleteChannelType(key)
+  } catch (err) {
+    deleteError.value = crmErrorMessage(err, 'Failed to delete channel type')
+  } finally {
+    deletingKey.value = null
+    confirmingDeleteKey.value = null
+  }
+}
 </script>
 
 <template>
@@ -115,6 +139,18 @@ async function submit() {
         >
           {{ formatLabel(channelType.valueFormat) }}
         </UBadge>
+        <UButton
+          v-if="channelType.custom"
+          :color="confirmingDeleteKey === channelType.key ? 'error' : 'neutral'"
+          variant="ghost"
+          size="xs"
+          class="shrink-0"
+          :loading="deletingKey === channelType.key"
+          :aria-label="`Delete ${channelType.label}`"
+          @click="removeType(channelType.key)"
+        >
+          {{ confirmingDeleteKey === channelType.key ? 'Really delete?' : 'Delete' }}
+        </UButton>
       </li>
       <li
         v-if="channelTypes.length === 0 && !loadError"
@@ -123,6 +159,12 @@ async function submit() {
         No channel types yet.
       </li>
     </ul>
+
+    <UAlert
+      v-if="deleteError"
+      color="error"
+      :title="deleteError"
+    />
 
     <form
       v-if="adding"

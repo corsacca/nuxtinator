@@ -2,7 +2,8 @@
 // Creates an admin-defined custom field (a crm_record_fields row with kind
 // set) on any non-orphan record type — code-declared types take custom
 // fields too. Kind is locked after create; only kinds whose storage resolves
-// to jsonb or entries are allowed. Returns { field } in the same shape as
+// to jsonb, entries, or channels are allowed (communication_channel requires
+// a channelType from the merged catalog). Returns { field } in the same shape as
 // GET /api/crm/schema/types/:type/fields entries. 409 on key collision with
 // a manifest or existing custom field. Permission: crm.schema.manage.
 
@@ -23,7 +24,9 @@ const Body = z.object({
   label: z.string().trim().min(1).max(80),
   section: z.string().trim().min(1).max(60).optional(),
   required: z.boolean().optional(),
-  options: z.record(z.string(), Option).optional()
+  options: z.record(z.string(), Option).optional(),
+  // communication_channel only; must exist in the merged channel-type catalog.
+  channelType: z.string().trim().min(1).max(60).optional()
 })
 
 export default defineEventHandler(async (event) => {

@@ -46,6 +46,8 @@ export interface CrmCreateFieldInput {
   section?: string
   required?: boolean
   options?: Record<string, CrmFieldOption>
+  /** communication_channel only: the channel-type key the field holds. */
+  channelType?: string
 }
 
 export interface CrmUpdateFieldPatch {
@@ -76,15 +78,15 @@ export const CRM_ADMIN_KIND_OPTIONS: Array<{ value: string, label: string }> = [
   { value: 'key_select', label: 'Dropdown' },
   { value: 'multi_select', label: 'Multi select' },
   { value: 'tags', label: 'Tags' },
-  { value: 'link', label: 'Links' }
+  { value: 'link', label: 'Links' },
+  { value: 'communication_channel', label: 'Channel' }
 ]
 
 // Display labels for the code-only kinds (not creatable by admins, but they
 // appear in manifest field lists).
 const EXTRA_KIND_LABELS: Record<string, string> = {
   user_select: 'Users',
-  connection: 'Connection',
-  communication_channel: 'Channel'
+  connection: 'Connection'
 }
 
 export function crmKindLabel(kind: string): string {
@@ -218,6 +220,11 @@ export function useCrmSchemaAdmin() {
     return res.channelType
   }
 
+  async function deleteChannelType(typeKey: string): Promise<void> {
+    await $fetch(`/api/crm/schema/channel-types/${typeKey}`, { method: 'DELETE' })
+    await loadChannelTypes()
+  }
+
   return {
     canManage,
     channelTypes,
@@ -230,6 +237,7 @@ export function useCrmSchemaAdmin() {
     updateField,
     deleteField,
     reorderFields,
-    createChannelType
+    createChannelType,
+    deleteChannelType
   }
 }

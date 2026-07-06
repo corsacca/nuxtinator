@@ -48,11 +48,12 @@ export const CRM_SCHEMA_SLUG_RE = /^[a-z][a-z0-9_]{1,40}$/
 // Option keys may start with a digit (the contacts manifest ships '18_25').
 export const CRM_OPTION_KEY_RE = /^[a-z0-9][a-z0-9_-]{0,40}$/
 
-// Field kinds admins may create. The relational kinds (user_select,
-// connection, communication_channel) carry code-owned semantics — reverse
-// keys, channel services, user-ref hydration — that a runtime definition
+// Field kinds admins may create. user_select and connection carry code-owned
+// semantics — reverse keys, user-ref hydration — that a runtime definition
 // can't supply, so admin fields are limited to kinds whose storage resolves
-// to jsonb or entries.
+// to jsonb or entries, plus communication_channel: its one definition input
+// (the channel type) is admin-suppliable and the channel service handles the
+// rest.
 export const CRM_ADMIN_FIELD_KINDS = [
   'text',
   'textarea',
@@ -63,7 +64,8 @@ export const CRM_ADMIN_FIELD_KINDS = [
   'key_select',
   'multi_select',
   'tags',
-  'link'
+  'link',
+  'communication_channel'
 ] as const
 export type CrmAdminFieldKind = typeof CRM_ADMIN_FIELD_KINDS[number]
 
@@ -312,6 +314,8 @@ export interface CreateFieldInput {
   section?: string
   required?: boolean
   options?: Record<string, CrmFieldOption>
+  /** communication_channel only: the merged channel-type key the field holds. */
+  channelType?: string
 }
 
 function validateOptionRecord(options: Record<string, CrmFieldOption>): void {
@@ -352,11 +356,23 @@ export async function createField(
     bad(`Unsupported field kind: ${input.kind}`)
   }
   // Belt and braces: the whitelist above already guarantees this, but the
-  // storage contract (custom fields live in jsonb or entries only) is what
-  // actually matters downstream.
+  // storage contract (custom fields live in jsonb, entries, or the channel
+  // service) is what actually matters downstream.
   const storage = storageOf({ kind: input.kind })
-  if (storage !== 'jsonb' && storage !== 'entries') {
+  if (storage !== 'jsonb' && storage !== 'entries' && storage !== 'channels') {
     bad(`Unsupported field kind: ${input.kind}`)
+  }
+
+  // A channel field is unusable without its channel type — the widget and
+  // the channel routes resolve normalization and dedupe through it. The key
+  // must exist in the merged catalog (code-registered or admin-created) and
+  // is stored in the field row's config.
+  if (input.kind === 'communication_channel') {
+    if (!input.channelType) bad('communication_channel fields require a channelType')
+    const channelType = await getChannelType(tx, input.channelType)
+    if (!channelType) bad(`Unknown channel type: ${input.channelType}`)
+  } else if (input.channelType !== undefined) {
+    bad(`'${input.kind}' fields do not take a channel type`)
   }
 
   const fields = await getRecordTypeFields(tx, typeKey)
@@ -385,7 +401,10 @@ export async function createField(
       section_override: input.section ?? null,
       required_override: input.required ? true : null,
       order_override: maxOrder + 1,
-      config: jsonb(input.options ? { options: input.options } : {}),
+      config: jsonb({
+        ...(input.options ? { options: input.options } : {}),
+        ...(input.channelType ? { channelType: input.channelType } : {})
+      }),
       updated_by: ctx.userId,
       updated_at: sql`now()`
     })
@@ -684,4 +703,28 @@ export async function createChannelType(
     })
     .execute()
   return (await getChannelType(tx, input.typeKey))!
+}
+
+export async function removeChannelType(
+  tx: Tx,
+  _ctx: TenantContext,
+  typeKey: string
+): Promise<void> {
+  const type = await getChannelType(tx, typeKey)
+  if (!type) notFound(`Unknown channel type: ${typeKey}`)
+  // Code-registered channel types are code facts — a row under the same key
+  // could only be a label override, so there is nothing deletable.
+  if (!type.custom) bad('Code-registered channel types cannot be deleted')
+  // Claimed addresses of this type carry consent/suppression history; the
+  // type stays until those channel rows are gone.
+  const row = await tx
+    .selectFrom('crm_channels')
+    .select(eb => eb.fn.countAll().as('total'))
+    .where('channel_type', '=', typeKey)
+    .executeTakeFirst()
+  const total = Number(row?.total ?? 0)
+  if (total > 0) {
+    conflict(`Cannot delete '${typeKey}': ${total} channel${total === 1 ? '' : 's'} of this type exist`)
+  }
+  await tx.deleteFrom('crm_channel_types').where('type_key', '=', typeKey).execute()
 }

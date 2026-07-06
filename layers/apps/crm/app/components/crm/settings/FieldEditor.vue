@@ -34,13 +34,14 @@ const fieldKey = ref('')
 const kind = ref('text')
 const section = ref('')
 const required = ref(false)
+const channelType = ref('')
 const optionsDraft = ref<Record<string, CrmFieldOption>>({})
 const keyTouched = ref(false)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const confirmingDelete = ref(false)
 
-watch(open, (v) => {
+watch(open, async (v) => {
   if (!v) return
   error.value = null
   saving.value = false
@@ -52,6 +53,7 @@ watch(open, (v) => {
     kind.value = props.field.kind
     section.value = props.field.section ?? ''
     required.value = props.field.required
+    channelType.value = props.field.channelType ?? ''
     optionsDraft.value = JSON.parse(JSON.stringify(props.field.options ?? {}))
   } else {
     label.value = ''
@@ -59,7 +61,14 @@ watch(open, (v) => {
     kind.value = 'text'
     section.value = ''
     required.value = false
+    channelType.value = ''
     optionsDraft.value = {}
+  }
+  // The channel-type picker (create) and the locked badge (edit) render from
+  // the merged catalog; a load failure only matters if the channel kind is
+  // actually in play, so it stays silent.
+  if (admin.channelTypes.value.length === 0) {
+    await admin.loadChannelTypes().catch(() => {})
   }
 })
 
@@ -68,7 +77,23 @@ watch(label, (v) => {
 })
 
 const isOptionKind = computed(() => CRM_OPTION_KINDS.has(kind.value))
+const isChannelKind = computed(() => kind.value === 'communication_channel')
 const keyValid = computed(() => CRM_SLUG_CLIENT_RE.test(fieldKey.value))
+
+const channelTypeItems = computed(() =>
+  admin.channelTypes.value.map(t => ({ label: t.label, value: t.key }))
+)
+
+// The intrinsic name field of a custom type is synthesized in code (see the
+// server's CRM_INTRINSIC_NAME_FIELD): not custom, not orphan, and — unlike a
+// manifest field, whose override row a reset restores to visible defaults —
+// nothing an admin should delete or reset away.
+const isIntrinsicName = computed(() =>
+  props.typeIsCustom
+  && props.field?.key === 'name'
+  && !props.field.custom
+  && !props.field.orphan
+)
 
 // A manifest field's section can only be reassigned among declared sections
 // (null would mean "revert to code default", not "no section"), so the
@@ -82,7 +107,9 @@ const sectionItems = computed(() => {
 })
 
 const canSubmit = computed(() =>
-  label.value.trim().length > 0 && (isEdit.value || keyValid.value)
+  label.value.trim().length > 0
+  && (isEdit.value || keyValid.value)
+  && (isEdit.value || !isChannelKind.value || channelType.value !== '')
 )
 
 async function submit() {
@@ -99,7 +126,8 @@ async function submit() {
         required: required.value,
         options: isOptionKind.value && Object.keys(optionsDraft.value).length > 0
           ? optionsDraft.value
-          : undefined
+          : undefined,
+        channelType: isChannelKind.value ? channelType.value : undefined
       })
     } else {
       const patch: CrmUpdateFieldPatch = {}
@@ -234,6 +262,32 @@ const deleteLabel = computed(() => {
           </UFormField>
 
           <UFormField
+            v-if="isChannelKind"
+            label="Channel type"
+            :required="!isEdit"
+            :help="isEdit ? undefined : 'Drives normalization and dedupe. Locked after the field is created.'"
+          >
+            <USelectMenu
+              v-if="!isEdit"
+              v-model="channelType"
+              :items="channelTypeItems"
+              value-key="value"
+              label-key="label"
+              :search-input="false"
+              placeholder="Pick a channel type"
+              class="w-full"
+              :disabled="saving"
+            />
+            <UBadge
+              v-else
+              variant="subtle"
+              color="neutral"
+            >
+              {{ channelTypeItems.find(t => t.value === channelType)?.label ?? channelType }}
+            </UBadge>
+          </UFormField>
+
+          <UFormField
             v-if="typeIsCustom"
             label="Section"
             help="Free-form group name; fields sharing a section render together."
@@ -285,7 +339,7 @@ const deleteLabel = computed(() => {
 
         <footer class="flex items-center gap-2 px-4 py-3 border-t border-(--ui-border)">
           <UButton
-            v-if="isEdit"
+            v-if="isEdit && !isIntrinsicName"
             :color="confirmingDelete ? 'error' : 'neutral'"
             variant="ghost"
             :disabled="saving"

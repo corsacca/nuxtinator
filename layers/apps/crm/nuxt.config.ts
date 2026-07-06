@@ -11,7 +11,10 @@ const layerRoot = fileURLToPath(new URL('.', import.meta.url))
 export default defineNuxtConfig({
   alias: {
     '#crm': fileURLToPath(new URL('./app/utils/crm-manifest.ts', import.meta.url)),
-    '#crm/server': fileURLToPath(new URL('./server/utils/index.ts', import.meta.url))
+    // The barrel lives in server/exports/ (not server/utils/) so nitro's
+    // auto-import scan doesn't see it — re-exporting names that are also
+    // auto-imported from their source files would log "Duplicated imports".
+    '#crm/server': fileURLToPath(new URL('./server/exports/index.ts', import.meta.url))
   },
 
   nitro: {
@@ -20,7 +23,7 @@ export default defineNuxtConfig({
         compilerOptions: {
           paths: {
             '#crm': [`${layerRoot}app/utils/crm-manifest.ts`],
-            '#crm/server': [`${layerRoot}server/utils/index.ts`]
+            '#crm/server': [`${layerRoot}server/exports/index.ts`]
           }
         }
       }

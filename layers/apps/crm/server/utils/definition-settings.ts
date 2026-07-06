@@ -169,19 +169,24 @@ function mergeOrphanField(row: RecordFieldRow): CrmFieldSetting {
   const custom = row.kind !== null
   const kind = (row.kind ?? 'text') as CrmFieldKind
   // Custom fields never promote to record columns and can't join the
-  // relational storage classes (user_refs/connections/channels carry
-  // code-owned semantics), so storage is clamped to entries or jsonb.
+  // user_refs/connections storage classes (those carry code-owned
+  // semantics), so storage is clamped to entries or jsonb — except
+  // communication_channel, whose one definition input (the channel type,
+  // kept in config by the schema builder) is admin-suppliable, so it routes
+  // to the channel service like a manifest channel field.
   const natural = storageOf({ kind })
+  const storage = natural === 'channels' || natural === 'entries' ? natural : 'jsonb'
   return {
     key: row.field_key,
     kind,
-    storage: natural === 'entries' ? 'entries' : 'jsonb',
+    storage,
     label: row.label_override ?? row.field_key,
     section: row.section_override ?? undefined,
     required: row.required_override ?? false,
     hidden: row.hidden,
     order: row.order_override ?? 0,
     options: mergeOptions(undefined, row.config),
+    channelType: typeof row.config.channelType === 'string' ? row.config.channelType : undefined,
     custom,
     orphan: !custom
   }
