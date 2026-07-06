@@ -10,10 +10,11 @@
 // updated_at, created_at — are always addressable, even on admin-created
 // types that have no code manifest.
 //
-// Visibility: a caller without <type>.view_all sees only records shared with
-// them (crm_record_shares) or referencing them through a user field
-// (crm_record_user_refs). Routes never inline these EXISTS clauses — they go
-// through `listRecords` / `assertRecordVisible`.
+// Visibility: a caller without <type>.view_all sees only records they created
+// (crm_records.created_by), records shared with them (crm_record_shares), or
+// records referencing them through a user field (crm_record_user_refs).
+// Routes never inline these clauses — they go through `listRecords` /
+// `assertRecordVisible`.
 
 import { sql } from 'kysely'
 import type { Expression, ExpressionBuilder, RawBuilder, SqlBool, Transaction } from 'kysely'
@@ -315,6 +316,10 @@ function qPredicate(eb: Eb, q: string): Expression<SqlBool> {
 
 function visibilityPredicate(eb: Eb, userId: string): Expression<SqlBool> {
   return eb.or([
+    // Creators always see their own records — without this leg, a caller
+    // lacking view_all who creates a record of a type with no user-reference
+    // field (most custom types) would lose sight of it the moment it saves.
+    eb('crm_records.created_by', '=', userId),
     eb.exists(
       eb.selectFrom('crm_record_shares as vs')
         .select('vs.record_id')

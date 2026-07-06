@@ -141,4 +141,25 @@ describe('visibility', () => {
     const err = await $fetch(`/api/crm/records/contacts/${invisible.id}`, memberOpts).catch(e => e)
     expect(err.statusCode).toBe(404)
   })
+
+  it('creators keep visibility of records they created', async () => {
+    const { org } = await createCrmOrgWith(sql, ['admin'])
+    const creator = await addCrmMember(sql, org.id, ['member'])
+    const other = await addCrmMember(sql, org.id, ['member'])
+    const creatorOpts = withOrgHeader(creator.auth, org.slug)
+    const otherOpts = withOrgHeader(other.auth, org.slug)
+
+    // No assignment and no share — the created_by leg is the only one that applies.
+    const mine = await createContact(creatorOpts, { name: 'test-crm Mine' })
+
+    const creatorList = await list(creatorOpts, {})
+    expect(creatorList.items.map(i => i.id)).toContain(mine.id)
+    const detail = await $fetch<{ id: string }>(`/api/crm/records/contacts/${mine.id}`, creatorOpts)
+    expect(detail.id).toBe(mine.id)
+
+    const otherList = await list(otherOpts, {})
+    expect(otherList.items.map(i => i.id)).not.toContain(mine.id)
+    const err404 = await $fetch(`/api/crm/records/contacts/${mine.id}`, otherOpts).catch(e => e)
+    expect(err404.statusCode).toBe(404)
+  })
 })

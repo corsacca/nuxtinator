@@ -79,8 +79,9 @@ record/field/user) — never a column. Any future user-reference field reuses th
 (`crm.contacts.{read,create,update,delete,share,view_all}`), one generic
 `crm.records.*` set shared by ALL admin-created types (slugs are code-owned; runtime
 types can't mint them), `crm.schema.manage` for the builder. `permFor(typeKey, action)`
-resolves. Visibility — `view_all` OR shared (`crm_record_shares`) OR referenced via a
-user field — is compiled into every list/detail query in
+resolves. Visibility — `view_all` OR creator (`crm_records.created_by`) OR shared
+(`crm_record_shares`) OR referenced via a user field — is compiled into every
+list/detail query in
 [server/utils/list-records.ts](server/utils/list-records.ts); D.T-style record-level
 access arrives later through that same hook without repainting queries.
 
