@@ -98,12 +98,21 @@ const isIntrinsicName = computed(() =>
 // A manifest field's section can only be reassigned among declared sections
 // (null would mean "revert to code default", not "no section"), so the
 // "No section" choice is reserved for custom/stale fields.
+//
+// reka-ui reserves '' as its clear-selection sentinel and throws on any item
+// whose value is an empty string, so "no section" travels through the select
+// as NO_SECTION and maps back to the internal '' at the model boundary.
+const NO_SECTION = '__none__'
+const sectionModel = computed({
+  get: () => section.value === '' ? NO_SECTION : section.value,
+  set: (v: string) => { section.value = v === NO_SECTION ? '' : v }
+})
 const sectionItems = computed(() => {
   const declared = Object.entries(props.sections)
     .sort((a, b) => (a[1].order ?? 0) - (b[1].order ?? 0) || a[0].localeCompare(b[0]))
     .map(([key, s]) => ({ label: s.label, value: key }))
   if (props.field && !props.field.custom && !props.field.orphan) return declared
-  return [{ label: 'No section', value: '' }, ...declared]
+  return [{ label: 'No section', value: NO_SECTION }, ...declared]
 })
 
 const canSubmit = computed(() =>
@@ -303,7 +312,7 @@ const deleteLabel = computed(() => {
             label="Section"
           >
             <USelectMenu
-              v-model="section"
+              v-model="sectionModel"
               :items="sectionItems"
               value-key="value"
               label-key="label"
