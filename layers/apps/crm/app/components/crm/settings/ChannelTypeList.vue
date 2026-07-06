@@ -34,7 +34,7 @@ const newLabel = ref('')
 const newKey = ref('')
 const keyTouched = ref(false)
 const newFormat = ref<CrmChannelValueFormat>('freeform')
-const newIcon = ref('')
+const newIcon = ref<string | null>(null)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
 
@@ -48,7 +48,7 @@ function startAdd() {
   newKey.value = ''
   keyTouched.value = false
   newFormat.value = 'freeform'
-  newIcon.value = ''
+  newIcon.value = null
   saveError.value = null
 }
 
@@ -64,7 +64,7 @@ async function submit() {
       typeKey: newKey.value,
       label: newLabel.value.trim(),
       valueFormat: newFormat.value,
-      icon: newIcon.value.trim() === '' ? undefined : newIcon.value.trim()
+      icon: newIcon.value ?? undefined
     })
     adding.value = false
   } catch (err) {
@@ -211,10 +211,9 @@ async function removeType(key: string) {
           />
         </UFormField>
         <UFormField label="Icon">
-          <UInput
+          <IconPicker
             v-model="newIcon"
-            placeholder="i-lucide-message-circle"
-            class="w-full font-mono"
+            :collections="['lucide', 'simple-icons']"
             :disabled="saving"
           />
         </UFormField>

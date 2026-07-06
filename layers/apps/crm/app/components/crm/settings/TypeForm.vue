@@ -22,7 +22,7 @@ const emit = defineEmits<{
 
 const label = ref(props.initial?.label ?? '')
 const labelSingular = ref(props.initial?.labelSingular ?? '')
-const icon = ref(props.initial?.icon ?? '')
+const icon = ref<string | null>(props.initial?.icon ?? null)
 const typeKey = ref(props.initial?.typeKey ?? '')
 
 // The key follows the label while the admin hasn't typed a key themselves.
@@ -44,7 +44,7 @@ function submit() {
     typeKey: typeKey.value,
     label: label.value.trim(),
     labelSingular: labelSingular.value.trim(),
-    icon: icon.value.trim() === '' ? null : icon.value.trim()
+    icon: icon.value
   })
 }
 </script>
@@ -96,12 +96,10 @@ function submit() {
 
     <UFormField
       label="Icon"
-      help="An Iconify name, e.g. i-lucide-building-2. Leave empty for the default."
+      help="Shown in the sidebar and type catalog. Leave empty for the default."
     >
-      <UInput
+      <IconPicker
         v-model="icon"
-        placeholder="i-lucide-folder"
-        class="w-full font-mono"
         :disabled="busy"
       />
     </UFormField>

@@ -57,6 +57,11 @@ function sectionLabel(field: CrmFieldSetting): string | null {
 
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 flex-wrap">
+          <UIcon
+            v-if="field.icon"
+            :name="field.icon"
+            class="size-4 shrink-0 text-(--ui-text-muted)"
+          />
           <span class="font-medium truncate">{{ field.label }}</span>
           <span
             v-if="field.required"

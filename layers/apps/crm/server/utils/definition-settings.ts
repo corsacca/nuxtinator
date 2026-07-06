@@ -118,6 +118,7 @@ export interface CrmFieldSetting {
   storage: CrmStorage
   column?: 'name' | 'status'
   label: string
+  icon?: string
   description?: string
   section?: string
   required: boolean
@@ -162,6 +163,7 @@ function mergeManifestField(key: string, def: CrmFieldDef, row: RecordFieldRow |
     storage: storageOf(def),
     column: def.column,
     label: row?.label_override ?? def.label,
+    icon: row?.icon_override ?? def.icon,
     description: def.description,
     section: row?.section_override ?? def.section,
     required: row?.required_override ?? def.required ?? false,
@@ -198,6 +200,7 @@ function mergeOrphanField(row: RecordFieldRow): CrmFieldSetting {
     kind,
     storage,
     label: row.label_override ?? row.field_key,
+    icon: row.icon_override ?? undefined,
     section: row.section_override ?? undefined,
     required: row.required_override ?? false,
     hidden: row.hidden,

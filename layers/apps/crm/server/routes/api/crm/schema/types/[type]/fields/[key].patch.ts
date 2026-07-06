@@ -20,6 +20,8 @@ const Option = z.object({
 
 const Body = z.object({
   label: z.string().trim().min(1).max(80).nullish(),
+  // null reverts a manifest field to its code icon / clears a custom field's.
+  icon: z.string().trim().min(1).max(80).nullish(),
   hidden: z.boolean().optional(),
   required: z.boolean().nullish(),
   order: z.number().int().min(-100000).max(100000).nullish(),
@@ -42,6 +44,7 @@ export default defineEventHandler(async (event) => {
         key: field.key,
         kind: field.kind,
         label: field.label,
+        icon: field.icon ?? null,
         section: field.section ?? null,
         required: field.required,
         hidden: field.hidden,

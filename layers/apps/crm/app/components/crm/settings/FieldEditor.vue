@@ -32,6 +32,7 @@ const admin = useCrmSchemaAdmin()
 const label = ref('')
 const fieldKey = ref('')
 const kind = ref('text')
+const icon = ref<string | null>(null)
 const section = ref('')
 const required = ref(false)
 const channelType = ref('')
@@ -51,6 +52,7 @@ watch(open, async (v) => {
     label.value = props.field.label
     fieldKey.value = props.field.key
     kind.value = props.field.kind
+    icon.value = props.field.icon
     section.value = props.field.section ?? ''
     required.value = props.field.required
     channelType.value = props.field.channelType ?? ''
@@ -59,6 +61,7 @@ watch(open, async (v) => {
     label.value = ''
     fieldKey.value = ''
     kind.value = 'text'
+    icon.value = null
     section.value = ''
     required.value = false
     channelType.value = ''
@@ -131,6 +134,7 @@ async function submit() {
         fieldKey: fieldKey.value,
         kind: kind.value,
         label: label.value.trim(),
+        icon: icon.value ?? undefined,
         section: section.value === '' ? undefined : section.value,
         required: required.value,
         options: isOptionKind.value && Object.keys(optionsDraft.value).length > 0
@@ -141,6 +145,7 @@ async function submit() {
     } else {
       const patch: CrmUpdateFieldPatch = {}
       if (label.value.trim() !== props.field.label) patch.label = label.value.trim()
+      if (icon.value !== props.field.icon) patch.icon = icon.value
       if (required.value !== props.field.required) patch.required = required.value
       const currentSection = props.field.section ?? ''
       if (section.value !== currentSection) {
@@ -294,6 +299,16 @@ const deleteLabel = computed(() => {
             >
               {{ channelTypeItems.find(t => t.value === channelType)?.label ?? channelType }}
             </UBadge>
+          </UFormField>
+
+          <UFormField
+            label="Icon"
+            help="Shown next to the field label. Leave empty for none."
+          >
+            <IconPicker
+              v-model="icon"
+              :disabled="saving"
+            />
           </UFormField>
 
           <UFormField

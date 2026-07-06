@@ -61,7 +61,11 @@ const formatted = computed(() => renderer.value.format(props.value, props.field,
 <template>
   <div class="grid grid-cols-1 sm:grid-cols-[11rem_1fr] gap-1 sm:gap-4 px-4 py-3">
     <div class="text-sm text-(--ui-text-muted) sm:pt-1.5">
-      {{ field.label }}<span
+      <UIcon
+        v-if="field.icon"
+        :name="field.icon"
+        class="size-4 shrink-0 inline-block align-text-bottom mr-1"
+      />{{ field.label }}<span
         v-if="field.required"
         class="text-(--ui-error)"
       > *</span>

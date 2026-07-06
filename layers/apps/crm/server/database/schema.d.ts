@@ -177,6 +177,7 @@ export interface CrmRecordFieldsTable {
   required_override: boolean | null
   order_override: number | null
   section_override: string | null
+  icon_override: string | null
   config: Generated<Record<string, unknown>>
   updated_by: string | null
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>

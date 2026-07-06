@@ -43,6 +43,7 @@ export interface CrmCreateFieldInput {
   fieldKey: string
   kind: string
   label: string
+  icon?: string
   section?: string
   required?: boolean
   options?: Record<string, CrmFieldOption>
@@ -52,6 +53,8 @@ export interface CrmCreateFieldInput {
 
 export interface CrmUpdateFieldPatch {
   label?: string | null
+  /** null reverts a manifest field to its code icon / clears a custom one. */
+  icon?: string | null
   hidden?: boolean
   required?: boolean | null
   order?: number | null

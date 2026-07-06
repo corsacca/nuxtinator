@@ -395,6 +395,7 @@ export interface CreateFieldInput {
   fieldKey: string
   kind: CrmAdminFieldKind
   label: string
+  icon?: string
   section?: string
   required?: boolean
   options?: Record<string, CrmFieldOption>
@@ -482,6 +483,7 @@ export async function createField(
       // override row for a manifest field, where kind stays NULL).
       kind: input.kind,
       label_override: input.label,
+      icon_override: input.icon ?? null,
       section_override: input.section ?? null,
       required_override: input.required ? true : null,
       order_override: maxOrder + 1,
@@ -501,6 +503,8 @@ export async function createField(
 export interface UpdateFieldPatch {
   /** undefined = untouched; null = revert to the code default (manifest fields only). */
   label?: string | null
+  /** undefined = untouched; null = revert to the code default / no icon. */
+  icon?: string | null
   hidden?: boolean
   required?: boolean | null
   order?: number | null
@@ -607,6 +611,7 @@ export async function updateField(
     // Manifest field — persist only actual overrides.
     const config: Record<string, unknown> = { ...(row?.config ?? {}) }
     let label = row?.label_override ?? null
+    let icon = row?.icon_override ?? null
     let required = row?.required_override ?? null
     let order = row?.order_override ?? null
     let section = row?.section_override ?? null
@@ -614,6 +619,9 @@ export async function updateField(
 
     if (patch.label !== undefined) {
       label = patch.label === null || patch.label === def.label ? null : patch.label
+    }
+    if (patch.icon !== undefined) {
+      icon = patch.icon === null || patch.icon === (def.icon ?? null) ? null : patch.icon
     }
     if (patch.required !== undefined) {
       required = patch.required === null || patch.required === (def.required ?? false)
@@ -635,6 +643,7 @@ export async function updateField(
     }
 
     const hasOverrides = label !== null
+      || icon !== null
       || required !== null
       || order !== null
       || section !== null
@@ -650,6 +659,7 @@ export async function updateField(
         .updateTable('crm_record_fields')
         .set({
           label_override: label,
+          icon_override: icon,
           required_override: required,
           order_override: order,
           section_override: section,
@@ -668,6 +678,7 @@ export async function updateField(
           field_key: fieldKey,
           kind: null,
           label_override: label,
+          icon_override: icon,
           required_override: required,
           order_override: order,
           section_override: section,
@@ -685,6 +696,7 @@ export async function updateField(
     const r = row!
     const config: Record<string, unknown> = { ...r.config }
     let label = r.label_override
+    let icon = r.icon_override
     let required = r.required_override
     let order = r.order_override
     let section = r.section_override
@@ -694,6 +706,7 @@ export async function updateField(
       if (patch.label === null) bad('Custom fields require a label')
       label = patch.label
     }
+    if (patch.icon !== undefined) icon = patch.icon
     if (patch.required !== undefined) required = patch.required
     if (patch.order !== undefined) order = patch.order
     if (patch.section !== undefined) section = patch.section
@@ -709,6 +722,7 @@ export async function updateField(
       .updateTable('crm_record_fields')
       .set({
         label_override: label,
+        icon_override: icon,
         required_override: required,
         order_override: order,
         section_override: section,
