@@ -3,16 +3,17 @@
 // address (get-or-create of the shared identity row) and links it to the
 // record under the given communication_channel field. The field must belong
 // to the type and carry the given channel type. Returns the field's hydrated
-// channel entries after the change. Permission: <type>.update plus the
-// record-visibility rule.
+// channel entries after the change. Permission: the record-visibility rule
+// plus the record-scoped update gate (type update answer OR an edit-level
+// share on this record).
 //
 // Sibling utils are imported by relative path: the #crm/server barrel is the
 // consumer-layer surface, not the intra-layer one.
 
 import { z } from 'zod'
-import { withOrgPermission } from '#tenant/server'
+import { withOrgContext } from '#tenant/server'
 import type { CrmChannelEntry } from '#crm'
-import { permFor } from '../../../../../../../utils/crm-perms'
+import { requireRecordUpdate } from '../../../../../../../utils/type-permissions'
 import { assertRecordVisible, requireRecordType } from '../../../../../../../utils/list-records'
 import { getRecordTypeFields } from '../../../../../../../utils/definition-settings'
 import { claimChannel, linkChannel } from '../../../../../../../utils/channels'
@@ -29,9 +30,10 @@ const Body = z.object({
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
   const id = getRouterParam(event, 'id')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'update'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
     await requireRecordType(tx, typeKey)
     await assertRecordVisible(tx, ctx, typeKey, id)
+    await requireRecordUpdate(tx, ctx, typeKey, id)
 
     const parsed = Body.safeParse(await readBody(event))
     if (!parsed.success) {

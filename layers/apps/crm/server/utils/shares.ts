@@ -2,16 +2,21 @@
 // record — the list engine's visibility rule (see list-records.ts) admits a
 // non-view_all caller to exactly the records shared with them or referencing
 // them through a user field. Rows are (record_id, user_id) with the grantor
-// stamped in granted_by; share and unshare both land on the record's display
-// timeline.
+// stamped in granted_by and a level: 'view' grants visibility only, 'edit'
+// additionally grants record-scoped update capability (consumed by the
+// type-permission evaluator). Share and unshare both land on the record's
+// display timeline.
 
 import type { Transaction } from 'kysely'
 import { z } from 'zod'
 import type { Database } from '#core/server/database/schema'
+import type { CrmShareLevel } from '../database/schema.d'
 import type { TenantContext } from '#tenant/server'
 import { recordCrmActivity } from './crm-activity'
 
 type Tx = Transaction<Database>
+
+export type { CrmShareLevel }
 
 /** One share row, joined with the target user's directory entry. */
 export interface CrmShareEntry {
@@ -19,6 +24,7 @@ export interface CrmShareEntry {
   name: string
   email: string
   avatarUrl: string | null
+  level: CrmShareLevel
   /** User who granted the share; null when that account was deleted. */
   grantedBy: string | null
   createdAt: Date
@@ -70,6 +76,7 @@ export async function listShares(tx: Tx, recordId: string): Promise<CrmShareEntr
     .innerJoin('users', 'users.id', 'crm_record_shares.user_id')
     .select([
       'crm_record_shares.user_id',
+      'crm_record_shares.level',
       'crm_record_shares.granted_by',
       'crm_record_shares.created_at',
       'users.display_name',
@@ -84,35 +91,68 @@ export async function listShares(tx: Tx, recordId: string): Promise<CrmShareEntr
     name: r.display_name,
     email: r.email,
     avatarUrl: r.avatar || null,
+    level: r.level,
     grantedBy: r.granted_by,
     createdAt: r.created_at
   }))
 }
 
-// Idempotent grant: re-sharing with an already-shared user is a no-op and
-// writes no activity. The conflict target is the (record_id, user_id)
-// composite PK — mode-independent, unlike the org-scoped unique indexes that
-// force bare ON CONFLICT elsewhere, but DO NOTHING needs no named target
-// either way. The 'shared' timeline entry carries the target user's name.
+// Whether the user holds an edit-level share on the record — the
+// record-scoped half of the update gate (see type-permissions.ts). The uuid
+// pre-check keeps malformed route params from surfacing as SQL cast errors.
+export async function hasEditShare(tx: Tx, recordId: string, userId: string): Promise<boolean> {
+  if (!uuidSchema.safeParse(recordId).success) return false
+  const row = await tx
+    .selectFrom('crm_record_shares')
+    .select('user_id')
+    .where('record_id', '=', recordId)
+    .where('user_id', '=', userId)
+    .where('level', '=', 'edit')
+    .executeTakeFirst()
+  return !!row
+}
+
+// Upsert grant: a new share inserts at the given level; re-sharing with a
+// different level updates the existing row; re-sharing at the same level is
+// a no-op and writes no activity. The conflict target is the (record_id,
+// user_id) composite PK — mode-independent, unlike the org-scoped unique
+// indexes that force bare ON CONFLICT elsewhere, but DO NOTHING needs no
+// named target either way. The 'shared' timeline entry carries the target
+// user's name plus the granted level.
 export async function addShare(
   tx: Tx,
   ctx: TenantContext,
   recordId: string,
-  userId: string
+  userId: string,
+  level: CrmShareLevel = 'view'
 ): Promise<void> {
   const target = await requireShareTarget(tx, ctx, userId)
+  const note = `${target.display_name} (can ${level})`
   const inserted = await tx
     .insertInto('crm_record_shares')
     .values({
       record_id: recordId,
       user_id: userId,
+      level,
       granted_by: ctx.userId
     })
     .onConflict(oc => oc.doNothing())
     .returning('user_id')
     .executeTakeFirst()
   if (inserted) {
-    await recordCrmActivity(tx, ctx, recordId, 'shared', { note: target.display_name })
+    await recordCrmActivity(tx, ctx, recordId, 'shared', { note })
+    return
+  }
+  const updated = await tx
+    .updateTable('crm_record_shares')
+    .set({ level })
+    .where('record_id', '=', recordId)
+    .where('user_id', '=', userId)
+    .where('level', '!=', level)
+    .returning('user_id')
+    .executeTakeFirst()
+  if (updated) {
+    await recordCrmActivity(tx, ctx, recordId, 'shared', { note })
   }
 }
 

@@ -3,14 +3,15 @@
 // { items: [{ id, authorId, authorName, body, createdAt, editedAt }],
 //   nextCursor } — nextCursor is null on the last page. The activity stream
 // is served separately (./activity.get.ts); the client merges the two into
-// one timeline. Permission: <type>.read plus the record-visibility rule.
+// one timeline. Permission: the type evaluator's read answer plus the
+// record-visibility rule.
 //
 // Relative utils imports: the new-in-this-milestone services are wired into
 // the #crm/server barrel by the integrator, so routes reach them directly.
 
 import { z } from 'zod'
-import { withOrgPermission } from '#tenant/server'
-import { permFor } from '../../../../../../utils/crm-perms'
+import { withOrgContext } from '#tenant/server'
+import { requireTypePermission } from '../../../../../../utils/type-permissions'
 import { assertRecordVisible, requireRecordType } from '../../../../../../utils/list-records'
 import { listComments } from '../../../../../../utils/comments'
 
@@ -22,7 +23,8 @@ const Query = z.object({
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
   const id = getRouterParam(event, 'id')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'read'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
+    await requireTypePermission(tx, ctx, typeKey, 'read')
     await requireRecordType(tx, typeKey)
     await assertRecordVisible(tx, ctx, typeKey, id)
 

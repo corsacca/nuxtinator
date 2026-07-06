@@ -4,12 +4,16 @@
 
 import type { MaybeRefOrGetter } from 'vue'
 
+export type CrmShareLevel = 'view' | 'edit'
+
 /** A share as served by GET /api/crm/records/:type/:id/shares. */
 export interface CrmShare {
   userId: string
   name: string
   email: string
   avatarUrl: string | null
+  /** 'view' grants visibility only; 'edit' adds record-scoped update. */
+  level: CrmShareLevel
   /** User who granted the share; null when that account was deleted. */
   grantedBy: string | null
   createdAt: string
@@ -19,9 +23,11 @@ export function useCrmShares(typeKey: MaybeRefOrGetter<string>, recordId: MaybeR
   const shares = ref<CrmShare[]>([])
   const pending = ref(false)
   const error = ref<string | null>(null)
-  // Whether the caller holds <type>.share, as reported by the GET endpoint —
-  // the share UI's gate signal (there is no client-side org-permission
-  // store); the server enforces the permission on the write routes anyway.
+  // The type evaluator's share answer, as reported by the GET endpoint.
+  // The share UI gates on the record detail's capabilities block instead
+  // (one source of truth); this mirror stays for callers that only have the
+  // shares feed. The server enforces the permission on the write routes
+  // regardless.
   const canShare = ref(false)
 
   const url = () => `/api/crm/records/${toValue(typeKey)}/${toValue(recordId)}/shares`
@@ -41,11 +47,15 @@ export function useCrmShares(typeKey: MaybeRefOrGetter<string>, recordId: MaybeR
     }
   }
 
-  /** Shares the record with a user. Throws on failure — callers surface the error. */
-  async function addShare(userId: string): Promise<void> {
+  /**
+   * Shares the record with a user (default level 'view'). Re-posting with a
+   * different level updates the existing share — the server upserts. Throws
+   * on failure — callers surface the error.
+   */
+  async function addShare(userId: string, level?: CrmShareLevel): Promise<void> {
     const res = await $fetch<{ items: CrmShare[] }>(url(), {
       method: 'POST',
-      body: { userId }
+      body: level ? { userId, level } : { userId }
     })
     shares.value = res.items
   }

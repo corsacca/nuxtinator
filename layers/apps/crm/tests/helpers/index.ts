@@ -70,7 +70,10 @@ export async function addCrmMember(
 // Seed a contact directly via the host-admin pool (BYPASSRLS), bypassing the
 // POST records route. Multi-tenant retrofit adds `org_id NOT NULL DEFAULT
 // current_org_id()` — the GUC isn't set outside `defineTenantHandler`'s txn,
-// so the seed must supply org_id explicitly.
+// so the seed must supply org_id explicitly. `data` is bound through
+// ::text::jsonb — postgres-js double-encodes a pre-stringified param bound
+// with a bare ::jsonb cast, storing a jsonb string scalar that degrades the
+// doc on the kernel's first `||` merge (dev.md gotcha 1).
 export async function createTestContact(
   sql: ReturnType<typeof postgres>,
   opts: {
@@ -87,7 +90,7 @@ export async function createTestContact(
   await sql`
     INSERT INTO crm_records (id, record_type, name, status, data, created_by, org_id)
     VALUES (${id}, ${opts.record_type ?? 'contacts'}, ${name}, ${opts.status ?? null},
-            ${JSON.stringify(opts.data ?? {})}::jsonb, ${opts.created_by}, ${opts.org_id})
+            ${JSON.stringify(opts.data ?? {})}::text::jsonb, ${opts.created_by}, ${opts.org_id})
   `
   return { id, name }
 }

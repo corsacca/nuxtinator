@@ -1,24 +1,26 @@
 // GET /api/crm/records/:type/:id/shares
 // Everyone this record is shared with, joined with the user directory:
-// { items: [{ userId, name, email, avatarUrl, grantedBy, createdAt }],
-//   canShare }. `canShare` reports whether the caller holds <type>.share —
-// the share UI's gate signal (there is no client-side org-permission store
-// to ask); the write routes enforce the permission regardless.
-// Permission: <type>.read plus the record-visibility rule.
+// { items: [{ userId, name, email, avatarUrl, level, grantedBy, createdAt }],
+//   canShare }. `canShare` reports the type evaluator's share answer — kept
+// for callers that read the flag from this endpoint, though the record
+// detail's capabilities block is the canonical source; the write routes
+// enforce the permission regardless. Permission: the type evaluator's read
+// answer plus the record-visibility rule.
 
-import { withOrgPermission } from '#tenant/server'
-import { assertRecordVisible, listShares, permFor, requireRecordType } from '#crm/server'
+import { withOrgContext } from '#tenant/server'
+import { assertRecordVisible, listShares, requireRecordType, requireTypePermission, resolveTypePermission } from '#crm/server'
 
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
   const id = getRouterParam(event, 'id')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'read'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
+    await requireTypePermission(tx, ctx, typeKey, 'read')
     await requireRecordType(tx, typeKey)
     await assertRecordVisible(tx, ctx, typeKey, id)
 
     return {
       items: await listShares(tx, id),
-      canShare: ctx.perms.has(permFor(typeKey, 'share'))
+      canShare: await resolveTypePermission(tx, ctx, typeKey, 'share')
     }
   })
 })

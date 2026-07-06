@@ -37,6 +37,7 @@ import {
   type CrmChannelTypeSetting
 } from './definition-settings'
 import { getRegisteredRecordType } from './crm-registry'
+import { CRM_RECORD_ACTIONS, type CrmRecordAction, type CrmTypeRoleGrants } from './crm-perms'
 import type { ChannelValueFormat } from '../database/schema.d'
 
 type Tx = Transaction<Database>
@@ -273,6 +274,89 @@ export async function updateRecordType(
         label_singular_override: labelSingular,
         icon_override: icon,
         hidden,
+        config: jsonb(config),
+        is_custom: false,
+        updated_by: ctx.userId,
+        updated_at: sql`now()`
+      })
+      .execute()
+  }
+
+  return (await getRecordType(tx, typeKey))!
+}
+
+// Replaces a type's per-role action grants (config.roleGrants) with the
+// given desired state. Only explicit true/false entries persist — an absent
+// (role, action) pair means "inherit from the role's slugs" and is never
+// written; role objects left empty after stripping are dropped, and the
+// config key is deleted outright when no grants remain (so a code type whose
+// row carries nothing else reverts to no row at all, per the code-owned
+// defaults contract). Role keys are only shape-checked here — whether a role
+// actually exists is the caller's concern.
+export async function updateTypeRoleGrants(
+  tx: Tx,
+  ctx: TenantContext,
+  typeKey: string,
+  grants: CrmTypeRoleGrants
+): Promise<CrmRecordTypeSetting> {
+  const type = await getRecordType(tx, typeKey)
+  if (!type || type.orphan) notFound(`Unknown record type: ${typeKey}`)
+
+  const clean: CrmTypeRoleGrants = {}
+  for (const [role, actions] of Object.entries(grants)) {
+    if (role.trim() === '') bad('Role keys must be non-empty strings')
+    if (typeof actions !== 'object' || actions === null || Array.isArray(actions)) {
+      bad(`Invalid grants for role '${role}'`)
+    }
+    const cleanActions: Partial<Record<CrmRecordAction, boolean>> = {}
+    for (const [action, value] of Object.entries(actions)) {
+      if (!(CRM_RECORD_ACTIONS as readonly string[]).includes(action)) {
+        bad(`Unknown action: ${action}`)
+      }
+      if (typeof value !== 'boolean') {
+        bad(`Grants must be explicit true/false (role '${role}', action '${action}')`)
+      }
+      cleanActions[action as CrmRecordAction] = value
+    }
+    if (Object.keys(cleanActions).length > 0) clean[role] = cleanActions
+  }
+
+  const row = await tx
+    .selectFrom('crm_record_types')
+    .selectAll()
+    .where('type_key', '=', typeKey)
+    .executeTakeFirst()
+
+  const config: Record<string, unknown> = { ...(row?.config ?? {}) }
+  if (Object.keys(clean).length > 0) config.roleGrants = clean
+  else delete config.roleGrants
+
+  const hasOverrides = (row?.label_override ?? null) !== null
+    || (row?.label_singular_override ?? null) !== null
+    || (row?.icon_override ?? null) !== null
+    || (row?.hidden ?? false) !== false
+    || Object.keys(config).length > 0
+
+  if (type.manifest && !hasOverrides) {
+    // The row carried nothing but the grants that were just cleared.
+    if (row) {
+      await tx.deleteFrom('crm_record_types').where('id', '=', row.id).execute()
+    }
+  } else if (row) {
+    await tx
+      .updateTable('crm_record_types')
+      .set({
+        config: jsonb(config),
+        updated_by: ctx.userId,
+        updated_at: sql`now()`
+      })
+      .where('id', '=', row.id)
+      .execute()
+  } else {
+    await tx
+      .insertInto('crm_record_types')
+      .values({
+        type_key: typeKey,
         config: jsonb(config),
         is_custom: false,
         updated_by: ctx.userId,

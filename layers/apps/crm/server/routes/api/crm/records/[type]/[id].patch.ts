@@ -2,12 +2,20 @@
 // Body: { fields: { <fieldKey>: value } } — scalar fields take a value (null
 // clears), multi-value fields take an array (replace) or the D.T-style
 // { values: [{ value, delete? }], force_values? } list. Runs the kernel's
-// field-patch pipeline and returns the updated hydrated detail.
-// Permission: <type>.update plus the record-visibility rule.
+// field-patch pipeline and returns the updated hydrated detail with the
+// caller's capability flags. Permission: the record-visibility rule plus the
+// record-scoped update gate — the type evaluator's update answer OR an
+// edit-level share on this record.
 
 import { z } from 'zod'
-import { withOrgPermission } from '#tenant/server'
-import { applyFieldPatch, assertRecordVisible, permFor, requireRecordType } from '#crm/server'
+import { withOrgContext } from '#tenant/server'
+import {
+  applyFieldPatch,
+  assertRecordVisible,
+  requireRecordType,
+  requireRecordUpdate,
+  resolveTypeCapabilities
+} from '#crm/server'
 
 const Body = z.object({
   fields: z.record(z.string(), z.unknown())
@@ -16,9 +24,10 @@ const Body = z.object({
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
   const id = getRouterParam(event, 'id')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'update'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
     await requireRecordType(tx, typeKey)
     await assertRecordVisible(tx, ctx, typeKey, id)
+    await requireRecordUpdate(tx, ctx, typeKey, id)
 
     const parsed = Body.safeParse(await readBody(event))
     if (!parsed.success) {
@@ -26,6 +35,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const record = await applyFieldPatch(tx, ctx, typeKey, id, parsed.data.fields)
+    const caps = await resolveTypeCapabilities(tx, ctx, typeKey)
     return {
       id: record.id,
       typeKey: record.recordType,
@@ -34,7 +44,10 @@ export default defineEventHandler(async (event) => {
       fields: record.fields,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
-      createdBy: record.createdBy
+      createdBy: record.createdBy,
+      // The update gate passed, so canEdit is true by construction (type
+      // answer or edit share — either way this caller can edit this record).
+      capabilities: { canEdit: true, canShare: caps.share, canDelete: caps.delete }
     }
   })
 })

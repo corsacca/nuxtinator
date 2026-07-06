@@ -2,8 +2,11 @@
 // Per-channel consent editor in a slideover: capture context (source select +
 // optional note, applied to the next change), one opt-in/opt-out toggle row
 // per code-registered purpose, and the channel's recent compliance events
-// below. Reads and writes through the record consent endpoints; emits
-// 'refresh' after every successful change so the opener updates its badges.
+// below. When the caller lacks edit capability the panel is read-only: the
+// capture-context block and grant/revoke buttons give way to plain status
+// badges; state and history stay visible. Reads and writes through the
+// record consent endpoints; emits 'refresh' after every successful change so
+// the opener updates its badges.
 import type {
   CrmChannelConsentInfo,
   CrmConsentPurposeInfo,
@@ -17,6 +20,8 @@ const props = defineProps<{
   recordId: string
   /** Channel the panel edits; null renders an empty (closed) panel. */
   channelId: string | null
+  /** The record detail's canEdit capability — false renders read-only. */
+  editable: boolean
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -128,7 +133,10 @@ async function apply(purposeKey: string, status: CrmConsentStatus) {
           description="Messages to this address are blocked regardless of consent."
         />
 
-        <div class="space-y-2">
+        <div
+          v-if="editable"
+          class="space-y-2"
+        >
           <p class="text-xs font-medium text-(--ui-text-muted) uppercase tracking-wide">
             Capture context
           </p>
@@ -169,7 +177,10 @@ async function apply(purposeKey: string, status: CrmConsentStatus) {
                 {{ purpose.description }}
               </p>
             </div>
-            <div class="flex gap-1 shrink-0">
+            <div
+              v-if="editable"
+              class="flex gap-1 shrink-0"
+            >
               <UButton
                 label="Opt-in"
                 size="xs"
@@ -187,6 +198,15 @@ async function apply(purposeKey: string, status: CrmConsentStatus) {
                 @click="apply(purpose.key, 'opt_out')"
               />
             </div>
+            <UBadge
+              v-else
+              :color="statusOf(purpose.key) === 'opt_in' ? 'success' : statusOf(purpose.key) === 'opt_out' ? 'error' : 'neutral'"
+              variant="subtle"
+              size="sm"
+              class="shrink-0"
+            >
+              {{ statusOf(purpose.key) === 'opt_in' ? 'Opt-in' : statusOf(purpose.key) === 'opt_out' ? 'Opt-out' : 'No consent' }}
+            </UBadge>
           </div>
         </div>
 

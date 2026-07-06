@@ -2,11 +2,12 @@
 // Body: { body } (1..10000 chars). Adds a comment authored by the caller and
 // returns it ({ id, authorId, authorName, body, createdAt, editedAt }).
 // Comments are their own timeline stream — no activity row is written.
-// Permission: <type>.update plus the record-visibility rule.
+// Permission: the record-visibility rule plus the record-scoped update gate
+// (type update answer OR an edit-level share on this record).
 
 import { z } from 'zod'
-import { withOrgPermission } from '#tenant/server'
-import { permFor } from '../../../../../../utils/crm-perms'
+import { withOrgContext } from '#tenant/server'
+import { requireRecordUpdate } from '../../../../../../utils/type-permissions'
 import { assertRecordVisible, requireRecordType } from '../../../../../../utils/list-records'
 import { addComment } from '../../../../../../utils/comments'
 
@@ -17,9 +18,10 @@ const Body = z.object({
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
   const id = getRouterParam(event, 'id')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'update'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
     await requireRecordType(tx, typeKey)
     await assertRecordVisible(tx, ctx, typeKey, id)
+    await requireRecordUpdate(tx, ctx, typeKey, id)
 
     const parsed = Body.safeParse(await readBody(event))
     if (!parsed.success) {

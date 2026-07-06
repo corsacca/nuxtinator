@@ -21,7 +21,7 @@ import { z } from 'zod'
 import type { Database } from '#core/server/database/schema'
 import type { TenantContext } from '#tenant/server'
 import { getRecordType, getRecordTypeFields, type CrmFieldSetting, type CrmRecordTypeSetting } from './definition-settings'
-import { permFor } from './crm-perms'
+import { resolveTypePermission } from './type-permissions'
 import type { CrmRecordRow } from './record-storage'
 
 type Tx = Transaction<Database>
@@ -377,7 +377,7 @@ export async function listRecords(
   }
   const q = opts.q?.trim()
   if (q) preds.push(eb => qPredicate(eb, q))
-  if (!ctx.perms.has(permFor(typeKey, 'view_all'))) {
+  if (!(await resolveTypePermission(tx, ctx, typeKey, 'view_all'))) {
     preds.push(eb => visibilityPredicate(eb, ctx.userId))
   }
 
@@ -458,7 +458,7 @@ export async function assertRecordVisible(
     .select('id')
     .where('id', '=', recordId)
     .where('record_type', '=', typeKey)
-  if (!ctx.perms.has(permFor(typeKey, 'view_all'))) {
+  if (!(await resolveTypePermission(tx, ctx, typeKey, 'view_all'))) {
     qb = qb.where(eb => visibilityPredicate(eb, ctx.userId))
   }
   const row = await qb.executeTakeFirst()

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // One label/value row on the record detail page. Kinds with an inline
-// editor render it; everything else shows the formatted read-only value
+// editor render it when the caller can edit the record; otherwise — and for
+// kinds without an editor — the row shows the formatted read-only value
 // from the field-kind dispatcher.
 import type { Component } from 'vue'
 import type { CrmFieldSetting } from '../../utils/field-kinds'
@@ -20,6 +21,8 @@ import LinkField from './fields/LinkField.vue'
 const props = defineProps<{
   field: CrmFieldSetting
   value: unknown
+  /** The record detail's canEdit capability — false renders read-only. */
+  editable: boolean
 }>()
 
 const emit = defineEmits<{
@@ -45,10 +48,14 @@ const EDITORS: Record<string, Component> = {
 
 const renderer = computed(() => crmRendererFor(props.field.kind))
 const editor = computed(() => {
+  if (!props.editable) return null
   const name = renderer.value.component
   return name ? EDITORS[name] ?? null : null
 })
-const formatted = computed(() => renderer.value.format(props.value, props.field))
+// The user directory resolves user_select ids in read-only rows (the page
+// primes it for the timeline; unresolved ids fall back to a count).
+const { userName } = useCrmUsers()
+const formatted = computed(() => renderer.value.format(props.value, props.field, { userName }))
 </script>
 
 <template>

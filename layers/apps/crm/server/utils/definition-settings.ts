@@ -21,6 +21,7 @@ import {
   getRegisteredChannelTypes,
   type CrmChannelTypeEntry
 } from './crm-registry'
+import type { CrmTypeRoleGrants } from './crm-perms'
 import type { ChannelValueFormat } from '../database/schema.d'
 
 type RecordTypeRow = Selectable<Database['crm_record_types']>
@@ -38,12 +39,26 @@ export interface CrmRecordTypeSetting {
   sections: Record<string, { label: string, order?: number }>
   hidden: boolean
   config: Record<string, unknown>
+  /**
+   * Per-role action grants from config.roleGrants — empty when absent. A
+   * code-declared type needs an override row to carry grants; that is the
+   * expected storage shape (grants are org data, never code defaults).
+   */
+  roleGrants: CrmTypeRoleGrants
   /** True for admin-created types (an is_custom row with no code manifest). */
   custom: boolean
   /** True for stale rows: no code manifest and not admin-created either. */
   orphan: boolean
   /** The code manifest, present only for code-declared types. */
   manifest?: CrmRecordTypeManifest
+}
+
+// The config.roleGrants slice, shape-checked — anything that isn't a plain
+// object reads as "no grants" rather than corrupting the evaluator.
+function roleGrantsOf(config: Record<string, unknown> | undefined): CrmTypeRoleGrants {
+  const raw = config?.roleGrants
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as CrmTypeRoleGrants
+  return {}
 }
 
 export const getRecordTypes = defineSettings<CrmRecordTypeManifest, RecordTypeRow, CrmRecordTypeSetting>({
@@ -64,6 +79,7 @@ export const getRecordTypes = defineSettings<CrmRecordTypeManifest, RecordTypeRo
         sections: manifest.sections ?? {},
         hidden: row?.hidden ?? false,
         config: row?.config ?? {},
+        roleGrants: roleGrantsOf(row?.config),
         custom: false,
         orphan: false,
         manifest
@@ -81,6 +97,7 @@ export const getRecordTypes = defineSettings<CrmRecordTypeManifest, RecordTypeRo
       sections: {},
       hidden: r.hidden,
       config: r.config,
+      roleGrants: roleGrantsOf(r.config),
       custom: r.is_custom,
       orphan: !r.is_custom
     }

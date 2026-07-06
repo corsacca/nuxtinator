@@ -1,13 +1,16 @@
 <script setup lang="ts">
 // Record detail: header (back link, click-to-rename name, status badge,
 // share popover), the field sections in declared order, the connections
-// panel, and the merged comment/activity timeline. Editable kinds commit
-// inline through the optimistic patchFields; communication_channel fields
-// render through the channel widget (its mutations go through the channel
-// routes, so it asks for a record refetch instead of emitting a patch);
-// remaining kinds render read-only. Any action that writes activity rows
-// (field patch, rename, channel/consent change, share change) refreshes the
-// timeline so it stays in step without a full page reload.
+// panel, and the merged comment/activity timeline. The server-evaluated
+// capabilities on the detail response gate every write affordance: without
+// canEdit, editors render as formatted read-only values, the channel widget
+// and consent panel lose their mutation controls, renaming is off, and the
+// comment composer hides. With canEdit, editable kinds commit inline through
+// the optimistic patchFields; communication_channel fields render through
+// the channel widget (its mutations go through the channel routes, so it
+// asks for a record refetch instead of emitting a patch). Any action that
+// writes activity rows (field patch, rename, channel/consent change, share
+// change) refreshes the timeline so it stays in step without a full reload.
 import type { CrmChannelEntry } from '#crm'
 import type { CrmTypeFields } from '../../../composables/useCrmTypes'
 import type { CrmFieldSetting } from '../../../utils/field-kinds'
@@ -47,6 +50,10 @@ watch([typeKey, orgKey], async ([key, org]) => {
 }, { immediate: true })
 
 const { record, pending, error, refresh, patchFields } = useCrmRecord(typeKey, recordId)
+
+// Server-evaluated capability flags for this record (see CrmRecordCapabilities).
+const canEdit = computed(() => record.value?.capabilities.canEdit ?? false)
+const canShare = computed(() => record.value?.capabilities.canShare ?? false)
 
 // The timeline self-fetches; this handle re-pulls it after actions on this
 // page that append activity rows.
@@ -143,6 +150,8 @@ async function rename(name: string) {
         :status-field="statusField"
         :back-to="crmPath(`/${typeKey}`)"
         :back-label="typeInfo?.label ?? 'Back'"
+        :can-edit="canEdit"
+        :can-share="canShare"
         @rename="rename"
         @share-changed="refreshTimeline"
       />
@@ -172,6 +181,7 @@ async function rename(name: string) {
                 :type-key="typeKey"
                 :field="field"
                 :entries="channelEntries(field)"
+                :editable="canEdit"
                 @refresh="onChannelsChanged"
               />
             </div>
@@ -180,6 +190,7 @@ async function rename(name: string) {
             v-else
             :field="field"
             :value="fieldValue(field)"
+            :editable="canEdit"
             @commit="commitField(field, $event)"
           />
         </template>
@@ -194,6 +205,7 @@ async function rename(name: string) {
         ref="timeline"
         :type-key="typeKey"
         :record-id="recordId"
+        :can-comment="canEdit"
       />
 
       <p class="text-xs text-(--ui-text-muted)">

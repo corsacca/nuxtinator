@@ -42,8 +42,17 @@ export type { CrmChannelRow, CrmChannelLinkRow, LinkChannelOpts } from '../utils
 export { hydrateRecords, getRecord, applyFieldPatch, deleteRecord } from '../utils/record-storage'
 export type { CrmRecordRow, CrmHydratedRecord } from '../utils/record-storage'
 
-export { permFor } from '../utils/crm-perms'
-export type { CrmRecordAction } from '../utils/crm-perms'
+export { permFor, CRM_RECORD_ACTIONS } from '../utils/crm-perms'
+export type { CrmRecordAction, CrmTypeRoleGrants } from '../utils/crm-perms'
+
+export {
+  resolveTypePermission,
+  resolveTypeCapabilities,
+  requireTypePermission,
+  canUpdateRecord,
+  requireRecordUpdate
+} from '../utils/type-permissions'
+export type { CrmTypeCapabilities } from '../utils/type-permissions'
 
 export { listRecords, requireRecordType, assertRecordVisible } from '../utils/list-records'
 export type { CrmListOpts, CrmRecordListItem, CrmListResult } from '../utils/list-records'
@@ -80,12 +89,13 @@ export type {
 export { listActivity } from '../utils/activity'
 export type { CrmActivityItem, CrmActivityPage } from '../utils/activity'
 
-export { listShares, addShare, removeShare } from '../utils/shares'
-export type { CrmShareEntry } from '../utils/shares'
+export { listShares, addShare, removeShare, hasEditShare } from '../utils/shares'
+export type { CrmShareEntry, CrmShareLevel } from '../utils/shares'
 
 export {
   createRecordType,
   updateRecordType,
+  updateTypeRoleGrants,
   deleteRecordType,
   createField,
   updateField,

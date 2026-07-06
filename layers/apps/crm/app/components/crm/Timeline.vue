@@ -1,13 +1,16 @@
 <script setup lang="ts">
-// Merged activity + comment timeline for one record: composer pinned on top,
-// newest entries first, one "Load older" control that pages both streams.
-// Field settings resolve activity field labels and value formatting; the
-// user directory resolves user_select ids inside old/new snapshots.
+// Merged activity + comment timeline for one record: composer pinned on top
+// (only when the caller can edit the record — commenting is a write), newest
+// entries first, one "Load older" control that pages both streams. Field
+// settings resolve activity field labels and value formatting; the user
+// directory resolves user_select ids inside old/new snapshots.
 import type { CrmFieldSetting } from '../../utils/field-kinds'
 
 const props = defineProps<{
   typeKey: string
   recordId: string
+  /** The record detail's canEdit capability — false hides the composer. */
+  canComment: boolean
 }>()
 
 const toast = useToast()
@@ -79,7 +82,10 @@ async function onRemoveComment(id: string) {
       Activity
     </h2>
 
-    <CrmCommentComposer :submit="submitComment" />
+    <CrmCommentComposer
+      v-if="canComment"
+      :submit="submitComment"
+    />
 
     <UAlert
       v-if="error"

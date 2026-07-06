@@ -2,12 +2,12 @@
 // Body: { fields: { <fieldKey>: value } } — `name` arrives as fields.name
 // like any other field; multi-value fields take an array or the D.T-style
 // { values: [...] } list. Runs the kernel's field-patch pipeline (validation,
-// storage routing, activity) and returns the hydrated record detail.
-// Permission: <type>.create.
+// storage routing, activity) and returns the hydrated record detail with the
+// caller's capability flags. Permission: the type evaluator's create answer.
 
 import { z } from 'zod'
-import { withOrgPermission } from '#tenant/server'
-import { applyFieldPatch, permFor, requireRecordType } from '#crm/server'
+import { withOrgContext } from '#tenant/server'
+import { applyFieldPatch, requireRecordType, requireTypePermission, resolveTypeCapabilities } from '#crm/server'
 
 const Body = z.object({
   fields: z.record(z.string(), z.unknown())
@@ -15,7 +15,8 @@ const Body = z.object({
 
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'create'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
+    await requireTypePermission(tx, ctx, typeKey, 'create')
     await requireRecordType(tx, typeKey)
 
     const parsed = Body.safeParse(await readBody(event))
@@ -24,6 +25,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const record = await applyFieldPatch(tx, ctx, typeKey, null, parsed.data.fields)
+    const caps = await resolveTypeCapabilities(tx, ctx, typeKey)
     return {
       id: record.id,
       typeKey: record.recordType,
@@ -32,7 +34,9 @@ export default defineEventHandler(async (event) => {
       fields: record.fields,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
-      createdBy: record.createdBy
+      createdBy: record.createdBy,
+      // A fresh record has no shares, so canEdit is the plain type answer.
+      capabilities: { canEdit: caps.update, canShare: caps.share, canDelete: caps.delete }
     }
   })
 })

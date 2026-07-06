@@ -18,9 +18,9 @@ onMounted(() => {
   ensureTypes().catch(() => {
     // The list page surfaces load errors; the sidebar just stays empty.
   })
-  // Server-derived crm.schema.manage signal — usePermissions() has no
-  // client-side org-permission store to answer from. The settings pages and
-  // routes enforce the permission themselves; this only shows/hides the link.
+  // Server-derived crm.schema.manage signal, cached per org alongside the
+  // channel-type catalog. The settings pages and routes enforce the
+  // permission themselves; this only shows/hides the link.
   ensureAccess()
 })
 

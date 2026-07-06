@@ -5,12 +5,12 @@
 // Returns { items: RecordSummary[], total } where RecordSummary =
 // { id, name, status, updatedAt, createdAt, assignedTo, data } — `data` is
 // the record's raw jsonb map so list columns for jsonb fields render without
-// per-row requests. Permission: <type>.read; without <type>.view_all only
-// shared or assigned records appear.
+// per-row requests. Permission: the type evaluator's read answer; without
+// its view_all answer only shared or assigned records appear.
 
 import { z } from 'zod'
-import { withOrgPermission } from '#tenant/server'
-import { listRecords, permFor, requireRecordType } from '#crm/server'
+import { withOrgContext } from '#tenant/server'
+import { listRecords, requireRecordType, requireTypePermission } from '#crm/server'
 
 const Query = z.object({
   q: z.string().optional(),
@@ -25,7 +25,8 @@ const Filters = z.record(z.string(), z.unknown())
 
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'read'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
+    await requireTypePermission(tx, ctx, typeKey, 'read')
     await requireRecordType(tx, typeKey)
 
     const parsed = Query.safeParse(getQuery(event))

@@ -16,6 +16,9 @@ export interface CrmTypeSummary {
   orphan: boolean
   /** Field key promoted to the status column, or null when the type has none. */
   statusField: string | null
+  /** The caller's type-evaluator answers — the server is the only truthful source. */
+  canRead: boolean
+  canCreate: boolean
 }
 
 /** Response of GET /api/crm/schema/types/:type/fields. */
@@ -39,9 +42,9 @@ export function useCrmTypes() {
 
   const types = computed(() => typesCache.value[orgKey.value] ?? [])
 
-  // Hidden/orphan entries come back for schema managers; navigation only
-  // ever shows the visible ones.
-  const visibleTypes = computed(() => types.value.filter(t => !t.hidden && !t.orphan))
+  // Hidden/orphan/non-readable entries come back for schema managers;
+  // navigation only ever shows the visible, readable ones.
+  const visibleTypes = computed(() => types.value.filter(t => !t.hidden && !t.orphan && t.canRead))
 
   // The org is captured before the request and the response is stored under
   // it, so a fetch that resolves after an org switch can't pollute the new

@@ -1,16 +1,20 @@
 <script setup lang="ts">
 // Record sharing popover: who the record is shared with (avatar + name), a
-// remove button per share, and an async user picker to add more. A share
-// grants visibility to users without <type>.view_all — see the server's
-// record-visibility rule. The add/remove controls hide unless the caller
-// holds the <type>.share permission — reported as `canShare` by the shares
-// GET endpoint, since there is no client-side org-permission store; the
-// server enforces it regardless, so the client gate is presentation only.
+// per-share level selector (view/edit — re-posting with a new level upserts
+// the share), a remove button per share, and an async user picker to add
+// more. A share grants visibility to users without <type>.view_all, and an
+// edit-level share grants record-scoped update — see the server's
+// record-visibility rule and type-permission evaluator. The add/remove/level
+// controls hide unless `canShare` — the record detail's server-evaluated
+// capability, passed down from the page; the server enforces the permission
+// regardless, so the client gate is presentation only.
 import type { CrmUser } from '../../composables/useCrmUsers'
+import type { CrmShareLevel } from '../../composables/useCrmShares'
 
 const props = defineProps<{
   recordId: string
   typeKey: string
+  canShare: boolean
 }>()
 
 const emit = defineEmits<{
@@ -19,7 +23,7 @@ const emit = defineEmits<{
 
 const toast = useToast()
 
-const { shares, canShare, pending, error, refresh, addShare, removeShare } = useCrmShares(
+const { shares, pending, error, refresh, addShare, removeShare } = useCrmShares(
   () => props.typeKey,
   () => props.recordId
 )
@@ -36,7 +40,7 @@ const searching = ref(false)
 watch(open, async (isOpen) => {
   if (!isOpen) return
   await refresh()
-  if (!canShare.value) return
+  if (!props.canShare) return
   searching.value = true
   try {
     await ensureUsers()
@@ -72,14 +76,19 @@ interface PickerItem {
   avatar?: { src?: string, alt: string }
 }
 
-// Already-shared users drop out of the picker — adding them again would be a
-// server-side no-op anyway.
+// Already-shared users drop out of the picker — changing their access goes
+// through the per-share level selector instead.
 const sharedIds = computed(() => new Set(shares.value.map(s => s.userId)))
 const items = computed<PickerItem[]>(() =>
   results.value
     .filter(u => !sharedIds.value.has(u.id))
     .map(u => ({ label: u.name, value: u.id, avatar: { src: u.avatarUrl || undefined, alt: u.name } }))
 )
+
+const LEVEL_ITEMS: Array<{ label: string, value: CrmShareLevel }> = [
+  { label: 'View', value: 'view' },
+  { label: 'Edit', value: 'edit' }
+]
 
 const adding = ref(false)
 async function onPick(userId: string | null | undefined) {
@@ -97,6 +106,24 @@ async function onPick(userId: string | null | undefined) {
   } finally {
     adding.value = false
     searchTerm.value = ''
+  }
+}
+
+// Re-posts the share with the picked level — the server upserts the row.
+const levelingId = ref<string | null>(null)
+async function onLevel(userId: string, level: CrmShareLevel) {
+  levelingId.value = userId
+  try {
+    await addShare(userId, level)
+    emit('changed')
+  } catch (err) {
+    toast.add({
+      title: 'Share update failed',
+      description: crmErrorMessage(err, 'Failed to change share level'),
+      color: 'error'
+    })
+  } finally {
+    levelingId.value = null
   }
 }
 
@@ -128,7 +155,7 @@ async function onRemove(userId: string) {
       label="Share"
     />
     <template #content>
-      <div class="w-72 p-3 space-y-3">
+      <div class="w-80 p-3 space-y-3">
         <p class="text-xs font-medium uppercase tracking-wide text-(--ui-text-muted)">
           Shared with
         </p>
@@ -168,6 +195,24 @@ async function onRemove(userId: string) {
               size="2xs"
             />
             <span class="text-sm truncate flex-1">{{ share.name }}</span>
+            <USelect
+              v-if="canShare"
+              :model-value="share.level"
+              :items="LEVEL_ITEMS"
+              size="xs"
+              class="w-20"
+              :loading="levelingId === share.userId"
+              :aria-label="`Access level for ${share.name}`"
+              @update:model-value="onLevel(share.userId, $event as CrmShareLevel)"
+            />
+            <UBadge
+              v-else-if="share.level === 'edit'"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+            >
+              Edit
+            </UBadge>
             <UButton
               v-if="canShare"
               icon="i-lucide-x"

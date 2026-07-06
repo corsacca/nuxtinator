@@ -5,12 +5,13 @@
 // channel), preserving the old label/primary unless the body overrides them.
 // Label/primary alone update the link row in place (primary via the
 // clear-then-set flip). Returns the field's hydrated channel entries.
-// Permission: <type>.update plus the record-visibility rule.
+// Permission: the record-visibility rule plus the record-scoped update gate
+// (type update answer OR an edit-level share on this record).
 
 import { z } from 'zod'
-import { withOrgPermission } from '#tenant/server'
+import { withOrgContext } from '#tenant/server'
 import type { CrmChannelEntry } from '#crm'
-import { permFor } from '../../../../../../../utils/crm-perms'
+import { requireRecordUpdate } from '../../../../../../../utils/type-permissions'
 import { assertRecordVisible, requireRecordType } from '../../../../../../../utils/list-records'
 import { claimChannel, linkChannel, setPrimary, unlinkChannel } from '../../../../../../../utils/channels'
 import { getRecord } from '../../../../../../../utils/record-storage'
@@ -30,9 +31,10 @@ export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
   const id = getRouterParam(event, 'id')!
   const linkId = getRouterParam(event, 'linkId')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'update'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
     await requireRecordType(tx, typeKey)
     await assertRecordVisible(tx, ctx, typeKey, id)
+    await requireRecordUpdate(tx, ctx, typeKey, id)
 
     const parsed = Body.safeParse(await readBody(event))
     if (!parsed.success) {

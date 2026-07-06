@@ -15,6 +15,9 @@ const { types, ensureTypes, getFields } = useCrmTypes()
 const typeInfo = computed(() => types.value.find(t => t.key === typeKey.value) ?? null)
 const typeLabel = computed(() => typeInfo.value?.label ?? typeKey.value)
 const labelSingular = computed(() => typeInfo.value?.labelSingular ?? 'record')
+// Server-evaluated create capability for this type (see CrmTypeSummary) —
+// false hides the create affordances; the POST route enforces it regardless.
+const canCreate = computed(() => typeInfo.value?.canCreate ?? false)
 
 // Keyed on the org as well as the type: switching orgs keeps this page
 // instance alive (same route record, new orgSlug param), and the caches are
@@ -76,6 +79,7 @@ const showEmpty = computed(() =>
           {{ typeLabel }}
         </h1>
         <UButton
+          v-if="canCreate"
           icon="i-lucide-plus"
           @click="createOpen = true"
         >
@@ -102,6 +106,7 @@ const showEmpty = computed(() =>
           v-else-if="showEmpty"
           :type-label="typeLabel"
           :label-singular="labelSingular"
+          :can-create="canCreate"
           @create="createOpen = true"
         />
 

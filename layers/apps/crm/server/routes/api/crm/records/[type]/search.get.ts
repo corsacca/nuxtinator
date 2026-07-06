@@ -1,11 +1,11 @@
 // GET /api/crm/records/:type/search?q=&limit=
 // Name typeahead for connection pickers — same visibility rule as the list.
 // Returns { items: [{ id, name }] } ordered by name; an empty q returns the
-// first page alphabetically. Permission: <type>.read.
+// first page alphabetically. Permission: the type evaluator's read answer.
 
 import { z } from 'zod'
-import { withOrgPermission } from '#tenant/server'
-import { listRecords, permFor, requireRecordType } from '#crm/server'
+import { withOrgContext } from '#tenant/server'
+import { listRecords, requireRecordType, requireTypePermission } from '#crm/server'
 
 const Query = z.object({
   q: z.string().optional(),
@@ -14,7 +14,8 @@ const Query = z.object({
 
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'read'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
+    await requireTypePermission(tx, ctx, typeKey, 'read')
     await requireRecordType(tx, typeKey)
 
     const parsed = Query.safeParse(getQuery(event))

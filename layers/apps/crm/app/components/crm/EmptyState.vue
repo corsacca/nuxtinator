@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// Zero-records state for a type's list page, with a create call-to-action.
+// Zero-records state for a type's list page, with a create call-to-action
+// (shown only when the caller's canCreate capability allows it).
 defineProps<{
   typeLabel: string
   labelSingular: string
+  canCreate: boolean
 }>()
 
 defineEmits<{
@@ -21,6 +23,7 @@ defineEmits<{
         No {{ typeLabel.toLowerCase() }} yet.
       </p>
       <UButton
+        v-if="canCreate"
         icon="i-lucide-plus"
         @click="$emit('create')"
       >

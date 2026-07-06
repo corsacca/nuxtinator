@@ -2,9 +2,12 @@
 // Channel-field editor for the record detail page: one row per linked
 // address with primary star, label badge, verified icon, consent badge
 // (click opens the consent panel), inline edit, and remove — plus an
-// add-entry form. Mutations go through the record channel routes and emit
-// 'refresh' so the page refetches the record; the consent overview is
-// fetched here once and reloaded after changes.
+// add-entry form. When the caller lacks edit capability the widget renders
+// read-only: no add/edit/remove/primary controls, a static star marks the
+// primary entry, and the consent panel opens without grant/revoke buttons.
+// Mutations go through the record channel routes and emit 'refresh' so the
+// page refetches the record; the consent overview is fetched here once and
+// reloaded after changes.
 import type { CrmChannelEntry } from '#crm'
 import type { CrmFieldSetting } from '../../utils/field-kinds'
 import type { CrmChannelConsentInfo } from '../../composables/useCrmChannels'
@@ -14,6 +17,8 @@ const props = defineProps<{
   typeKey: string
   field: CrmFieldSetting
   entries: CrmChannelEntry[]
+  /** The record detail's canEdit capability — false renders read-only. */
+  editable: boolean
 }>()
 
 const emit = defineEmits<{
@@ -148,7 +153,7 @@ function remove(entry: CrmChannelEntry) {
       :key="entry.linkId"
       class="flex items-center gap-2"
     >
-      <template v-if="editingId === entry.linkId">
+      <template v-if="editable && editingId === entry.linkId">
         <UInput
           v-model="editValue"
           class="flex-1 sm:max-w-xs"
@@ -182,6 +187,7 @@ function remove(entry: CrmChannelEntry) {
       </template>
       <template v-else>
         <UButton
+          v-if="editable"
           icon="i-lucide-star"
           size="xs"
           variant="ghost"
@@ -189,6 +195,12 @@ function remove(entry: CrmChannelEntry) {
           :class="entry.isPrimary ? '' : 'opacity-40 hover:opacity-100'"
           :aria-label="entry.isPrimary ? 'Unset primary' : 'Make primary'"
           @click="togglePrimary(entry)"
+        />
+        <UIcon
+          v-else-if="entry.isPrimary"
+          name="i-lucide-star"
+          class="size-4 text-(--ui-warning) shrink-0"
+          aria-label="Primary"
         />
         <span class="text-sm truncate">{{ entry.value }}</span>
         <UBadge
@@ -221,6 +233,7 @@ function remove(entry: CrmChannelEntry) {
         </button>
         <span class="flex-1" />
         <UButton
+          v-if="editable"
           icon="i-lucide-pencil"
           size="xs"
           variant="ghost"
@@ -229,6 +242,7 @@ function remove(entry: CrmChannelEntry) {
           @click="startEdit(entry)"
         />
         <UButton
+          v-if="editable"
           icon="i-lucide-x"
           size="xs"
           variant="ghost"
@@ -239,7 +253,17 @@ function remove(entry: CrmChannelEntry) {
       </template>
     </div>
 
-    <div class="flex gap-2">
+    <p
+      v-if="!editable && entries.length === 0"
+      class="text-sm sm:pt-1.5 text-(--ui-text-muted)"
+    >
+      —
+    </p>
+
+    <div
+      v-if="editable"
+      class="flex gap-2"
+    >
       <UInput
         v-model="draftValue"
         :placeholder="placeholder"
@@ -266,6 +290,7 @@ function remove(entry: CrmChannelEntry) {
       :type-key="typeKey"
       :record-id="recordId"
       :channel-id="panelChannelId"
+      :editable="editable"
       @refresh="onConsentChanged"
     />
   </div>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-// Detail-page header: back link to the list, click-to-rename name, a status
-// badge colored from the status field's option settings, and the share
-// popover (share/unshare land on the record's timeline, hence the
-// shareChanged re-emit).
+// Detail-page header: back link to the list, click-to-rename name (only when
+// the caller can edit this record), a status badge colored from the status
+// field's option settings, and the share popover (share/unshare land on the
+// record's timeline, hence the shareChanged re-emit). `canEdit`/`canShare`
+// are the record detail's server-evaluated capabilities.
 import type { CrmFieldSetting } from '../../utils/field-kinds'
 import type { CrmRecordDetail } from '../../composables/useCrmRecord'
 
@@ -11,6 +12,8 @@ const props = defineProps<{
   statusField: CrmFieldSetting | null
   backTo: string
   backLabel: string
+  canEdit: boolean
+  canShare: boolean
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +26,7 @@ const draft = ref('')
 const nameInput = ref<{ inputRef?: HTMLInputElement } | null>(null)
 
 function beginEdit() {
+  if (!props.canEdit) return
   draft.value = props.record.name
   editing.value = true
   nextTick(() => nameInput.value?.inputRef?.focus())
@@ -60,8 +64,9 @@ function blurTarget(event: Event) {
     <div class="flex items-center gap-3 flex-wrap">
       <h1
         v-if="!editing"
-        class="text-2xl font-bold cursor-text rounded px-1 -mx-1 hover:bg-(--ui-bg-elevated)"
-        title="Click to rename"
+        class="text-2xl font-bold rounded px-1 -mx-1"
+        :class="canEdit ? 'cursor-text hover:bg-(--ui-bg-elevated)' : ''"
+        :title="canEdit ? 'Click to rename' : undefined"
         @click="beginEdit"
       >
         {{ record.name || '—' }}
@@ -88,6 +93,7 @@ function blurTarget(event: Event) {
         class="ml-auto"
         :record-id="record.id"
         :type-key="record.typeKey"
+        :can-share="canShare"
         @changed="emit('shareChanged')"
       />
     </div>

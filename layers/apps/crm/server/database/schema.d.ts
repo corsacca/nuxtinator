@@ -10,6 +10,7 @@ export type ChannelValueFormat = 'email' | 'phone' | 'handle' | 'url' | 'freefor
 export type ConsentStatus = 'opt_in' | 'opt_out'
 export type ConsentEvent = 'grant' | 'revoke'
 export type SuppressionReason = 'hard_bounce' | 'complaint' | 'manual'
+export type CrmShareLevel = 'view' | 'edit'
 
 export interface CrmRecordsTable {
   id: Generated<string>
@@ -52,6 +53,9 @@ export interface CrmRecordConnectionsTable {
 export interface CrmRecordSharesTable {
   record_id: string
   user_id: string
+  // 'view' grants visibility only; 'edit' additionally grants record-scoped
+  // update capability (see server/utils/type-permissions.ts).
+  level: Generated<CrmShareLevel>
   granted_by: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }

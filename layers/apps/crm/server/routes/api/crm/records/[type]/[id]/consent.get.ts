@@ -3,11 +3,11 @@
 // per-purpose state, active-suppression flag, and the 20 most recent
 // compliance events per channel — plus the code-registered purpose catalog so
 // capture UIs can offer purposes that have no state rows yet. A channel
-// linked under several fields appears once. Permission: <type>.read plus the
-// record-visibility rule.
+// linked under several fields appears once. Permission: the type evaluator's
+// read answer plus the record-visibility rule.
 
-import { withOrgPermission } from '#tenant/server'
-import { permFor } from '../../../../../../utils/crm-perms'
+import { withOrgContext } from '#tenant/server'
+import { requireTypePermission } from '../../../../../../utils/type-permissions'
 import { assertRecordVisible, requireRecordType } from '../../../../../../utils/list-records'
 import { getRegisteredConsentPurposes } from '../../../../../../utils/crm-registry'
 import { getConsentEvents, getConsentState, type ConsentEventEntry } from '../../../../../../utils/consent'
@@ -18,7 +18,8 @@ const EVENTS_PER_CHANNEL = 20
 export default defineEventHandler(async (event) => {
   const typeKey = getRouterParam(event, 'type')!
   const id = getRouterParam(event, 'id')!
-  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'read'), async (tx, ctx) => {
+  return await withOrgContext(event, { appId: 'crm' }, async (tx, ctx) => {
+    await requireTypePermission(tx, ctx, typeKey, 'read')
     await requireRecordType(tx, typeKey)
     await assertRecordVisible(tx, ctx, typeKey, id)
 

@@ -3,14 +3,15 @@
 // ({ id, authorId, authorName, body, createdAt, editedAt }).
 //
 // Author-or-moderator rule: the author may edit their own comment; a caller
-// holding the record type's delete permission (the moderator bar) may edit
+// with the type evaluator's delete answer (the moderator bar) may edit
 // anyone's. The type-scoped permissions depend on the comment's record, so
-// the route is gated on crm.access and checks <type>.update — plus the
-// record-visibility rule — after loading the comment.
+// the route is gated on crm.access and checks the record-scoped update gate
+// (type update answer OR an edit-level share) — plus the record-visibility
+// rule — after loading the comment.
 
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
-import { permFor } from '../../../../utils/crm-perms'
+import { requireRecordUpdate, resolveTypePermission } from '../../../../utils/type-permissions'
 import { assertRecordVisible } from '../../../../utils/list-records'
 import { getCommentRecord, updateComment } from '../../../../utils/comments'
 
@@ -30,13 +31,10 @@ export default defineEventHandler(async (event) => {
     if (!ref) {
       throw createError({ statusCode: 404, statusMessage: 'Comment not found.' })
     }
-    const updatePerm = permFor(ref.recordType, 'update')
-    if (!ctx.perms.has(updatePerm)) {
-      throw createError({ statusCode: 403, statusMessage: `Permission required: ${updatePerm}` })
-    }
     await assertRecordVisible(tx, ctx, ref.recordType, ref.recordId)
+    await requireRecordUpdate(tx, ctx, ref.recordType, ref.recordId)
 
-    const canModerate = ctx.perms.has(permFor(ref.recordType, 'delete'))
+    const canModerate = await resolveTypePermission(tx, ctx, ref.recordType, 'delete')
     return await updateComment(tx, ctx, commentId, parsed.data.body, { canModerate })
   })
 })

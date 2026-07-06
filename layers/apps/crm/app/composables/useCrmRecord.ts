@@ -4,6 +4,18 @@
 
 import type { MaybeRefOrGetter } from 'vue'
 
+/**
+ * The caller's server-evaluated capabilities for one record. canEdit is the
+ * type-level update answer OR an edit-level share on this record; canShare
+ * and canDelete are type-level. Per-type role-grant rows make client-side
+ * slug checks unreliable — these flags are the only truthful source.
+ */
+export interface CrmRecordCapabilities {
+  canEdit: boolean
+  canShare: boolean
+  canDelete: boolean
+}
+
 /** Record detail as served by GET/POST/PATCH /api/crm/records/:type[/:id]. */
 export interface CrmRecordDetail {
   id: string
@@ -15,6 +27,7 @@ export interface CrmRecordDetail {
   createdAt: string
   updatedAt: string
   createdBy: string
+  capabilities: CrmRecordCapabilities
 }
 
 export function useCrmRecord(typeKey: MaybeRefOrGetter<string>, id: MaybeRefOrGetter<string>) {
