@@ -56,7 +56,7 @@ interface ChannelSeed {
 interface ContactSeed {
   name: string
   status: 'new' | 'active' | 'paused' | 'closed'
-  /** jsonb scalars (nickname, gender, age). */
+  /** jsonb scalars (nickname, gender). */
   data?: Record<string, unknown>
   /** entry-stored multi values keyed by field. */
   entries?: Partial<Record<'languages' | 'sources' | 'tags', string[]>>
@@ -74,7 +74,7 @@ const CONTACTS: ContactSeed[] = [
   {
     name: 'Jane Miller',
     status: 'active',
-    data: { nickname: 'Janey', gender: 'female', age: '26_40' },
+    data: { nickname: 'Janey', gender: 'female' },
     entries: { languages: ['en', 'es'], sources: ['web'], tags: ['vip', 'newsletter'] },
     assigned: ['alice'],
     channels: [
@@ -99,7 +99,7 @@ const CONTACTS: ContactSeed[] = [
   {
     name: 'Marcus Webb',
     status: 'new',
-    data: { gender: 'male', age: '18_25' },
+    data: { gender: 'male' },
     entries: { sources: ['personal'] },
     assigned: ['bob'],
     channels: [
@@ -116,7 +116,7 @@ const CONTACTS: ContactSeed[] = [
   {
     name: 'Priya Sharma',
     status: 'active',
-    data: { nickname: 'Pri', gender: 'female', age: '26_40' },
+    data: { nickname: 'Pri', gender: 'female' },
     entries: { languages: ['en'], tags: ['vip'] },
     assigned: ['alice', 'carol'],
     channels: [
@@ -134,7 +134,7 @@ const CONTACTS: ContactSeed[] = [
   {
     name: 'Diego Alvarez',
     status: 'paused',
-    data: { gender: 'male', age: '41_65' },
+    data: { gender: 'male' },
     entries: { languages: ['es'], sources: ['transfer'] },
     channels: [
       { field: 'contact_phone', type: 'phone', value: '+1 (555) 010-0004', primary: true }
@@ -144,7 +144,6 @@ const CONTACTS: ContactSeed[] = [
   {
     name: 'Amara Okafor',
     status: 'active',
-    data: { age: '41_65' },
     entries: { tags: ['volunteer'], sources: ['personal'] },
     assigned: ['carol'],
     channels: [
@@ -157,7 +156,7 @@ const CONTACTS: ContactSeed[] = [
   {
     name: 'Tom Bennett',
     status: 'closed',
-    data: { gender: 'male', age: '41_65' },
+    data: { gender: 'male' },
     channels: [
       {
         field: 'contact_email',
@@ -176,7 +175,7 @@ const CONTACTS: ContactSeed[] = [
   {
     name: 'Sarah Bennett',
     status: 'active',
-    data: { gender: 'female', age: '26_40' },
+    data: { gender: 'female' },
     entries: { languages: ['en', 'fr'] },
     assigned: ['bob'],
     channels: [

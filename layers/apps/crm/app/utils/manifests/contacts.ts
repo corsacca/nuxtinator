@@ -44,19 +44,6 @@ export const contactsManifest = defineRecordType({
         female: { label: 'Female' }
       }
     },
-    age: {
-      kind: 'key_select',
-      label: 'Age',
-      section: 'background',
-      order: 2,
-      options: {
-        under_18: { label: 'Under 18' },
-        '18_25': { label: '18–25' },
-        '26_40': { label: '26–40' },
-        '41_65': { label: '41–65' },
-        over_65: { label: 'Over 65' }
-      }
-    },
     languages: {
       kind: 'multi_select',
       label: 'Languages',
