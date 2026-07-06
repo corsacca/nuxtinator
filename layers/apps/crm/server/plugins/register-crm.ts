@@ -3,6 +3,8 @@ import { registerDefaultGrants } from '#core/server/utils/default-grants-registr
 import { registerApp } from '#core/server/utils/app-registry'
 import { registerNavItem } from '#core/server/utils/nav-registry'
 import { CRM_PERMISSIONS, CRM_PERMISSION_META, CRM_DEFAULT_GRANTS } from '../../app/utils/permissions'
+import { contactsManifest } from '../../app/utils/manifests/contacts'
+import { registerCrmRecordType, registerCrmChannelType, registerCrmConsentPurpose } from '../utils/crm-registry'
 
 export default defineNitroPlugin(() => {
   registerPermissions(CRM_PERMISSIONS, CRM_PERMISSION_META)
@@ -22,5 +24,16 @@ export default defineNitroPlugin(() => {
     icon: 'i-lucide-users',
     requiredPermission: 'crm.contacts.read',
     order: 10
+  })
+  registerCrmRecordType(contactsManifest)
+  registerCrmChannelType({ typeKey: 'email', label: 'Email', icon: 'i-lucide-mail', valueFormat: 'email' })
+  registerCrmChannelType({ typeKey: 'phone', label: 'Phone', icon: 'i-lucide-phone', valueFormat: 'phone' })
+  registerCrmConsentPurpose('marketing', {
+    title: 'Marketing',
+    description: 'Bulk marketing and campaign messages.'
+  })
+  registerCrmConsentPurpose('transactional', {
+    title: 'Transactional',
+    description: 'Operational messages tied to the recipient\'s own activity.'
   })
 })
