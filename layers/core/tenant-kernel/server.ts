@@ -5,9 +5,10 @@
 //
 // Single-mode contract:
 //   - `defineTenantHandler` runs `requireAuth`, opens a Kysely transaction,
-//     resolves the user's permission set from `users.roles[]`, then calls the
-//     handler. There is no `app.current_org` GUC, no app-enable check, no
-//     per-org overlay.
+//     resolves the user's permission set from `users.roles[]` unioned with
+//     their direct grants (`user_permission_grants`), then calls the handler.
+//     There is no `app.current_org` GUC, no app-enable check, no per-org
+//     overlay.
 //   - `encodeFlowOrg` / `decodeFlowOrg` are no-ops — OAuth `state` carries
 //     whatever the caller put in it.
 //   - `requireOperatorAdmin` checks `users.is_admin`. Same in both modes; the
@@ -19,6 +20,7 @@ import type { Transaction } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions } from '#core/server/utils/rbac'
+import { getUserGrantedPermissions } from '#core/server/utils/permission-grants'
 import type { Database } from '#core/server/database/schema'
 import type { Permission } from '#core/app/utils/permissions'
 
@@ -26,7 +28,12 @@ export interface TenantContext {
   userId: string
   orgId: string | null
   orgSlug: string | null
+  // `role` is always null in single mode (it's the membership shorthand in
+  // multi mode). `roles` is the user's full host role list — `users.roles[]`,
+  // plus `admin` when `is_admin` is set.
   role: string | null
+  roles: string[]
+  // Effective permissions: union(role perms) ∪ direct user grants.
   perms: Set<Permission>
 }
 
@@ -52,15 +59,21 @@ async function runWithSingleContext<T>(
       .executeTakeFirst()
 
     const roles = [...(userRow?.roles ?? [])]
-    if (userRow?.is_admin) roles.push('admin')
+    if (userRow?.is_admin && !roles.includes('admin')) roles.push('admin')
 
     const perms = await getRolePermissions(tx, roles, null)
+    // Additive per-user grants ride on top of role-derived perms. The table
+    // is global in single mode, so the user_id filter is the whole scope.
+    for (const perm of await getUserGrantedPermissions(tx, authUser.userId)) {
+      perms.add(perm)
+    }
 
     return await fn(tx, {
       userId: authUser.userId,
       orgId: null,
       orgSlug: null,
       role: null,
+      roles,
       perms
     })
   })
