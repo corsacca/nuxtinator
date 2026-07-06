@@ -40,6 +40,8 @@ export interface CrmFieldDef {
   kind: CrmFieldKind
   /** Code-owned default label; admins override via crm_record_fields rows. */
   label: string
+  /** Code-owned default icon; admins override via crm_record_fields rows. */
+  icon?: string
   description?: string
   /** Section key referencing the manifest's `sections` map. */
   section?: string

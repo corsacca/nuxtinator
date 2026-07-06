@@ -11,6 +11,7 @@ export interface CrmFieldSetting {
   key: string
   kind: CrmFieldKind
   label: string
+  icon: string | null
   section: string | null
   required: boolean
   hidden: boolean

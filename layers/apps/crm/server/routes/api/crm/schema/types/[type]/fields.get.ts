@@ -2,8 +2,8 @@
 // Merged field definitions for one record type — everything the client needs
 // to render list columns and detail sections. Returns
 // { sections: Record<key, { label, order? }>, statusField, fields: [{ key,
-//   kind, label, section, required, hidden, order, options, custom, orphan,
-//   channelType, target, multiple, column }] } sorted by order. `column` and
+//   kind, label, icon, section, required, hidden, order, options, custom,
+//   orphan, channelType, target, multiple, column }] } sorted by order. `column` and
 // `statusField` carry the promoted-column flags so clients never infer them
 // from key conventions. Hidden and stale (orphan) fields only appear for
 // schema managers. Permission: crm.access.
@@ -22,6 +22,7 @@ export default defineEventHandler(async (event) => {
         key: f.key,
         kind: f.kind,
         label: f.label,
+        icon: f.icon ?? null,
         section: f.section ?? null,
         required: f.required,
         hidden: f.hidden,

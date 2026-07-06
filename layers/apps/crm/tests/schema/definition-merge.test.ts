@@ -17,6 +17,7 @@ interface FieldEntry {
   key: string
   kind: string
   label: string
+  icon: string | null
   section: string | null
   required: boolean
   hidden: boolean
@@ -87,6 +88,71 @@ describe('field label overrides (code-owned defaults contract)', () => {
 
     const res = await $fetch<FieldsResponse>('/api/crm/schema/types/contacts/fields', opts)
     expect(res.fields.find(f => f.key === 'nickname')!.label).toBe('Nickname')
+  })
+})
+
+describe('field icon overrides', () => {
+  it('stores an icon override on a manifest field and reverts on null', async () => {
+    const { org, auth } = await createCrmOrgWith(sql, ['admin'])
+    const opts = withOrgHeader(auth, org.slug)
+
+    const patched = await $fetch<{ field: FieldEntry }>(
+      '/api/crm/schema/types/contacts/fields/nickname',
+      { method: 'PATCH', body: { icon: 'i-lucide-star' }, ...opts }
+    )
+    expect(patched.field.icon).toBe('i-lucide-star')
+
+    let rows = await sql`
+      SELECT icon_override FROM crm_record_fields
+      WHERE org_id = ${org.id} AND type_key = 'contacts' AND field_key = 'nickname'
+    `
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.icon_override).toBe('i-lucide-star')
+
+    // Reverting the only override deletes the row outright.
+    await $fetch(
+      '/api/crm/schema/types/contacts/fields/nickname',
+      { method: 'PATCH', body: { icon: null }, ...opts }
+    )
+    rows = await sql`
+      SELECT id FROM crm_record_fields
+      WHERE org_id = ${org.id} AND type_key = 'contacts' AND field_key = 'nickname'
+    `
+    expect(rows).toHaveLength(0)
+
+    const res = await $fetch<FieldsResponse>('/api/crm/schema/types/contacts/fields', opts)
+    expect(res.fields.find(f => f.key === 'nickname')!.icon).toBeNull()
+  })
+
+  it('creates a custom field with an icon and clears it via null', async () => {
+    const { org, auth } = await createCrmOrgWith(sql, ['admin'])
+    const opts = withOrgHeader(auth, org.slug)
+
+    const created = await $fetch<{ field: FieldEntry }>(
+      '/api/crm/schema/types/contacts/fields',
+      {
+        method: 'POST',
+        body: { fieldKey: 'priority', kind: 'text', label: 'Priority', icon: 'i-lucide-flag' },
+        ...opts
+      }
+    )
+    expect(created.field.icon).toBe('i-lucide-flag')
+
+    const cleared = await $fetch<{ field: FieldEntry }>(
+      '/api/crm/schema/types/contacts/fields/priority',
+      { method: 'PATCH', body: { icon: null }, ...opts }
+    )
+    expect(cleared.field.icon).toBeNull()
+
+    // The custom field's row IS its definition — clearing the icon must not
+    // delete it.
+    const rows = await sql`
+      SELECT kind, icon_override FROM crm_record_fields
+      WHERE org_id = ${org.id} AND type_key = 'contacts' AND field_key = 'priority'
+    `
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.kind).toBe('text')
+    expect(rows[0]!.icon_override).toBeNull()
   })
 })
 
