@@ -1,8 +1,14 @@
 <script setup lang="ts">
-// Record detail: header (back link, click-to-rename name, status badge),
-// the field sections in declared order, and the connections panel. Editable
-// kinds commit inline through the optimistic patchFields; other kinds
-// render read-only until their editors ship.
+// Record detail: header (back link, click-to-rename name, status badge,
+// share popover), the field sections in declared order, the connections
+// panel, and the merged comment/activity timeline. Editable kinds commit
+// inline through the optimistic patchFields; communication_channel fields
+// render through the channel widget (its mutations go through the channel
+// routes, so it asks for a record refetch instead of emitting a patch);
+// remaining kinds render read-only. Any action that writes activity rows
+// (field patch, rename, channel/consent change, share change) refreshes the
+// timeline so it stays in step without a full page reload.
+import type { CrmChannelEntry } from '#crm'
 import type { CrmTypeFields } from '../../../composables/useCrmTypes'
 import type { CrmFieldSetting } from '../../../utils/field-kinds'
 
@@ -38,7 +44,14 @@ watch(typeKey, async (key) => {
   }
 }, { immediate: true })
 
-const { record, pending, error, patchFields } = useCrmRecord(typeKey, recordId)
+const { record, pending, error, refresh, patchFields } = useCrmRecord(typeKey, recordId)
+
+// The timeline self-fetches; this handle re-pulls it after actions on this
+// page that append activity rows.
+const timeline = ref<{ refresh: () => Promise<void> } | null>(null)
+function refreshTimeline() {
+  timeline.value?.refresh()
+}
 
 const statusField = computed(() =>
   fieldSettings.value?.fields.find(f => f.column === 'status') ?? null
@@ -75,9 +88,22 @@ function fieldValue(field: CrmFieldSetting): unknown {
   return record.value?.fields[field.key] ?? null
 }
 
+function channelEntries(field: CrmFieldSetting): CrmChannelEntry[] {
+  const value = fieldValue(field)
+  return Array.isArray(value) ? value as CrmChannelEntry[] : []
+}
+
+// Channel/consent mutations happen inside the widget; the record refetch
+// picks up the new entries and the timeline the new activity rows.
+function onChannelsChanged() {
+  refresh()
+  refreshTimeline()
+}
+
 async function commitField(field: CrmFieldSetting, value: unknown) {
   try {
     await patchFields({ [field.key]: value })
+    refreshTimeline()
   } catch (err) {
     toast.add({
       title: 'Update failed',
@@ -90,6 +116,7 @@ async function commitField(field: CrmFieldSetting, value: unknown) {
 async function rename(name: string) {
   try {
     await patchFields({ name })
+    refreshTimeline()
   } catch (err) {
     toast.add({
       title: 'Rename failed',
@@ -115,6 +142,7 @@ async function rename(name: string) {
         :back-to="crmPath(`/${typeKey}`)"
         :back-label="typeInfo?.label ?? 'Back'"
         @rename="rename"
+        @share-changed="refreshTimeline"
       />
 
       <CrmFieldSection
@@ -122,18 +150,48 @@ async function rename(name: string) {
         :key="group.key"
         :label="group.label"
       >
-        <CrmFieldRow
+        <template
           v-for="field in group.fields"
           :key="field.key"
-          :field="field"
-          :value="fieldValue(field)"
-          @commit="commitField(field, $event)"
-        />
+        >
+          <div
+            v-if="field.kind === 'communication_channel'"
+            class="grid grid-cols-1 sm:grid-cols-[11rem_1fr] gap-1 sm:gap-4 px-4 py-3"
+          >
+            <div class="text-sm text-(--ui-text-muted) sm:pt-1.5">
+              {{ field.label }}<span
+                v-if="field.required"
+                class="text-(--ui-error)"
+              > *</span>
+            </div>
+            <div class="min-w-0">
+              <CrmChannelWidget
+                :record-id="record.id"
+                :type-key="typeKey"
+                :field="field"
+                :entries="channelEntries(field)"
+                @refresh="onChannelsChanged"
+              />
+            </div>
+          </div>
+          <CrmFieldRow
+            v-else
+            :field="field"
+            :value="fieldValue(field)"
+            @commit="commitField(field, $event)"
+          />
+        </template>
       </CrmFieldSection>
 
       <CrmConnectionsPanel
         :fields="fieldSettings?.fields ?? []"
         :record="record"
+      />
+
+      <CrmTimeline
+        ref="timeline"
+        :type-key="typeKey"
+        :record-id="recordId"
       />
 
       <p class="text-xs text-(--ui-text-muted)">

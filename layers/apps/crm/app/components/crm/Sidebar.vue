@@ -11,12 +11,17 @@ watch(() => route.path, () => {
 })
 
 const { visibleTypes, ensureTypes } = useCrmTypes()
+const { canManage, ensureAccess } = useCrmSchemaAdmin()
 const crmPath = useCrmPath()
 
 onMounted(() => {
   ensureTypes().catch(() => {
     // The list page surfaces load errors; the sidebar just stays empty.
   })
+  // Server-derived crm.schema.manage signal — usePermissions() has no
+  // client-side org-permission store to answer from. The settings pages and
+  // routes enforce the permission themselves; this only shows/hides the link.
+  ensureAccess()
 })
 
 const items = computed<SidebarNavItem[]>(() =>
@@ -25,6 +30,12 @@ const items = computed<SidebarNavItem[]>(() =>
     label: t.label,
     icon: t.icon ?? 'i-lucide-folder'
   }))
+)
+
+const settingsItems = computed<SidebarNavItem[]>(() =>
+  canManage.value === true
+    ? [{ to: crmPath('/settings'), label: 'Settings', icon: 'i-lucide-settings' }]
+    : []
 )
 </script>
 
@@ -44,6 +55,11 @@ const items = computed<SidebarNavItem[]>(() =>
     >
       No record types yet.
     </p>
+    <SidebarNav
+      v-if="settingsItems.length > 0"
+      class="mt-4 pt-4 border-t border-(--ui-border)"
+      :items="settingsItems"
+    />
   </SidebarPanel>
 
   <!-- Mobile drawer -->
@@ -78,6 +94,11 @@ const items = computed<SidebarNavItem[]>(() =>
         >
           No record types yet.
         </p>
+        <SidebarNav
+          v-if="settingsItems.length > 0"
+          class="mt-4 pt-4 border-t border-(--ui-border)"
+          :items="settingsItems"
+        />
       </SidebarPanel>
     </template>
   </USlideover>

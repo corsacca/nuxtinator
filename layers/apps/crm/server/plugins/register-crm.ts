@@ -25,6 +25,14 @@ export default defineNitroPlugin(() => {
     requiredPermission: 'crm.contacts.read',
     order: 10
   })
+  registerNavItem({
+    appId: 'crm',
+    title: 'Settings',
+    path: '/crm/settings',
+    icon: 'i-lucide-settings',
+    requiredPermission: 'crm.schema.manage',
+    order: 90
+  })
   registerCrmRecordType(contactsManifest)
   registerCrmChannelType({ typeKey: 'email', label: 'Email', icon: 'i-lucide-mail', valueFormat: 'email' })
   registerCrmChannelType({ typeKey: 'phone', label: 'Phone', icon: 'i-lucide-phone', valueFormat: 'phone' })

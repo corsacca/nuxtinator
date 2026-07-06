@@ -187,11 +187,25 @@ function mergeOrphanField(row: RecordFieldRow): CrmFieldSetting {
   }
 }
 
+// The name column is intrinsic to every record type — the create pipeline
+// and the list engine resolve it through a field def with column: 'name'.
+// Code manifests declare their own; types without a manifest (admin-created
+// customs) get this synthesized def, which behaves like a code default:
+// overridable via a crm_record_fields row but never deletable.
+export const CRM_INTRINSIC_NAME_FIELD: CrmFieldDef = {
+  kind: 'text',
+  label: 'Name',
+  column: 'name',
+  required: true,
+  order: 0
+}
+
 export async function getRecordTypeFields(tx: DbClient, typeKey: string): Promise<CrmFieldSetting[]> {
   const reader = defineSettings<{ key: string, def: CrmFieldDef }, RecordFieldRow, CrmFieldSetting>({
     loadDefaults: () => {
       const manifest = getRegisteredRecordType(typeKey)
-      return Object.entries(manifest?.fields ?? {}).map(([key, def]) => ({ key, def }))
+      if (manifest) return Object.entries(manifest.fields).map(([key, def]) => ({ key, def }))
+      return [{ key: 'name', def: CRM_INTRINSIC_NAME_FIELD }]
     },
     loadOverrides: async (tx) => {
       const rows = await tx

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-// Detail-page header: back link to the list, click-to-rename name, and a
-// status badge colored from the status field's option settings.
+// Detail-page header: back link to the list, click-to-rename name, a status
+// badge colored from the status field's option settings, and the share
+// popover (share/unshare land on the record's timeline, hence the
+// shareChanged re-emit).
 import type { CrmFieldSetting } from '../../utils/field-kinds'
 import type { CrmRecordDetail } from '../../composables/useCrmRecord'
 
@@ -13,6 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   rename: [name: string]
+  shareChanged: []
 }>()
 
 const editing = ref(false)
@@ -81,6 +84,12 @@ function blurTarget(event: Event) {
       >
         {{ crmOptionLabel(statusField, record.status) }}
       </UBadge>
+      <CrmSharePopover
+        class="ml-auto"
+        :record-id="record.id"
+        :type-key="record.typeKey"
+        @changed="emit('shareChanged')"
+      />
     </div>
   </div>
 </template>

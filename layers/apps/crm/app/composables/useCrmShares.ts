@@ -1,0 +1,62 @@
+// Share state for one record: fetch on demand plus add/remove wrappers. All
+// three endpoints answer with the full refreshed list, so `shares` is
+// server-authoritative after every call — no optimistic bookkeeping.
+
+import type { MaybeRefOrGetter } from 'vue'
+
+/** A share as served by GET /api/crm/records/:type/:id/shares. */
+export interface CrmShare {
+  userId: string
+  name: string
+  email: string
+  avatarUrl: string | null
+  /** User who granted the share; null when that account was deleted. */
+  grantedBy: string | null
+  createdAt: string
+}
+
+export function useCrmShares(typeKey: MaybeRefOrGetter<string>, recordId: MaybeRefOrGetter<string>) {
+  const shares = ref<CrmShare[]>([])
+  const pending = ref(false)
+  const error = ref<string | null>(null)
+  // Whether the caller holds <type>.share, as reported by the GET endpoint —
+  // the share UI's gate signal (there is no client-side org-permission
+  // store); the server enforces the permission on the write routes anyway.
+  const canShare = ref(false)
+
+  const url = () => `/api/crm/records/${toValue(typeKey)}/${toValue(recordId)}/shares`
+
+  async function refresh(): Promise<void> {
+    if (!toValue(typeKey) || !toValue(recordId)) return
+    pending.value = true
+    try {
+      const res = await $fetch<{ items: CrmShare[], canShare: boolean }>(url())
+      shares.value = res.items
+      canShare.value = res.canShare
+      error.value = null
+    } catch (err) {
+      error.value = crmErrorMessage(err, 'Failed to load shares')
+    } finally {
+      pending.value = false
+    }
+  }
+
+  /** Shares the record with a user. Throws on failure — callers surface the error. */
+  async function addShare(userId: string): Promise<void> {
+    const res = await $fetch<{ items: CrmShare[] }>(url(), {
+      method: 'POST',
+      body: { userId }
+    })
+    shares.value = res.items
+  }
+
+  /** Revokes a user's share. Throws on failure — callers surface the error. */
+  async function removeShare(userId: string): Promise<void> {
+    const res = await $fetch<{ items: CrmShare[] }>(`${url()}/${userId}`, {
+      method: 'DELETE'
+    })
+    shares.value = res.items
+  }
+
+  return { shares, canShare, pending, error, refresh, addShare, removeShare }
+}
