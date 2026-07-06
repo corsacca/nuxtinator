@@ -13,6 +13,7 @@
         "@nuxt/ui": "^4.7.0",
         "@nuxtinator/context": "workspace:*",
         "@nuxtinator/core": "workspace:*",
+        "@nuxtinator/crm": "workspace:*",
         "@nuxtinator/dev": "workspace:*",
         "@nuxtinator/email-mailgun": "workspace:*",
         "@nuxtinator/feedback": "workspace:*",
@@ -70,9 +71,23 @@
         "zod": "^3.23.0",
       },
     },
+    "layers/apps/crm": {
+      "name": "@nuxtinator/crm",
+      "version": "0.1.0",
+      "optionalDependencies": {
+        "@nuxtinator/core": "*",
+      },
+      "peerDependencies": {
+        "h3": "^1.0.0",
+        "kysely": "^0.28.0",
+        "nuxt": "^4.0.0",
+        "vue": "^3.0.0",
+        "zod": "^3.23.0",
+      },
+    },
     "layers/apps/feedback": {
       "name": "@nuxtinator/feedback",
-      "version": "1.0.0",
+      "version": "1.0.2",
       "optionalDependencies": {
         "@nuxtinator/core": "*",
       },
@@ -142,7 +157,7 @@
     },
     "layers/apps/videos": {
       "name": "@nuxtinator/videos",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "fix-webm-duration": "^1.0.6",
         "mediabunny": "^1.25.1",
@@ -160,7 +175,7 @@
     },
     "layers/core": {
       "name": "@nuxtinator/core",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "@bradenmacdonald/s3-lite-client": "^0.9.6",
         "bcrypt": "^6.0.0",
@@ -543,6 +558,8 @@
     "@nuxtinator/context": ["@nuxtinator/context@workspace:layers/apps/context"],
 
     "@nuxtinator/core": ["@nuxtinator/core@workspace:layers/core"],
+
+    "@nuxtinator/crm": ["@nuxtinator/crm@workspace:layers/apps/crm"],
 
     "@nuxtinator/dev": ["@nuxtinator/dev@workspace:layers/dev"],
 

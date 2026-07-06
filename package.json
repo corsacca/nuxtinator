@@ -18,6 +18,7 @@
     "layers/apps/feedback",
     "layers/apps/list-of-100",
     "layers/apps/files",
-    "layers/apps/context"
+    "layers/apps/context",
+    "layers/apps/crm"
   ]
 }
