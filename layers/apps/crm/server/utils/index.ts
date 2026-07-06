@@ -39,8 +39,14 @@ export type { NormalizedChannelValue } from './normalize'
 export { claimChannel, findChannel, linkChannel, unlinkChannel, setPrimary } from './channels'
 export type { CrmChannelRow, CrmChannelLinkRow, LinkChannelOpts } from './channels'
 
-export { hydrateRecords, getRecord, applyFieldPatch } from './record-storage'
+export { hydrateRecords, getRecord, applyFieldPatch, deleteRecord } from './record-storage'
 export type { CrmRecordRow, CrmHydratedRecord } from './record-storage'
+
+export { permFor } from './crm-perms'
+export type { CrmRecordAction } from './crm-perms'
+
+export { listRecords, requireRecordType, assertRecordVisible } from './list-records'
+export type { CrmListOpts, CrmRecordListItem, CrmListResult } from './list-records'
 
 export { recordCrmActivity } from './crm-activity'
 export type { CrmActivityAction, CrmActivityOpts } from './crm-activity'

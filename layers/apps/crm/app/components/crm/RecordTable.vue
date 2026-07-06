@@ -1,0 +1,111 @@
+<script setup lang="ts">
+// Records list table. Columns: name, status (when the type has one), a few
+// leading jsonb-backed fields (list rows only carry the `data` jsonb map, so
+// entry/user/channel/connection kinds can't render here), and updated-at.
+// Rows navigate to the record detail; headers sort through the URL-bound
+// list state.
+import { h, resolveComponent } from 'vue'
+import type { TableColumn } from '@nuxt/ui'
+import type { CrmFieldSetting } from '../../utils/field-kinds'
+import type { CrmRecordListItem } from '../../composables/useCrmRecords'
+
+const props = defineProps<{
+  typeKey: string
+  items: CrmRecordListItem[]
+  fields: CrmFieldSetting[]
+  loading?: boolean
+  sort: string
+  dir: 'asc' | 'desc'
+}>()
+
+const emit = defineEmits<{
+  toggleSort: [field: string]
+}>()
+
+const crmPath = useCrmPath()
+
+const UButton = resolveComponent('UButton')
+const UBadge = resolveComponent('UBadge')
+
+// Kinds whose values live in crm_records.data and render from a list row.
+const JSONB_LIST_KINDS = new Set(['text', 'textarea', 'number', 'boolean', 'date', 'datetime', 'key_select'])
+
+const statusField = computed(() =>
+  props.fields.find(f => f.key === 'status' && f.kind === 'key_select') ?? null
+)
+
+// The fields endpoint returns fields sorted by order, so the first few
+// non-promoted jsonb fields make the leading columns.
+const leadingFields = computed(() =>
+  props.fields
+    .filter(f => !f.hidden && !f.orphan && f.key !== 'name' && f.key !== 'status' && JSONB_LIST_KINDS.has(f.kind))
+    .slice(0, 3)
+)
+
+const sortIcon = (field: string) => {
+  if (props.sort !== field) return 'i-lucide-chevrons-up-down'
+  return props.dir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'
+}
+
+const sortableHeader = (label: string, field: string) => () =>
+  h(UButton, {
+    variant: 'ghost',
+    color: 'neutral',
+    size: 'xs',
+    class: '-mx-2',
+    trailingIcon: sortIcon(field),
+    onClick: (e: MouseEvent) => {
+      e.stopPropagation()
+      emit('toggleSort', field)
+    }
+  }, () => label)
+
+const columns = computed<TableColumn<CrmRecordListItem>[]>(() => [
+  {
+    accessorKey: 'name',
+    header: sortableHeader('Name', 'name'),
+    cell: ({ row }) => h('span', { class: 'font-medium' }, row.original.name || '—')
+  },
+  ...(statusField.value
+    ? [{
+        accessorKey: 'status',
+        header: sortableHeader('Status', 'status'),
+        cell: ({ row }: { row: { original: CrmRecordListItem } }) => {
+          const key = row.original.status
+          if (!key) return h('span', { class: 'text-(--ui-text-muted)' }, '—')
+          return h(UBadge, {
+            color: crmOptionColor(statusField.value!, key),
+            variant: 'subtle',
+            size: 'sm'
+          }, () => crmOptionLabel(statusField.value!, key))
+        }
+      } as TableColumn<CrmRecordListItem>]
+    : []),
+  ...leadingFields.value.map(field => ({
+    id: field.key,
+    header: sortableHeader(field.label, field.key),
+    cell: ({ row }: { row: { original: CrmRecordListItem } }) =>
+      formatCrmValue(row.original.data[field.key], field)
+  } as TableColumn<CrmRecordListItem>)),
+  {
+    accessorKey: 'updatedAt',
+    header: sortableHeader('Updated', 'updated_at'),
+    cell: ({ row }) => new Date(row.original.updatedAt).toLocaleString()
+  }
+])
+
+function handleRowSelect(_event: Event, row: { original: CrmRecordListItem }) {
+  navigateTo(crmPath(`/${props.typeKey}/${row.original.id}`))
+}
+</script>
+
+<template>
+  <UTable
+    :columns="columns"
+    :data="items"
+    :loading="loading"
+    :ui="{ tr: 'cursor-pointer' }"
+    empty="No records match."
+    @select="handleRowSelect"
+  />
+</template>

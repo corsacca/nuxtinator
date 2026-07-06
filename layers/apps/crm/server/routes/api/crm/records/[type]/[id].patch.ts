@@ -1,0 +1,40 @@
+// PATCH /api/crm/records/:type/:id
+// Body: { fields: { <fieldKey>: value } } — scalar fields take a value (null
+// clears), multi-value fields take an array (replace) or the D.T-style
+// { values: [{ value, delete? }], force_values? } list. Runs the kernel's
+// field-patch pipeline and returns the updated hydrated detail.
+// Permission: <type>.update plus the record-visibility rule.
+
+import { z } from 'zod'
+import { withOrgPermission } from '#tenant/server'
+import { applyFieldPatch, assertRecordVisible, permFor, requireRecordType } from '#crm/server'
+
+const Body = z.object({
+  fields: z.record(z.string(), z.unknown())
+})
+
+export default defineEventHandler(async (event) => {
+  const typeKey = getRouterParam(event, 'type')!
+  const id = getRouterParam(event, 'id')!
+  return await withOrgPermission(event, { appId: 'crm' }, permFor(typeKey, 'update'), async (tx, ctx) => {
+    await requireRecordType(tx, typeKey)
+    await assertRecordVisible(tx, ctx, typeKey, id)
+
+    const parsed = Body.safeParse(await readBody(event))
+    if (!parsed.success) {
+      throw createError({ statusCode: 400, statusMessage: 'Invalid body', data: parsed.error.flatten() })
+    }
+
+    const record = await applyFieldPatch(tx, ctx, typeKey, id, parsed.data.fields)
+    return {
+      id: record.id,
+      typeKey: record.recordType,
+      name: record.name,
+      status: record.status,
+      fields: record.fields,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      createdBy: record.createdBy
+    }
+  })
+})

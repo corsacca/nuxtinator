@@ -263,6 +263,30 @@ export async function getRecord(
   return hydrated!
 }
 
+// Hard delete. Satellite rows (field entries, user refs, connections, shares,
+// channel links, activity, comments) ride along via ON DELETE CASCADE — the
+// record-keyed timeline disappears with the record, so no activity row is
+// written. Channel identity rows (crm_channels) survive because consent and
+// suppression state hang off them.
+export async function deleteRecord(
+  tx: Tx,
+  _ctx: TenantContext,
+  typeKey: string,
+  id: string
+): Promise<void> {
+  if (!uuidSchema.safeParse(id).success) {
+    throw createError({ statusCode: 404, statusMessage: 'Record not found.' })
+  }
+  const result = await tx
+    .deleteFrom('crm_records')
+    .where('id', '=', id)
+    .where('record_type', '=', typeKey)
+    .executeTakeFirst()
+  if (Number(result.numDeletedRows) === 0) {
+    throw createError({ statusCode: 404, statusMessage: 'Record not found.' })
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Patch parsing + validation
 // ---------------------------------------------------------------------------
@@ -467,7 +491,7 @@ async function applyEntriesOp(tx: Tx, recordId: string, def: CrmFieldSetting, li
     .values(adds.map((item, i) => ({
       record_id: recordId,
       field_key: def.key,
-      payload: sql<Record<string, unknown>>`${JSON.stringify(entryPayload(def, item.value))}::jsonb`,
+      payload: sql<Record<string, unknown>>`${JSON.stringify(entryPayload(def, item.value))}::text::jsonb`,
       normalized_value: entryNormalized(def, item.value),
       sort_order: base + i
     })))
@@ -640,7 +664,9 @@ function dataMergeExpr(sets: Record<string, unknown>, removes: string[]): RawBui
     expr = sql`(${expr} - ${key}::text)`
   }
   if (Object.keys(sets).length > 0) {
-    expr = sql`(${expr} || ${JSON.stringify(sets)}::jsonb)`
+    // ::text::jsonb — bind as plain text so the driver can't JSON-encode the
+    // stringified object a second time; Postgres parses it into an object.
+    expr = sql`(${expr} || ${JSON.stringify(sets)}::text::jsonb)`
   }
   return expr as RawBuilder<Record<string, unknown>>
 }
@@ -793,7 +819,7 @@ export async function applyFieldPatch(
         record_type: typeKey,
         name: name.trim(),
         status: status ?? null,
-        data: sql<Record<string, unknown>>`${JSON.stringify(data)}::jsonb`,
+        data: sql<Record<string, unknown>>`${JSON.stringify(data)}::text::jsonb`,
         created_by: ctx.userId
       })
       .returning('id')

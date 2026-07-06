@@ -1,0 +1,62 @@
+<script setup lang="ts">
+// One label/value row on the record detail page. Kinds with an inline
+// editor render it; everything else shows the formatted read-only value
+// from the field-kind dispatcher.
+import type { Component } from 'vue'
+import type { CrmFieldSetting } from '../../utils/field-kinds'
+import TextField from './fields/TextField.vue'
+import TextareaField from './fields/TextareaField.vue'
+import NumberField from './fields/NumberField.vue'
+import KeySelectField from './fields/KeySelectField.vue'
+
+const props = defineProps<{
+  field: CrmFieldSetting
+  value: unknown
+}>()
+
+const emit = defineEmits<{
+  commit: [value: unknown]
+}>()
+
+// Maps the dispatcher's component names onto the imported editors —
+// dynamic `:is` with a string can't resolve auto-registered components.
+const EDITORS: Record<string, Component> = {
+  CrmFieldsTextField: TextField,
+  CrmFieldsTextareaField: TextareaField,
+  CrmFieldsNumberField: NumberField,
+  CrmFieldsKeySelectField: KeySelectField
+}
+
+const renderer = computed(() => crmRendererFor(props.field.kind))
+const editor = computed(() => {
+  const name = renderer.value.component
+  return name ? EDITORS[name] ?? null : null
+})
+const formatted = computed(() => renderer.value.format(props.value, props.field))
+</script>
+
+<template>
+  <div class="grid grid-cols-1 sm:grid-cols-[11rem_1fr] gap-1 sm:gap-4 px-4 py-3">
+    <div class="text-sm text-(--ui-text-muted) sm:pt-1.5">
+      {{ field.label }}<span
+        v-if="field.required"
+        class="text-(--ui-error)"
+      > *</span>
+    </div>
+    <div class="min-w-0">
+      <component
+        :is="editor"
+        v-if="editor"
+        :field="field"
+        :model-value="value"
+        @commit="emit('commit', $event)"
+      />
+      <p
+        v-else
+        class="text-sm sm:pt-1.5 whitespace-pre-wrap break-words"
+      >
+        {{ formatted }}
+      </p>
+    </div>
+  </div>
+</template>

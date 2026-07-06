@@ -46,10 +46,12 @@ export async function recordCrmActivity(
       actor_label: opts.actorLabel ?? null,
       action,
       field_key: opts.fieldKey ?? null,
-      // Explicit ::jsonb casts — postgres-js mis-encodes bare strings/arrays
-      // written to jsonb columns, and these values can be any JSON shape.
-      old_value: sql`${JSON.stringify(opts.old ?? null)}::jsonb`,
-      new_value: sql`${JSON.stringify(opts.new ?? null)}::jsonb`,
+      // ::text::jsonb — the ::text stop forces the driver to bind the
+      // pre-stringified value as plain text (postgres-js would otherwise
+      // JSON-encode the string a second time, storing a jsonb string scalar);
+      // Postgres then parses the text into the real jsonb value.
+      old_value: sql`${JSON.stringify(opts.old ?? null)}::text::jsonb`,
+      new_value: sql`${JSON.stringify(opts.new ?? null)}::text::jsonb`,
       note: opts.note ?? null
     })
     .execute()
