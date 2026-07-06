@@ -126,7 +126,8 @@ app/utils/crm-manifest.ts        ← #crm alias: kinds, manifest types, storageO
 app/utils/manifests/contacts.ts  ← the contacts manifest
 app/utils/permissions.ts         ← slugs + meta + default grants + #permissions augmentation
 app/utils/field-kinds.ts         ← client kind dispatcher (renderer component + formatter + filter ops)
-app/composables/useCrm*.ts       ← types, records, record, users, channels, shares, timeline, schema-admin
+app/composables/useCrm*.ts       ← types, records, record, users, channels, shares, timeline, schema-admin,
+                                   org-key (cache key for org-scoped client state)
 app/components/crm/              ← UI (auto-named Crm*); fields/ = one editor per kind; settings/ = builder
 app/pages/crm/                   ← index (redirect), [type]/index, [type]/[id], settings/…
 server/utils/                    ← kernel: crm-registry, definition-settings, record-storage
@@ -177,6 +178,13 @@ analogue), and the `#crm/server` services (`applyFieldPatch`, `listRecords`,
    relink — the old row may be shared with other contacts and carries its own history.
 10. Channel identity rows deliberately survive record deletion (registry semantics).
     Deleting test data cleanly means also removing orphaned channel rows via SQL.
+11. **Org switching is SPA navigation — client caches survive it.** Every
+    `useState`/module cache of org-scoped data must be keyed by the active org slug
+    (`useCrmOrgKey()`); an unkeyed cache serves org A's data inside org B (stale user
+    directory = share picker offering non-members → 400 "Unknown user", assigned
+    avatars rendering raw ids). Same-type org switches also reuse the page component
+    (one aliased route record, only the `orgSlug` param changes), so per-org fetch
+    watches must include the org key, not just `route.params.type`.
 
 ## Dev workflow
 

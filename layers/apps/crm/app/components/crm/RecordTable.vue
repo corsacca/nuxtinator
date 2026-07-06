@@ -27,8 +27,6 @@ const crmPath = useCrmPath()
 
 const UButton = resolveComponent('UButton')
 const UBadge = resolveComponent('UBadge')
-const UAvatarGroup = resolveComponent('UAvatarGroup')
-const UAvatar = resolveComponent('UAvatar')
 
 // Kinds whose values live in crm_records.data and render from a list row.
 const JSONB_LIST_KINDS = new Set(['text', 'textarea', 'number', 'boolean', 'date', 'datetime', 'key_select'])
@@ -39,7 +37,7 @@ const statusField = computed(() =>
 
 // The first visible user_select field carries the assignment column; the
 // list row's assignedTo summary spans every user field, which is close
-// enough for a glanceable avatar group.
+// enough for a glanceable names cell.
 const userField = computed(() =>
   props.fields.find(f => f.kind === 'user_select' && !f.hidden && !f.orphan) ?? null
 )
@@ -107,16 +105,8 @@ const columns = computed<TableColumn<CrmRecordListItem>[]>(() => [
         cell: ({ row }: { row: { original: CrmRecordListItem } }) => {
           const ids = row.original.assignedTo
           if (ids.length === 0) return h('span', { class: 'text-(--ui-text-muted)' }, '—')
-          return h(UAvatarGroup, { size: '2xs', max: 3 }, () =>
-            ids.map((id) => {
-              const user = usersById.value.get(id)
-              return h(UAvatar, {
-                key: id,
-                src: user?.avatarUrl || undefined,
-                alt: user?.name ?? id
-              })
-            })
-          )
+          const names = ids.map(id => usersById.value.get(id)?.name ?? id).join(', ')
+          return h('span', { class: 'text-sm truncate max-w-40 inline-block align-middle', title: names }, names)
         }
       } as TableColumn<CrmRecordListItem>]
     : []),

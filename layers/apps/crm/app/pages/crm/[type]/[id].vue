@@ -17,30 +17,32 @@ definePageMeta({ middleware: 'auth' })
 const route = useRoute()
 const typeKey = computed(() => String(route.params.type ?? ''))
 const recordId = computed(() => String(route.params.id ?? ''))
+const orgKey = useCrmOrgKey()
 
 const { types, ensureTypes, getFields } = useCrmTypes()
 const crmPath = useCrmPath()
 const toast = useToast()
 
-onMounted(() => {
+const typeInfo = computed(() => types.value.find(t => t.key === typeKey.value) ?? null)
+
+// Keyed on the org as well as the type: switching orgs keeps this page
+// instance alive (same route record, new orgSlug param), and the caches are
+// per-org, so the fetches must re-run.
+const fieldSettings = ref<CrmTypeFields | null>(null)
+const fieldsError = ref<string | null>(null)
+watch([typeKey, orgKey], async ([key, org]) => {
   ensureTypes().catch(() => {
     // The fields fetch below reports errors; the back label falls back.
   })
-})
-
-const typeInfo = computed(() => types.value.find(t => t.key === typeKey.value) ?? null)
-
-const fieldSettings = ref<CrmTypeFields | null>(null)
-const fieldsError = ref<string | null>(null)
-watch(typeKey, async (key) => {
   fieldSettings.value = null
   fieldsError.value = null
   if (!key) return
+  const current = () => key === typeKey.value && org === orgKey.value
   try {
     const res = await getFields(key)
-    if (key === typeKey.value) fieldSettings.value = res
+    if (current()) fieldSettings.value = res
   } catch (err) {
-    if (key === typeKey.value) fieldsError.value = crmErrorMessage(err, 'Failed to load record type')
+    if (current()) fieldsError.value = crmErrorMessage(err, 'Failed to load record type')
   }
 }, { immediate: true })
 

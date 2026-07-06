@@ -118,23 +118,33 @@ interface ChannelTypesResponse {
 export function useCrmSchemaAdmin() {
   const { refresh: refreshTypes } = useCrmTypes()
 
-  // null = not yet asked the server.
-  const canManage = useState<boolean | null>('crm:schema-can-manage', () => null)
-  const channelTypes = useState<CrmChannelTypeSummary[]>('crm:schema-channel-types', () => [])
+  // Both caches are keyed by the active org (useCrmOrgKey) — org switching is
+  // an SPA navigation, so an unkeyed copy would leak across orgs. A missing
+  // key = not yet asked the server for that org.
+  const canManageCache = useState<Record<string, boolean>>('crm:schema-can-manage', () => ({}))
+  const channelTypesCache = useState<Record<string, CrmChannelTypeSummary[]>>('crm:schema-channel-types', () => ({}))
+  const orgKey = useCrmOrgKey()
 
+  const canManage = computed<boolean | null>(() => canManageCache.value[orgKey.value] ?? null)
+  const channelTypes = computed(() => channelTypesCache.value[orgKey.value] ?? [])
+
+  // The org is captured before the request so a response that resolves after
+  // an org switch lands in the slot it was fetched for.
   async function loadChannelTypes(): Promise<void> {
+    const key = orgKey.value
     const res = await $fetch<ChannelTypesResponse>('/api/crm/schema/channel-types')
-    canManage.value = res.canManage
-    channelTypes.value = res.channelTypes
+    canManageCache.value = { ...canManageCache.value, [key]: res.canManage }
+    channelTypesCache.value = { ...channelTypesCache.value, [key]: res.channelTypes }
   }
 
-  /** Resolves the caller's schema-manage access (cached); false on any failure. */
+  /** Resolves the caller's schema-manage access (cached per org); false on any failure. */
   async function ensureAccess(): Promise<boolean> {
     if (canManage.value === null) {
+      const key = orgKey.value
       try {
         await loadChannelTypes()
       } catch {
-        canManage.value = false
+        canManageCache.value = { ...canManageCache.value, [key]: false }
       }
     }
     return canManage.value === true

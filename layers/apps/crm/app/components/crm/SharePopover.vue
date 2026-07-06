@@ -181,10 +181,16 @@ async function onRemove(userId: string) {
           </li>
         </ul>
 
+        <!-- model-value is pinned to '' (reka-ui's clear-selection sentinel,
+             here a controlled empty): undefined would flip reka-ui to
+             uncontrolled mode, where the picked id sticks as the selection
+             and renders as a raw uuid once the user drops out of `items`.
+             Picking is handled entirely by @update:model-value; onPick
+             ignores the '' echo. -->
         <USelectMenu
           v-if="canShare"
           v-model:search-term="searchTerm"
-          :model-value="undefined"
+          :model-value="''"
           :items="items"
           ignore-filter
           :loading="searching || adding"

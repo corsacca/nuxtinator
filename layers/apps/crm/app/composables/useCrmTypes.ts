@@ -1,5 +1,7 @@
 // Record-type catalog + per-type field settings, fetched lazily and cached
-// in useState so every component in the tree shares one copy.
+// in useState so every component in the tree shares one copy. Every cache is
+// keyed by the active org (useCrmOrgKey) — org switching is an SPA
+// navigation, so an unkeyed copy would serve one org's schema inside another.
 
 import type { CrmFieldSetting, CrmTypeSections } from '../utils/field-kinds'
 
@@ -24,65 +26,81 @@ export interface CrmTypeFields {
   fields: CrmFieldSetting[]
 }
 
-// In-flight request dedupe. SSR is off, so plain module state is safe.
-let typesPromise: Promise<void> | null = null
+// In-flight request dedupe, keyed like the caches (org for the catalog,
+// org:type for fields). SSR is off, so plain module state is safe.
+const typesPromises = new Map<string, Promise<void>>()
 const fieldsPromises = new Map<string, Promise<CrmTypeFields>>()
 
 export function useCrmTypes() {
-  const types = useState<CrmTypeSummary[]>('crm:types', () => [])
-  const typesLoaded = useState<boolean>('crm:types-loaded', () => false)
+  const typesCache = useState<Record<string, CrmTypeSummary[]>>('crm:types', () => ({}))
   const pending = useState<boolean>('crm:types-pending', () => false)
   const fieldsCache = useState<Record<string, CrmTypeFields>>('crm:fields', () => ({}))
+  const orgKey = useCrmOrgKey()
+
+  const types = computed(() => typesCache.value[orgKey.value] ?? [])
 
   // Hidden/orphan entries come back for schema managers; navigation only
   // ever shows the visible ones.
   const visibleTypes = computed(() => types.value.filter(t => !t.hidden && !t.orphan))
 
-  async function fetchTypes(): Promise<void> {
+  // The org is captured before the request and the response is stored under
+  // it, so a fetch that resolves after an org switch can't pollute the new
+  // org's slot.
+  async function fetchTypes(key: string): Promise<void> {
     pending.value = true
     try {
       const res = await $fetch<{ types: CrmTypeSummary[] }>('/api/crm/schema/types')
-      types.value = res.types
-      typesLoaded.value = true
+      typesCache.value = { ...typesCache.value, [key]: res.types }
     } finally {
       pending.value = false
     }
   }
 
-  /** Fetches the type catalog once; concurrent callers share the request. */
+  /** Fetches the type catalog once per org; concurrent callers share the request. */
   function ensureTypes(): Promise<void> {
-    if (typesLoaded.value) return Promise.resolve()
-    if (!typesPromise) {
-      typesPromise = fetchTypes().finally(() => {
-        typesPromise = null
-      })
-    }
-    return typesPromise
-  }
-
-  /** Field settings for one type, fetched on first use and cached. */
-  function getFields(typeKey: string): Promise<CrmTypeFields> {
-    const hit = fieldsCache.value[typeKey]
-    if (hit) return Promise.resolve(hit)
-    let inflight = fieldsPromises.get(typeKey)
+    const key = orgKey.value
+    if (key in typesCache.value) return Promise.resolve()
+    let inflight = typesPromises.get(key)
     if (!inflight) {
-      inflight = $fetch<CrmTypeFields>(`/api/crm/schema/types/${typeKey}/fields`)
-        .then((res) => {
-          fieldsCache.value = { ...fieldsCache.value, [typeKey]: res }
-          return res
-        })
-        .finally(() => {
-          fieldsPromises.delete(typeKey)
-        })
-      fieldsPromises.set(typeKey, inflight)
+      inflight = fetchTypes(key).finally(() => {
+        typesPromises.delete(key)
+      })
+      typesPromises.set(key, inflight)
     }
     return inflight
   }
 
-  /** Drops every cache and refetches the catalog. */
+  /** Field settings for one type, fetched on first use and cached per org. */
+  function getFields(typeKey: string): Promise<CrmTypeFields> {
+    const key = `${orgKey.value}:${typeKey}`
+    const hit = fieldsCache.value[key]
+    if (hit) return Promise.resolve(hit)
+    let inflight = fieldsPromises.get(key)
+    if (!inflight) {
+      inflight = $fetch<CrmTypeFields>(`/api/crm/schema/types/${typeKey}/fields`)
+        .then((res) => {
+          fieldsCache.value = { ...fieldsCache.value, [key]: res }
+          return res
+        })
+        .finally(() => {
+          fieldsPromises.delete(key)
+        })
+      fieldsPromises.set(key, inflight)
+    }
+    return inflight
+  }
+
+  /** Drops the active org's caches and refetches its catalog. */
   async function refresh(): Promise<void> {
-    fieldsCache.value = {}
-    typesLoaded.value = false
+    const key = orgKey.value
+    const nextFields: Record<string, CrmTypeFields> = {}
+    for (const [k, v] of Object.entries(fieldsCache.value)) {
+      if (!k.startsWith(`${key}:`)) nextFields[k] = v
+    }
+    fieldsCache.value = nextFields
+    const nextTypes = { ...typesCache.value }
+    delete nextTypes[key]
+    typesCache.value = nextTypes
     await ensureTypes()
   }
 

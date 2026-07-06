@@ -1,6 +1,8 @@
 // Org user directory for user_select fields: one shared fetch of the user
 // picker endpoint, cached in useState so formatters, avatar cells, and
-// pickers all resolve ids from the same copy.
+// pickers all resolve ids from the same copy. Every cache is keyed by the
+// active org (useCrmOrgKey) — org switching is an SPA navigation, so an
+// unkeyed copy would serve one org's directory inside another.
 
 /** A user as served by GET /api/crm/users. */
 export interface CrmUser {
@@ -10,30 +12,36 @@ export interface CrmUser {
   avatarUrl: string | null
 }
 
-// In-flight request dedupe. SSR is off, so plain module state is safe.
-let usersPromise: Promise<void> | null = null
+// In-flight request dedupe, per org. SSR is off, so plain module state is safe.
+const usersPromises = new Map<string, Promise<void>>()
 
 export function useCrmUsers() {
-  const users = useState<CrmUser[]>('crm:users', () => [])
-  const usersLoaded = useState<boolean>('crm:users-loaded', () => false)
+  const cache = useState<Record<string, CrmUser[]>>('crm:users', () => ({}))
+  const orgKey = useCrmOrgKey()
 
+  const users = computed(() => cache.value[orgKey.value] ?? [])
   const byId = computed(() => new Map(users.value.map(u => [u.id, u])))
 
-  async function fetchUsers(): Promise<void> {
+  // The org is captured before the request and the response is stored under
+  // it, so a fetch that resolves after an org switch can't pollute the new
+  // org's slot.
+  async function fetchUsers(key: string): Promise<void> {
     const res = await $fetch<{ items: CrmUser[] }>('/api/crm/users', { query: { limit: 50 } })
-    users.value = res.items
-    usersLoaded.value = true
+    cache.value = { ...cache.value, [key]: res.items }
   }
 
-  /** Fetches the directory once; concurrent callers share the request. */
+  /** Fetches the directory once per org; concurrent callers share the request. */
   function ensureUsers(): Promise<void> {
-    if (usersLoaded.value) return Promise.resolve()
-    if (!usersPromise) {
-      usersPromise = fetchUsers().finally(() => {
-        usersPromise = null
+    const key = orgKey.value
+    if (key in cache.value) return Promise.resolve()
+    let inflight = usersPromises.get(key)
+    if (!inflight) {
+      inflight = fetchUsers(key).finally(() => {
+        usersPromises.delete(key)
       })
+      usersPromises.set(key, inflight)
     }
-    return usersPromise
+    return inflight
   }
 
   /** Typeahead over the directory; an empty query returns the cached list. */
