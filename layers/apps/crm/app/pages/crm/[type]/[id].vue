@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Record detail: header (back link, click-to-rename name, status badge,
-// share popover), the field sections in declared order, the connections
-// panel, and the merged comment/activity timeline. The server-evaluated
-// capabilities on the detail response gate every write affordance: without
-// canEdit, editors render as formatted read-only values, the channel widget
-// and consent panel lose their mutation controls, renaming is off, and the
-// comment composer hides. With canEdit, editable kinds commit inline through
+// share popover, delete button), the field sections in declared order, the
+// connections panel, and the merged comment/activity timeline. The
+// server-evaluated capabilities on the detail response gate every write
+// affordance: without canEdit, editors render as formatted read-only values,
+// the channel widget and consent panel lose their mutation controls, renaming
+// is off, and the comment composer hides; the delete button needs canDelete.
+// With canEdit, editable kinds commit inline through
 // the optimistic patchFields; communication_channel fields render through
 // the channel widget (its mutations go through the channel routes, so it
 // asks for a record refetch instead of emitting a patch). Any action that
@@ -54,6 +55,7 @@ const { record, pending, error, refresh, patchFields } = useCrmRecord(typeKey, r
 // Server-evaluated capability flags for this record (see CrmRecordCapabilities).
 const canEdit = computed(() => record.value?.capabilities.canEdit ?? false)
 const canShare = computed(() => record.value?.capabilities.canShare ?? false)
+const canDelete = computed(() => record.value?.capabilities.canDelete ?? false)
 
 // The timeline self-fetches; this handle re-pulls it after actions on this
 // page that append activity rows.
@@ -134,6 +136,28 @@ async function rename(name: string) {
     })
   }
 }
+
+// Hard delete, then back to the type's list (the list refetches on mount, so
+// the removed record is gone from it without cache surgery).
+const deleting = ref(false)
+async function removeRecord() {
+  deleting.value = true
+  try {
+    // Widened to string: the typed-route template for this path unions in
+    // GET-only siblings and rejects DELETE.
+    const url: string = `/api/crm/records/${typeKey.value}/${recordId.value}`
+    await $fetch(url, { method: 'DELETE' })
+    await navigateTo(crmPath(`/${typeKey.value}`))
+  } catch (err) {
+    toast.add({
+      title: 'Delete failed',
+      description: crmErrorMessage(err, 'Failed to delete record'),
+      color: 'error'
+    })
+  } finally {
+    deleting.value = false
+  }
+}
 </script>
 
 <template>
@@ -152,8 +176,11 @@ async function rename(name: string) {
         :back-label="typeInfo?.label ?? 'Back'"
         :can-edit="canEdit"
         :can-share="canShare"
+        :can-delete="canDelete"
+        :deleting="deleting"
         @rename="rename"
         @share-changed="refreshTimeline"
+        @delete="removeRecord"
       />
 
       <CrmFieldSection

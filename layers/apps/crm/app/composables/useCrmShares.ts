@@ -23,12 +23,6 @@ export function useCrmShares(typeKey: MaybeRefOrGetter<string>, recordId: MaybeR
   const shares = ref<CrmShare[]>([])
   const pending = ref(false)
   const error = ref<string | null>(null)
-  // The type evaluator's share answer, as reported by the GET endpoint.
-  // The share UI gates on the record detail's capabilities block instead
-  // (one source of truth); this mirror stays for callers that only have the
-  // shares feed. The server enforces the permission on the write routes
-  // regardless.
-  const canShare = ref(false)
 
   const url = () => `/api/crm/records/${toValue(typeKey)}/${toValue(recordId)}/shares`
 
@@ -36,9 +30,8 @@ export function useCrmShares(typeKey: MaybeRefOrGetter<string>, recordId: MaybeR
     if (!toValue(typeKey) || !toValue(recordId)) return
     pending.value = true
     try {
-      const res = await $fetch<{ items: CrmShare[], canShare: boolean }>(url())
+      const res = await $fetch<{ items: CrmShare[] }>(url())
       shares.value = res.items
-      canShare.value = res.canShare
       error.value = null
     } catch (err) {
       error.value = crmErrorMessage(err, 'Failed to load shares')
@@ -68,5 +61,5 @@ export function useCrmShares(typeKey: MaybeRefOrGetter<string>, recordId: MaybeR
     shares.value = res.items
   }
 
-  return { shares, canShare, pending, error, refresh, addShare, removeShare }
+  return { shares, pending, error, refresh, addShare, removeShare }
 }

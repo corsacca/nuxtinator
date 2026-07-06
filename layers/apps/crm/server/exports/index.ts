@@ -54,6 +54,17 @@ export {
 } from '../utils/type-permissions'
 export type { CrmTypeCapabilities } from '../utils/type-permissions'
 
+export { listMatrixRoles, buildRoleGrantsView } from '../utils/role-grants-admin'
+export type {
+  CrmMatrixRole,
+  CrmEffectiveGrantCell,
+  CrmTypeEffectiveGrants,
+  CrmRoleGrantsView
+} from '../utils/role-grants-admin'
+
+export { requireGrantTarget, assertCrmPermissionSlug, listCrmUserGrants } from '../utils/user-grants'
+export type { CrmUserGrantEntry } from '../utils/user-grants'
+
 export { listRecords, requireRecordType, assertRecordVisible } from '../utils/list-records'
 export type { CrmListOpts, CrmRecordListItem, CrmListResult } from '../utils/list-records'
 

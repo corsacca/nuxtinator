@@ -132,7 +132,8 @@ app/components/crm/              ← UI (auto-named Crm*); fields/ = one editor 
 app/pages/crm/                   ← index (redirect), [type]/index, [type]/[id], settings/…
 server/utils/                    ← kernel: crm-registry, definition-settings, record-storage
                                    (hydrateRecords/applyFieldPatch), list-records, channels, consent,
-                                   suppression, comments, activity, shares, schema-admin, crm-perms, normalize
+                                   suppression, comments, activity, shares, schema-admin, crm-perms,
+                                   type-permissions, role-grants-admin, user-grants, normalize
 server/exports/index.ts          ← #crm/server barrel — lives OUTSIDE server/utils so nitro's
                                    auto-import scan doesn't double-register its re-exports
 server/routes/api/crm/           ← records/[type]/…, schema/…, users; all withOrgPermission + zod
@@ -168,9 +169,12 @@ analogue), and the `#crm/server` services (`applyFieldPatch`, `listRecords`,
 5. **No cross-request caching of merged definitions** — a cached org-A read served to
    org-B is an RLS bypass by memory. Per-event memo only, if profiling ever demands it.
 6. **`updated_at` has no trigger** — kernel write paths bump it; direct SQL won't.
-7. **Core's client `usePermissions()` is a stub returning `false`.** Gate UI on
-   server-derived flags instead (`canManage` from schema routes, `canShare` from
-   shares GET). Replace if core ever ships a real permission store.
+7. **Client-side slug checks can't answer per-type questions.** Core's
+   `usePermissions()` store carries the caller's effective slugs, but a
+   per-type roleGrants row overrides slugs in either direction — so CRM UI
+   gates on server-evaluated flags only (`capabilities` on the record detail,
+   `canRead`/`canCreate` on the types GET, `canManage` from the channel-types
+   GET), never on `hasPermission('crm.…')`.
 8. **eslint's base path is `dev/`** — layer files sit outside `bun run lint`; match
    style by hand or lint with a wrapper config. `vue/multi-word-component-names` hits
    on `Sidebar.vue` are a known false positive of wrapper configs.
@@ -191,49 +195,86 @@ analogue), and the `#crm/server` services (`applyFieldPatch`, `listRecords`,
 Run from `dev/`. `bun run seed` plants demo users (`admin@example.com` /
 `password123`, org `acme`) and 8 demo contacts (incl. a shared address:
 `bennetts@example.com` on both Bennetts). Tests: `bun run test -- --project crm`
-(59 tests; other layers' projects currently fail on a stale global-setup path —
+(77 tests; other layers' projects currently fail on a stale global-setup path —
 pre-existing, not ours). API poking: cookie login + `X-Active-Org: acme` header.
 Typecheck/lint from `dev/` as usual. E2E-style verification via playwright-core
 against `bun dev` has caught what static gates missed — prefer it for UI bugs.
 Release: `/release-layer crm <version>`.
 
-## Permissions v2 (design agreed, not yet built)
+## Permissions v2
 
-Fixes two D.T limitations — read-implies-update (already fixed here at the slug
-level; the gap is UI honesty and per-record levels) and no role-plus-extras — plus
+Fixes two D.T limitations — read-implies-update and no role-plus-extras — plus
 the custom-type granularity gap ("volunteers see trainings but not donations").
 
-1. **Core client permission store** — ship effective perms with the session, make
-   `usePermissions()` real; CRM editors render read-only without the `update` perm
-   (replaces the server-derived `canManage`/`canShare` flag threading).
-2. **Per-user additive-only grants** (core + tenancy) — effective =
-   role perms ∪ direct grants; stored per-user in single mode, per-membership
-   (org-scoped) in multi. No denies: a too-fat role means make a leaner role.
-   OAuth: token power = `scopes ∩ effective perms`, enabling precise service
-   accounts (minimal role + exact extras + narrowly scoped token).
-3. **Per-type role grants, uniform over ALL types** (contacts included), stored on
-   `crm_record_types` rows (org data). **Semantics: override-with-fallback** — a
-   per-type row (role × type × action), when present, IS the answer in either
-   direction; no row falls back to the role's slugs. Slugs stay the default policy
-   and the OAuth scope vocabulary. Ceiling/AND semantics were rejected: a matrix
-   checkbox that silently does nothing without the matching generic slug is the
-   D.T two-places-to-look trap.
-4. **Direct user grants are slug-level and additive** — they pass through the
-   fallback untouched; a role-keyed per-type row can never subtract a personal
-   grant. "Why can Bob do X" always has exactly two possible answers.
-5. **Share levels** — `view` | `edit` on `crm_record_shares`; `edit` grants
-   record-scoped update to a user without the type-wide slug.
-6. **UI: roles/permissions tab in `/crm/settings`** — matrix of
-   roles × types × actions (including tweaking the default member role) plus
-   per-user extra `crm.*` grants. Backed by core RBAC storage.
+**Evaluator** ([server/utils/type-permissions.ts](server/utils/type-permissions.ts),
+exported via `#crm/server`). `resolveTypePermission(tx, ctx, typeKey, action)`
+is the single answer to "may this caller perform \<action\> on \<typeKey\>?".
+Decision order: (1) `admin` role → true; (2) direct user grants containing
+`permFor(typeKey, action)` → true — personal grants are slug-level and
+additive, a role-keyed row can never subtract them; (3) OR over the caller's
+roles with **override-with-fallback** semantics: a present
+`roleGrants[role][action]` entry IS that role's answer in either direction, an
+absent entry falls back to the role's OWN slug set. (Ceiling/AND semantics
+were rejected: a matrix checkbox that silently does nothing without the
+matching slug is the D.T two-places-to-look trap.) `resolveTypeCapabilities`
+answers all six actions in one pass; `requireTypePermission` /
+`requireRecordUpdate` are the route gates; `canUpdateRecord` additionally
+accepts an edit-level share. "Why can Bob do X" always has exactly two
+possible answers: a personal grant, or one of his roles (row or slug).
 
-Sequence core-first (store + grants), then crm enforcement + share levels, then
-the tab. Rough effort ~150k output tokens.
+**Storage.** Per-type role grants ride on the type's `crm_record_types` row
+under `config.roleGrants` (`{ role: { action: boolean } }`, explicit entries
+only — org data, never code defaults), written full-replacement by
+`updateTypeRoleGrants` with the usual minimal-row rules. Direct grants live in
+core's `user_permission_grants` (user-global in single mode, org-scoped by RLS
+in multi; no denies exist anywhere), via `#core/server/utils/permission-grants`.
+Share levels: `level` (`view` | `edit`) on `crm_record_shares` — `edit` grants
+record-scoped update to a user without the type-wide slug; delete has no
+share-level equivalent. Effective session perms (role ∪ grants) feed the client
+store through `/api/_perms` (single) / `/api/o/:slug/_perms` (multi).
+
+**Capability flags.** The record detail returns `capabilities { canEdit,
+canShare, canDelete }` (canEdit = type update answer OR edit share); the types
+GET returns `canRead`/`canCreate` per type. UI gates on these server-evaluated
+flags, not client-side slug checks (gotcha 7).
+
+**Admin surface: `/crm/settings/permissions`** (gated `crm.schema.manage`).
+A roles × actions matrix per record type — tri-state cells where Inherit
+renders the role's slug fallback muted and Allow/Deny write explicit rows;
+the admin row is locked always-allow — backed by GET/PUT
+`/api/crm/schema/types/:type/role-grants`. The GET's `effective` map
+(`{ allowed, source: 'row'|'slug'|'admin', fallback }`) is computed per role so
+the matrix is honest about what each cell resolves to. Plus per-user extra
+`crm.*` grants (GET/POST `/api/crm/schema/user-grants`, DELETE
+`.../user-grants/:userId/:permission`; orphan slugs flagged and revocable) fed
+by the registered catalog (GET `/api/crm/schema/permissions`). The role list =
+core's static roles (host + app-static) + `custom_roles` rows, assembled
+server-side in [server/utils/role-grants-admin.ts](server/utils/role-grants-admin.ts)
+— no core endpoint needed.
+
+Traps specific to this system:
+
+- `config.roleGrants` writes are jsonb — **`::text::jsonb`** binding (gotcha 1)
+  applies to every raw-SQL touch of the column.
+- The evaluator memoizes per `TenantContext` (WeakMap) — a request that writes
+  roleGrants and then re-evaluates with the same ctx reads **stale grants**.
+  The write routes never re-run the evaluator; they rebuild their response via
+  `buildRoleGrantsView`, which reads fresh state.
+- Per-role fallback answers need `getRolePermissions(tx, [role], orgId)` for
+  that single role — `ctx.perms` is the caller's pre-unioned effective set and
+  cannot answer per-role questions.
 
 ## Deferred (planned, not built)
 
-Dedup detection/merge UI · mentions/reactions · location field kind · permissions
-v2 (section above — kernel visibility hook is the seam) · verification UX (issue/consume routes +
+Dedup detection/merge UI · mentions/reactions · location field kind ·
+OAuth grants union (core's `getUserPermissions` — what the oauth layer
+intersects scopes with — unions role perms only, so direct
+`user_permission_grants` never reach token power) · org-role OAuth gap
+(same function reads global `users.roles`, not per-org membership roles, so
+org-granted roles don't shape tokens either) · single-mode custom-role
+creation surface (the `custom_roles` table works in both modes but only
+tenancy ships create/edit endpoints — `/api/o/:slug/roles`; single-mode
+deploys have no UI/route to mint one) · verification UX (issue/consume routes +
 email) · suppression producers (bounce webhook: claim channel → suppress by FK) +
 admin suppression list · open/click tracking · import/export · saved list views ·
 soft delete/trash · `groups` record type (thin manifest reusing the kernel) · D.T

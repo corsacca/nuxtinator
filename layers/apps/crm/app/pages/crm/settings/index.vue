@@ -210,6 +210,25 @@ function openType(type: CrmTypeSummary) {
             </div>
             <CrmSettingsChannelTypeList />
           </section>
+
+          <section class="space-y-3">
+            <div>
+              <h2 class="text-base font-semibold">
+                Roles &amp; permissions
+              </h2>
+              <p class="text-sm text-(--ui-text-muted)">
+                Per-type role access and per-user extra permissions.
+              </p>
+            </div>
+            <UButton
+              icon="i-lucide-shield"
+              color="neutral"
+              variant="outline"
+              :to="crmPath('/settings/permissions')"
+            >
+              Open roles &amp; permissions
+            </UButton>
+          </section>
         </template>
       </div>
     </section>
