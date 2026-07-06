@@ -197,10 +197,43 @@ Typecheck/lint from `dev/` as usual. E2E-style verification via playwright-core
 against `bun dev` has caught what static gates missed — prefer it for UI bugs.
 Release: `/release-layer crm <version>`.
 
+## Permissions v2 (design agreed, not yet built)
+
+Fixes two D.T limitations — read-implies-update (already fixed here at the slug
+level; the gap is UI honesty and per-record levels) and no role-plus-extras — plus
+the custom-type granularity gap ("volunteers see trainings but not donations").
+
+1. **Core client permission store** — ship effective perms with the session, make
+   `usePermissions()` real; CRM editors render read-only without the `update` perm
+   (replaces the server-derived `canManage`/`canShare` flag threading).
+2. **Per-user additive-only grants** (core + tenancy) — effective =
+   role perms ∪ direct grants; stored per-user in single mode, per-membership
+   (org-scoped) in multi. No denies: a too-fat role means make a leaner role.
+   OAuth: token power = `scopes ∩ effective perms`, enabling precise service
+   accounts (minimal role + exact extras + narrowly scoped token).
+3. **Per-type role grants, uniform over ALL types** (contacts included), stored on
+   `crm_record_types` rows (org data). **Semantics: override-with-fallback** — a
+   per-type row (role × type × action), when present, IS the answer in either
+   direction; no row falls back to the role's slugs. Slugs stay the default policy
+   and the OAuth scope vocabulary. Ceiling/AND semantics were rejected: a matrix
+   checkbox that silently does nothing without the matching generic slug is the
+   D.T two-places-to-look trap.
+4. **Direct user grants are slug-level and additive** — they pass through the
+   fallback untouched; a role-keyed per-type row can never subtract a personal
+   grant. "Why can Bob do X" always has exactly two possible answers.
+5. **Share levels** — `view` | `edit` on `crm_record_shares`; `edit` grants
+   record-scoped update to a user without the type-wide slug.
+6. **UI: roles/permissions tab in `/crm/settings`** — matrix of
+   roles × types × actions (including tweaking the default member role) plus
+   per-user extra `crm.*` grants. Backed by core RBAC storage.
+
+Sequence core-first (store + grants), then crm enforcement + share levels, then
+the tab. Rough effort ~150k output tokens.
+
 ## Deferred (planned, not built)
 
-Dedup detection/merge UI · mentions/reactions · location field kind · per-type role
-grants (kernel visibility hook is the seam) · verification UX (issue/consume routes +
+Dedup detection/merge UI · mentions/reactions · location field kind · permissions
+v2 (section above — kernel visibility hook is the seam) · verification UX (issue/consume routes +
 email) · suppression producers (bounce webhook: claim channel → suppress by FK) +
 admin suppression list · open/click tracking · import/export · saved list views ·
 soft delete/trash · `groups` record type (thin manifest reusing the kernel) · D.T
