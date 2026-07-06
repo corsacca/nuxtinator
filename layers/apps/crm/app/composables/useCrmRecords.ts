@@ -1,6 +1,8 @@
-// List state for one record type, bound to the URL query (q, status, sort,
-// dir, page) so views are shareable and survive reloads. Every query change
-// triggers a refetch; stale responses are dropped.
+// List state for one record type, bound to the URL query (q, status,
+// filters, sort, dir, page) so views are shareable and survive reloads.
+// `filters` is a JSON-encoded object of field-keyed list-engine conditions;
+// `status` stays its own param and merges into it at request time. Every
+// query change triggers a refetch; stale responses are dropped.
 
 import type { MaybeRefOrGetter } from 'vue'
 
@@ -53,6 +55,26 @@ export function useCrmRecords(typeKey: MaybeRefOrGetter<string>) {
     set: v => setQuery({ status: v || undefined, page: undefined })
   })
 
+  const filters = computed<Record<string, unknown>>({
+    get: () => {
+      const raw = queryString('filters')
+      if (!raw) return {}
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>
+        }
+      } catch {
+        // Malformed hand-edited URLs read as "no filters".
+      }
+      return {}
+    },
+    set: v => setQuery({
+      filters: Object.keys(v).length > 0 ? JSON.stringify(v) : undefined,
+      page: undefined
+    })
+  })
+
   const sort = computed<string>(() => queryString('sort') || 'updated_at')
   const dir = computed<'asc' | 'desc'>(() => {
     const raw = queryString('dir')
@@ -84,6 +106,8 @@ export function useCrmRecords(typeKey: MaybeRefOrGetter<string>) {
     if (!key) return
     const id = ++requestId
     pending.value = true
+    const combined: Record<string, unknown> = { ...filters.value }
+    if (status.value) combined.status = status.value
     try {
       const res = await $fetch<{ items: CrmRecordListItem[], total: number }>(
         `/api/crm/records/${key}`,
@@ -94,7 +118,7 @@ export function useCrmRecords(typeKey: MaybeRefOrGetter<string>) {
             dir: dir.value,
             limit: CRM_LIST_PAGE_SIZE,
             offset: (page.value - 1) * CRM_LIST_PAGE_SIZE,
-            filters: status.value ? JSON.stringify({ status: status.value }) : undefined
+            filters: Object.keys(combined).length > 0 ? JSON.stringify(combined) : undefined
           }
         }
       )
@@ -111,7 +135,7 @@ export function useCrmRecords(typeKey: MaybeRefOrGetter<string>) {
   }
 
   watch(
-    () => [toValue(typeKey), q.value, status.value, sort.value, dir.value, page.value],
+    () => [toValue(typeKey), q.value, status.value, queryString('filters'), sort.value, dir.value, page.value],
     () => {
       refresh()
     },
@@ -127,6 +151,7 @@ export function useCrmRecords(typeKey: MaybeRefOrGetter<string>) {
     pageSize: CRM_LIST_PAGE_SIZE,
     q,
     status,
+    filters,
     sort,
     dir,
     toggleSort,

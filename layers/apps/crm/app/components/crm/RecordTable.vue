@@ -1,9 +1,10 @@
 <script setup lang="ts">
-// Records list table. Columns: name, status (when the type has one), a few
-// leading jsonb-backed fields (list rows only carry the `data` jsonb map, so
-// entry/user/channel/connection kinds can't render here), and updated-at.
-// Rows navigate to the record detail; headers sort through the URL-bound
-// list state.
+// Records list table. Columns: name, status (when the type has one),
+// assigned avatars (when the type has a user_select field — list rows carry
+// the assignment summary), a few leading jsonb-backed fields (list rows
+// only carry the `data` jsonb map, so entry/channel/connection kinds can't
+// render here), and updated-at. Rows navigate to the record detail; headers
+// sort through the URL-bound list state.
 import { h, resolveComponent } from 'vue'
 import type { TableColumn } from '@nuxt/ui'
 import type { CrmFieldSetting } from '../../utils/field-kinds'
@@ -26,19 +27,37 @@ const crmPath = useCrmPath()
 
 const UButton = resolveComponent('UButton')
 const UBadge = resolveComponent('UBadge')
+const UAvatarGroup = resolveComponent('UAvatarGroup')
+const UAvatar = resolveComponent('UAvatar')
 
 // Kinds whose values live in crm_records.data and render from a list row.
 const JSONB_LIST_KINDS = new Set(['text', 'textarea', 'number', 'boolean', 'date', 'datetime', 'key_select'])
 
 const statusField = computed(() =>
-  props.fields.find(f => f.key === 'status' && f.kind === 'key_select') ?? null
+  props.fields.find(f => f.column === 'status') ?? null
 )
+
+// The first visible user_select field carries the assignment column; the
+// list row's assignedTo summary spans every user field, which is close
+// enough for a glanceable avatar group.
+const userField = computed(() =>
+  props.fields.find(f => f.kind === 'user_select' && !f.hidden && !f.orphan) ?? null
+)
+
+const { byId: usersById, ensureUsers } = useCrmUsers()
+watch(userField, (f) => {
+  if (f) {
+    ensureUsers().catch(() => {
+      // Avatars fall back to id initials until the directory loads.
+    })
+  }
+}, { immediate: true })
 
 // The fields endpoint returns fields sorted by order, so the first few
 // non-promoted jsonb fields make the leading columns.
 const leadingFields = computed(() =>
   props.fields
-    .filter(f => !f.hidden && !f.orphan && f.key !== 'name' && f.key !== 'status' && JSONB_LIST_KINDS.has(f.kind))
+    .filter(f => !f.hidden && !f.orphan && !f.column && JSONB_LIST_KINDS.has(f.kind))
     .slice(0, 3)
 )
 
@@ -78,6 +97,26 @@ const columns = computed<TableColumn<CrmRecordListItem>[]>(() => [
             variant: 'subtle',
             size: 'sm'
           }, () => crmOptionLabel(statusField.value!, key))
+        }
+      } as TableColumn<CrmRecordListItem>]
+    : []),
+  ...(userField.value
+    ? [{
+        id: 'assigned',
+        header: userField.value.label,
+        cell: ({ row }: { row: { original: CrmRecordListItem } }) => {
+          const ids = row.original.assignedTo
+          if (ids.length === 0) return h('span', { class: 'text-(--ui-text-muted)' }, '—')
+          return h(UAvatarGroup, { size: '2xs', max: 3 }, () =>
+            ids.map((id) => {
+              const user = usersById.value.get(id)
+              return h(UAvatar, {
+                key: id,
+                src: user?.avatarUrl || undefined,
+                alt: user?.name ?? id
+              })
+            })
+          )
         }
       } as TableColumn<CrmRecordListItem>]
     : []),

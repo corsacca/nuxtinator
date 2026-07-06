@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// Record detail: header (back link, click-to-rename name, status badge) and
-// the field sections in declared order. Editable kinds commit inline
-// through the optimistic patchFields; other kinds render read-only until
-// their editors ship.
+// Record detail: header (back link, click-to-rename name, status badge),
+// the field sections in declared order, and the connections panel. Editable
+// kinds commit inline through the optimistic patchFields; other kinds
+// render read-only until their editors ship.
 import type { CrmTypeFields } from '../../../composables/useCrmTypes'
 import type { CrmFieldSetting } from '../../../utils/field-kinds'
 
@@ -41,7 +41,7 @@ watch(typeKey, async (key) => {
 const { record, pending, error, patchFields } = useCrmRecord(typeKey, recordId)
 
 const statusField = computed(() =>
-  fieldSettings.value?.fields.find(f => f.key === 'status' && f.kind === 'key_select') ?? null
+  fieldSettings.value?.fields.find(f => f.column === 'status') ?? null
 )
 
 interface SectionGroup {
@@ -57,7 +57,7 @@ interface SectionGroup {
 const sectionGroups = computed<SectionGroup[]>(() => {
   const def = fieldSettings.value
   if (!def) return []
-  const visible = def.fields.filter(f => !f.hidden && !f.orphan && f.key !== 'name')
+  const visible = def.fields.filter(f => !f.hidden && !f.orphan && f.column !== 'name')
   const known = new Set(Object.keys(def.sections))
   const groups = Object.entries(def.sections)
     .sort((a, b) => (a[1].order ?? 0) - (b[1].order ?? 0))
@@ -130,6 +130,11 @@ async function rename(name: string) {
           @commit="commitField(field, $event)"
         />
       </CrmFieldSection>
+
+      <CrmConnectionsPanel
+        :fields="fieldSettings?.fields ?? []"
+        :record="record"
+      />
 
       <p class="text-xs text-(--ui-text-muted)">
         Created {{ new Date(record.createdAt).toLocaleString() }}

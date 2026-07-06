@@ -1,8 +1,8 @@
 // Client-side field-kind dispatcher — the single registry mapping each
 // CrmFieldKind to how it renders: an optional inline editor component and a
 // plain-text formatter used by table cells and read-only detail rows.
-// Kinds without an editor component render read-only (their editors arrive
-// in a later milestone).
+// Kinds without an editor component render read-only (communication_channel
+// renders through the channel widget in a later milestone).
 
 import type { CrmChannelEntry, CrmFieldKind, CrmFieldOption, CrmLinkValue } from '#crm'
 
@@ -21,16 +21,24 @@ export interface CrmFieldSetting {
   channelType: string | null
   target: string | null
   multiple: boolean
+  /** Promoted-column flag — 'name'/'status' fields live on the record row. */
+  column: 'name' | 'status' | null
 }
 
 /** Section map as served alongside the fields (`sections` in the response). */
 export type CrmTypeSections = Record<string, { label: string, order?: number }>
 
+/** Extra lookups a formatter may use; every entry is optional. */
+export interface CrmFormatContext {
+  /** Resolves a user id to a display name (see useCrmUsers().userName). */
+  userName?: (id: string) => string | null
+}
+
 export interface CrmKindRenderer {
   /** Inline editor component (auto-named Crm*); absent = read-only display. */
   component?: string
   /** Plain-text rendering for table cells and read-only rows. */
-  format: (value: unknown, field: CrmFieldSetting) => string
+  format: (value: unknown, field: CrmFieldSetting, ctx?: CrmFormatContext) => string
 }
 
 const EMPTY = '—'
@@ -78,12 +86,15 @@ export const CRM_FIELD_KINDS: Record<CrmFieldKind, CrmKindRenderer> = {
     format: value => typeof value === 'number' ? value.toLocaleString() : formatText(value)
   },
   boolean: {
+    component: 'CrmFieldsBooleanField',
     format: value => value === null || value === undefined ? EMPTY : (value ? 'Yes' : 'No')
   },
   date: {
+    component: 'CrmFieldsDateField',
     format: value => formatDateValue(value, false)
   },
   datetime: {
+    component: 'CrmFieldsDatetimeField',
     format: value => formatDateValue(value, true)
   },
   key_select: {
@@ -92,6 +103,7 @@ export const CRM_FIELD_KINDS: Record<CrmFieldKind, CrmKindRenderer> = {
       typeof value === 'string' && value !== '' ? crmOptionLabel(field, value) : EMPTY
   },
   multi_select: {
+    component: 'CrmFieldsMultiSelectField',
     format: (value, field) => {
       const keys = asArray(value)
       if (keys.length === 0) return EMPTY
@@ -99,16 +111,21 @@ export const CRM_FIELD_KINDS: Record<CrmFieldKind, CrmKindRenderer> = {
     }
   },
   tags: {
+    component: 'CrmFieldsTagsField',
     format: (value) => {
       const tags = asArray(value)
       return tags.length > 0 ? tags.map(String).join(', ') : EMPTY
     }
   },
   user_select: {
-    format: (value) => {
-      const count = Array.isArray(value) ? value.length : (value ? 1 : 0)
-      if (count === 0) return EMPTY
-      return count === 1 ? '1 user' : `${count} users`
+    component: 'CrmFieldsUserSelectField',
+    format: (value, _field, ctx) => {
+      const ids = Array.isArray(value)
+        ? value.map(String)
+        : (typeof value === 'string' && value !== '' ? [value] : [])
+      if (ids.length === 0) return EMPTY
+      if (ctx?.userName) return ids.map(id => ctx.userName!(id) ?? id).join(', ')
+      return ids.length === 1 ? '1 user' : `${ids.length} users`
     }
   },
   communication_channel: {
@@ -118,6 +135,9 @@ export const CRM_FIELD_KINDS: Record<CrmFieldKind, CrmKindRenderer> = {
     }
   },
   connection: {
+    component: 'CrmFieldsConnectionField',
+    // Count only — list rows never carry connection values, and the detail
+    // page renders names through the editor and the connections panel.
     format: (value) => {
       const ids = asArray(value)
       if (ids.length === 0) return EMPTY
@@ -125,6 +145,7 @@ export const CRM_FIELD_KINDS: Record<CrmFieldKind, CrmKindRenderer> = {
     }
   },
   link: {
+    component: 'CrmFieldsLinkField',
     format: (value) => {
       const links = asArray(value) as CrmLinkValue[]
       return links.length > 0 ? links.map(l => l.label || l.url).join(', ') : EMPTY
@@ -137,8 +158,8 @@ export function crmRendererFor(kind: string): CrmKindRenderer {
   return CRM_FIELD_KINDS[kind as CrmFieldKind] ?? { format: formatText }
 }
 
-export function formatCrmValue(value: unknown, field: CrmFieldSetting): string {
-  return crmRendererFor(field.kind).format(value, field)
+export function formatCrmValue(value: unknown, field: CrmFieldSetting, ctx?: CrmFormatContext): string {
+  return crmRendererFor(field.kind).format(value, field, ctx)
 }
 
 /** Human-readable message from a $fetch error (statusMessage detail first). */

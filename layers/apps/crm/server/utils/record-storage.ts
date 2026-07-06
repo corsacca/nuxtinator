@@ -18,7 +18,7 @@ import type { RawBuilder, Selectable, Transaction } from 'kysely'
 import { z } from 'zod'
 import type { Database } from '#core/server/database/schema'
 import type { TenantContext } from '#tenant/server'
-import type { CrmChannelEntry, CrmLinkValue } from '#crm'
+import type { CrmChannelEntry, CrmConnectedRecord, CrmLinkValue } from '#crm'
 import { getRegisteredRecordTypes, runCrmFieldFilters, type CrmFieldPatch } from './crm-registry'
 import { getRecordType, getRecordTypeFields, type CrmFieldSetting } from './definition-settings'
 import { normalizeChannelValue } from './normalize'
@@ -198,6 +198,31 @@ export async function hydrateRecords(
         for (const ourKey of reverseMap.get(c.field_key) ?? []) {
           pushUnique(rec.fields[ourKey] as string[], c.from_record_id)
         }
+      }
+    }
+    // Connection values surface as { id, name } so pickers and panels render
+    // linked records without per-record lookups — one batched name query
+    // covers every edge on the page.
+    const connectedIds = new Set<string>()
+    for (const rec of out.values()) {
+      for (const def of connDefs) {
+        for (const id of rec.fields[def.key] as string[]) connectedIds.add(id)
+      }
+    }
+    const connectedNames = new Map<string, string>()
+    if (connectedIds.size > 0) {
+      const nameRows = await tx
+        .selectFrom('crm_records')
+        .select(['id', 'name'])
+        .where('id', 'in', [...connectedIds])
+        .execute()
+      for (const r of nameRows) connectedNames.set(r.id, r.name)
+    }
+    for (const rec of out.values()) {
+      for (const def of connDefs) {
+        rec.fields[def.key] = (rec.fields[def.key] as string[]).map(
+          (id): CrmConnectedRecord => ({ id, name: connectedNames.get(id) ?? id })
+        )
       }
     }
   }

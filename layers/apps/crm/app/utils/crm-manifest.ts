@@ -121,6 +121,13 @@ export interface CrmLinkValue {
   label?: string
 }
 
+/** A connection edge as it appears on a hydrated record — id plus the
+ * target record's display name, resolved server-side in one batched query. */
+export interface CrmConnectedRecord {
+  id: string
+  name: string
+}
+
 type FieldValue<F extends CrmFieldDef> =
   F['kind'] extends 'text' | 'textarea' ? string | null
     : F['kind'] extends 'number' ? number | null
@@ -131,7 +138,7 @@ type FieldValue<F extends CrmFieldDef> =
             : F['kind'] extends 'multi_select' | 'tags' ? string[]
               : F['kind'] extends 'user_select'
                 ? (F['multiple'] extends true ? string[] : string | null)
-                : F['kind'] extends 'connection' ? string[]
+                : F['kind'] extends 'connection' ? CrmConnectedRecord[]
                   : F['kind'] extends 'communication_channel' ? CrmChannelEntry[]
                     : F['kind'] extends 'link' ? CrmLinkValue[]
                       : unknown

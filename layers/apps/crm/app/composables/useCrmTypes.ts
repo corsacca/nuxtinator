@@ -12,11 +12,15 @@ export interface CrmTypeSummary {
   hidden: boolean
   custom: boolean
   orphan: boolean
+  /** Field key promoted to the status column, or null when the type has none. */
+  statusField: string | null
 }
 
 /** Response of GET /api/crm/schema/types/:type/fields. */
 export interface CrmTypeFields {
   sections: CrmTypeSections
+  /** Field key promoted to the status column, or null when the type has none. */
+  statusField: string | null
   fields: CrmFieldSetting[]
 }
 

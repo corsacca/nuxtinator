@@ -37,17 +37,19 @@ watch(typeKey, async (key) => {
 
 const {
   items, total, pending, error, page, pageSize,
-  q, status, sort, dir, toggleSort, refresh
+  q, status, filters, sort, dir, toggleSort, refresh
 } = useCrmRecords(typeKey)
 
 const statusField = computed(() =>
-  fieldSettings.value?.fields.find(f => f.key === 'status' && f.kind === 'key_select') ?? null
+  fieldSettings.value?.fields.find(f => f.column === 'status') ?? null
 )
 
 const sidebarOpen = ref(false)
 const createOpen = ref(false)
 
-const isFiltered = computed(() => q.value !== '' || status.value !== null)
+const isFiltered = computed(() =>
+  q.value !== '' || status.value !== null || Object.keys(filters.value).length > 0
+)
 const showEmpty = computed(() =>
   !pending.value && total.value === 0 && !isFiltered.value && !error.value && !fieldsError.value
 )
@@ -83,7 +85,9 @@ const showEmpty = computed(() =>
         <CrmRecordFilters
           v-model:q="q"
           v-model:status="status"
+          v-model:filters="filters"
           :status-field="statusField"
+          :fields="fieldSettings?.fields ?? []"
         />
 
         <UAlert

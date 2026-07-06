@@ -1,10 +1,12 @@
 // GET /api/crm/schema/types/:type/fields
 // Merged field definitions for one record type — everything the client needs
 // to render list columns and detail sections. Returns
-// { sections: Record<key, { label, order? }>, fields: [{ key, kind, label,
-//   section, required, hidden, order, options, custom, orphan, channelType,
-//   target, multiple }] } sorted by order. Hidden and stale (orphan) fields
-// only appear for schema managers. Permission: crm.access.
+// { sections: Record<key, { label, order? }>, statusField, fields: [{ key,
+//   kind, label, section, required, hidden, order, options, custom, orphan,
+//   channelType, target, multiple, column }] } sorted by order. `column` and
+// `statusField` carry the promoted-column flags so clients never infer them
+// from key conventions. Hidden and stale (orphan) fields only appear for
+// schema managers. Permission: crm.access.
 
 import { withOrgPermission } from '#tenant/server'
 import { getRecordTypeFields, requireRecordType } from '#crm/server'
@@ -29,8 +31,9 @@ export default defineEventHandler(async (event) => {
         orphan: f.orphan,
         channelType: f.channelType ?? null,
         target: f.target ?? null,
-        multiple: f.multiple ?? false
+        multiple: f.multiple ?? false,
+        column: f.column ?? null
       }))
-    return { sections: type.sections, fields }
+    return { sections: type.sections, statusField: type.statusField ?? null, fields }
   })
 })

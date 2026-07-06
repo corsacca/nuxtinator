@@ -8,6 +8,14 @@ import TextField from './fields/TextField.vue'
 import TextareaField from './fields/TextareaField.vue'
 import NumberField from './fields/NumberField.vue'
 import KeySelectField from './fields/KeySelectField.vue'
+import BooleanField from './fields/BooleanField.vue'
+import DateField from './fields/DateField.vue'
+import DatetimeField from './fields/DatetimeField.vue'
+import MultiSelectField from './fields/MultiSelectField.vue'
+import TagsField from './fields/TagsField.vue'
+import UserSelectField from './fields/UserSelectField.vue'
+import ConnectionField from './fields/ConnectionField.vue'
+import LinkField from './fields/LinkField.vue'
 
 const props = defineProps<{
   field: CrmFieldSetting
@@ -24,7 +32,15 @@ const EDITORS: Record<string, Component> = {
   CrmFieldsTextField: TextField,
   CrmFieldsTextareaField: TextareaField,
   CrmFieldsNumberField: NumberField,
-  CrmFieldsKeySelectField: KeySelectField
+  CrmFieldsKeySelectField: KeySelectField,
+  CrmFieldsBooleanField: BooleanField,
+  CrmFieldsDateField: DateField,
+  CrmFieldsDatetimeField: DatetimeField,
+  CrmFieldsMultiSelectField: MultiSelectField,
+  CrmFieldsTagsField: TagsField,
+  CrmFieldsUserSelectField: UserSelectField,
+  CrmFieldsConnectionField: ConnectionField,
+  CrmFieldsLinkField: LinkField
 }
 
 const renderer = computed(() => crmRendererFor(props.field.kind))
