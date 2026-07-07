@@ -1,0 +1,60 @@
+// GET /api/inbox/conversations
+// Query: status, held, unassigned, mine, assigned_user_id, q, limit, offset.
+// Returns { items, total } for the list pane.
+
+import { z } from 'zod'
+import { withOrgPermission } from '#tenant/server'
+
+const Query = z.object({
+  status: z.enum(['open', 'pending', 'closed', 'spam']).optional(),
+  held: z.coerce.boolean().optional(),
+  unassigned: z.coerce.boolean().optional(),
+  mine: z.coerce.boolean().optional(),
+  assigned_user_id: z.string().uuid().optional(),
+  q: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional()
+})
+
+export default defineEventHandler(async (event) => {
+  return await withOrgPermission(event, { appId: 'inbox' }, 'inbox.access', async (tx, ctx) => {
+    const parsed = Query.safeParse(getQuery(event))
+    if (!parsed.success) {
+      throw createError({ statusCode: 400, statusMessage: 'Invalid query', data: parsed.error.flatten() })
+    }
+    const q = parsed.data
+    const filters = {
+      status: q.status,
+      held: q.held || undefined,
+      unassigned: q.unassigned || undefined,
+      mine: q.mine ? ctx.userId : undefined,
+      assignedUserId: q.assigned_user_id,
+      search: q.q,
+      limit: q.limit,
+      offset: q.offset
+    }
+    const [items, total] = await Promise.all([
+      inboxListConversations(tx, filters),
+      inboxCountConversations(tx, filters)
+    ])
+    return {
+      items: items.map(c => ({
+        id: c.id,
+        subject: c.subject,
+        status: c.status,
+        assignedUserId: c.assigned_user_id,
+        assigneeName: c.assignee_name,
+        needsReview: c.needs_review,
+        source: c.source,
+        counterpartyName: c.counterparty_name,
+        channelValue: c.channel_value,
+        messageCount: c.message_count,
+        snippet: c.last_message_snippet,
+        lastMessageAt: c.last_message_at,
+        lastMessageDirection: c.last_message_direction,
+        createdAt: c.created_at
+      })),
+      total
+    }
+  })
+})
