@@ -69,12 +69,14 @@ export async function getSetting<T = unknown>(
 }
 
 // Persist an override for one setting. The value is coerced through the
-// registered `parse` before storage and written as jsonb via an explicit cast
-// (postgres-js would otherwise mis-encode bare strings/arrays into the jsonb
-// column). Read-then-write keeps this mode-agnostic: the unique key is
-// `(namespace, key)` in single mode but `(org_id, namespace, key)` in multi
-// mode, so there's no single ON CONFLICT target valid in both — and RLS already
-// scopes the read/write to the active org.
+// registered `parse` before storage and written as jsonb via a `::text::jsonb`
+// cast: the intermediate ::text stops postgres-js from JSON-encoding the
+// already-stringified value a SECOND time, which would store an array/object
+// setting as a jsonb string scalar instead of a real jsonb array/object.
+// Read-then-write keeps this mode-agnostic: the unique key is `(namespace,
+// key)` in single mode but `(org_id, namespace, key)` in multi mode, so
+// there's no single ON CONFLICT target valid in both — and RLS already scopes
+// the read/write to the active org.
 export async function setSetting(
   tx: DbClient,
   namespace: string,
@@ -83,7 +85,7 @@ export async function setSetting(
 ): Promise<void> {
   const def = requireSetting(namespace, key)
   const parsed = def.parse ? def.parse(value) : value
-  const json = sql`${JSON.stringify(parsed ?? null)}::jsonb`
+  const json = sql`${JSON.stringify(parsed ?? null)}::text::jsonb`
 
   const existing = await tx
     .selectFrom('core_settings')
