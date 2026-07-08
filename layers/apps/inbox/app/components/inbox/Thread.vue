@@ -17,6 +17,8 @@ const emit = defineEmits<{
   reply: [body: string, draftId?: string]
   saveDraft: [body: string]
   deleteDraft: [draftId: string]
+  attachFiles: [files: File[], body: string]
+  removeAttachment: [attachmentId: string]
   createContact: [name: string]
 }>()
 
@@ -58,6 +60,25 @@ function onDeleteDraft(d: InboxThreadDraft) {
     replyBody.value = ''
     currentDraftId.value = null
   }
+}
+
+// Attachments belong to the draft being edited; the parent creates a draft
+// first if there isn't one yet, so files always have a row to bind to.
+const currentDraftAttachments = computed(() =>
+  currentDraftId.value
+    ? props.thread.drafts.find(d => d.id === currentDraftId.value)?.attachments ?? []
+    : []
+)
+
+const fileInput = ref<HTMLInputElement | null>(null)
+function pickFiles() {
+  fileInput.value?.click()
+}
+function onFilesPicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = '' // let the same file be re-selected
+  if (files.length) emit('attachFiles', files, replyBody.value)
 }
 
 // reka-ui selects reject '' as an item value — the unassigned sentinel is a
@@ -184,24 +205,42 @@ function submitContact() {
         :mention="false"
         class="min-h-24 max-h-64 overflow-y-auto rounded-md border border-(--ui-border)"
       />
-      <div class="flex justify-end gap-2">
-        <UButton
-          label="Save draft"
-          icon="i-lucide-save"
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          :disabled="props.sending"
-          @click="onSaveDraft"
-        />
-        <UButton
-          :label="currentDraftId ? 'Send draft' : 'Send'"
-          icon="i-lucide-send"
-          size="sm"
-          :loading="props.sending"
-          :disabled="props.sending"
-          @click="submitReply"
-        />
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+          <UButton
+            icon="i-lucide-paperclip"
+            label="Attach"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            :disabled="props.sending"
+            @click="pickFiles"
+          />
+          <input ref="fileInput" type="file" multiple class="hidden" @change="onFilesPicked">
+          <UButtonGroup v-for="a in currentDraftAttachments" :key="a.id" size="xs">
+            <UButton :label="a.filename || 'attachment'" icon="i-lucide-paperclip" color="neutral" variant="subtle" />
+            <UButton icon="i-lucide-x" color="neutral" variant="subtle" aria-label="Remove attachment" @click="emit('removeAttachment', a.id)" />
+          </UButtonGroup>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <UButton
+            label="Save draft"
+            icon="i-lucide-save"
+            size="sm"
+            color="neutral"
+            variant="ghost"
+            :disabled="props.sending"
+            @click="onSaveDraft"
+          />
+          <UButton
+            :label="currentDraftId ? 'Send draft' : 'Send'"
+            icon="i-lucide-send"
+            size="sm"
+            :loading="props.sending"
+            :disabled="props.sending"
+            @click="submitReply"
+          />
+        </div>
       </div>
     </footer>
 

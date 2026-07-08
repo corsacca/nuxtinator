@@ -173,6 +173,26 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     await refresh()
   }
 
+  // Attachments bind to a draft. The caller ensures a draft exists first.
+  async function uploadAttachment(draftId: string, file: File): Promise<void> {
+    const id = toValue(conversationId)
+    if (!id) return
+    const form = new FormData()
+    form.append('draftId', draftId)
+    form.append('file', file)
+    const url: string = `/api/inbox/conversations/${id}/attachments`
+    await $fetch(url, { method: 'POST', body: form })
+    await refresh()
+  }
+
+  async function removeAttachment(attachmentId: string): Promise<void> {
+    const id = toValue(conversationId)
+    if (!id) return
+    const url: string = `/api/inbox/conversations/${id}/attachments/${attachmentId}`
+    await $fetch(url, { method: 'DELETE' })
+    await refresh()
+  }
+
   async function createContact(name: string) {
     const id = toValue(conversationId)
     if (!id) return
@@ -184,7 +204,7 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     return record
   }
 
-  return { thread, pending, error, refresh, patch, reply, saveDraft, deleteDraft, createContact }
+  return { thread, pending, error, refresh, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, createContact }
 }
 
 export interface InboxAssignee {

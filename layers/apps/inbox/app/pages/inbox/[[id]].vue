@@ -16,7 +16,7 @@ const selectedId = computed(() => {
 })
 
 const { items, counts, pending, error, scope, status, q, refresh } = useInboxConversations()
-const { thread, error: threadError, patch, reply, saveDraft, deleteDraft, createContact } = useInboxThread(selectedId)
+const { thread, error: threadError, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, createContact } = useInboxThread(selectedId)
 const { users: assignees } = useInboxAssignees()
 
 const toast = useToast()
@@ -78,6 +78,30 @@ async function onDeleteDraft(draftId: string) {
   }
 }
 
+async function onAttachFiles(files: File[], body: string) {
+  try {
+    // Attachments need a draft to bind to — create one from the current body
+    // if the composer isn't already editing a draft.
+    let draftId = currentDraftId.value
+    if (!draftId) {
+      draftId = (await saveDraft(body)) ?? null
+      currentDraftId.value = draftId
+    }
+    if (!draftId) return
+    for (const f of files) await uploadAttachment(draftId, f)
+  } catch (err) {
+    toast.add({ title: 'Attachment failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
+async function onRemoveAttachment(attachmentId: string) {
+  try {
+    await removeAttachment(attachmentId)
+  } catch (err) {
+    toast.add({ title: 'Remove failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
 async function onCreateContact(name: string) {
   try {
     await createContact(name)
@@ -125,6 +149,8 @@ async function onCreateContact(name: string) {
           @reply="onReply"
           @save-draft="onSaveDraft"
           @delete-draft="onDeleteDraft"
+          @attach-files="onAttachFiles"
+          @remove-attachment="onRemoveAttachment"
           @create-contact="onCreateContact"
         />
         <UEmpty

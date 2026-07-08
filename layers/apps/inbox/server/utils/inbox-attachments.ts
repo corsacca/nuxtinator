@@ -43,6 +43,37 @@ export async function inboxGetAttachment(tx: Tx, id: string): Promise<InboxAttac
   return row ?? null
 }
 
+// Remove an attachment that belongs to a DRAFT in this conversation. Scoped so
+// a sent message's attachments (immutable history) and other conversations'
+// attachments can't be deleted. The S3 object is left as an accepted orphan
+// (same as a discarded draft — GDPR/org-purge cleanup is a separate concern).
+export async function inboxDeleteDraftAttachment(
+  tx: Tx,
+  attachmentId: string,
+  conversationId: string
+): Promise<boolean> {
+  const result = await tx
+    .deleteFrom('inbox_attachments')
+    .where('id', '=', attachmentId)
+    .where('message_id', 'in', eb => eb
+      .selectFrom('inbox_messages')
+      .select('id')
+      .where('conversation_id', '=', conversationId)
+      .where('status', '=', 'draft'))
+    .executeTakeFirst()
+  return Number(result.numDeletedRows ?? 0) > 0
+}
+
+// Attachment rows for one message (outbound re-attach at send time).
+export async function inboxListAttachmentsForMessage(tx: Tx, messageId: string): Promise<InboxAttachmentRow[]> {
+  return await tx
+    .selectFrom('inbox_attachments')
+    .selectAll()
+    .where('message_id', '=', messageId)
+    .orderBy('created_at', 'asc')
+    .execute()
+}
+
 // Attachment metadata for a whole conversation, keyed by message for the
 // thread view. Never exposes s3_key to the client — rows are mapped to proxy
 // URLs by the route.

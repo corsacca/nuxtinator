@@ -8,10 +8,18 @@
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { isSuppressed } from '#crm/server'
+import { generateSignedUrl } from '#core/server/utils/storage'
 import type { InboxMessageRow } from './inbox-messages'
 import type { InboxQuoteCandidate } from './inbox-quote'
+import type { InboxEmailAttachment } from './inbox-transport'
 
 type Tx = Transaction<Database>
+
+interface OutboundAttachmentRef {
+  s3Key: string
+  filename: string | null
+  contentType: string | null
+}
 
 interface PreparedSend {
   claimed: InboxMessageRow
@@ -22,6 +30,27 @@ interface PreparedSend {
   html: string
   text: string | undefined
   inReplyTo: string | undefined
+  attachmentRefs: OutboundAttachmentRef[]
+}
+
+// Fetch a message's stored attachments as email parts, in the between-tx
+// window. A fetch failure THROWS so the send fails/retries — the thread must
+// never read 'sent' while an attachment silently went missing. Skipped under
+// VITEST (no S3).
+async function fetchOutboundAttachments(refs: OutboundAttachmentRef[]): Promise<InboxEmailAttachment[]> {
+  if (!refs.length || process.env.VITEST) return []
+  const out: InboxEmailAttachment[] = []
+  for (const ref of refs) {
+    const url = await generateSignedUrl(ref.s3Key, 300)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`Attachment fetch failed (${res.status})`)
+    out.push({
+      filename: ref.filename || 'attachment',
+      contentType: ref.contentType || 'application/octet-stream',
+      data: Buffer.from(await res.arrayBuffer())
+    })
+  }
+  return out
 }
 
 async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend | null> {
@@ -85,6 +114,9 @@ async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend |
   const bodyText = (claimed.body_text || '') + inboxBuildQuotedText(quoteCandidates, fallbackName)
   const subject = claimed.subject || (conversation.subject ? `Re: ${conversation.subject.replace(/^Re:\s*/i, '')}` : 'Re:')
 
+  const attachmentRefs: OutboundAttachmentRef[] = (await inboxListAttachmentsForMessage(tx, claimed.id))
+    .map(a => ({ s3Key: a.s3_key, filename: a.filename, contentType: a.content_type }))
+
   return {
     claimed,
     toEmail,
@@ -93,7 +125,8 @@ async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend |
     subject,
     html: inboxRenderMessageEmail({ bodyHtml: inboxConstrainImages(bodyHtml), subject }),
     text: bodyText || undefined,
-    inReplyTo: lastInbound?.email_message_id ?? undefined
+    inReplyTo: lastInbound?.email_message_id ?? undefined,
+    attachmentRefs
   }
 }
 
@@ -110,6 +143,17 @@ export async function inboxRunSendSweep(): Promise<void> {
       }
       if (!prep) continue
 
+      // Attachments are fetched OUTSIDE the claim tx (provider latency must not
+      // hold a connection). A fetch failure releases the claim for retry — the
+      // message never reads 'sent' with a missing attachment.
+      let attachments: InboxEmailAttachment[]
+      try {
+        attachments = await fetchOutboundAttachments(prep.attachmentRefs)
+      } catch (err) {
+        await inboxWithScopeTx(orgId, tx => inboxReleaseForRetry(tx, prep!.claimed, err instanceof Error ? err.message : 'Attachment fetch failed'))
+        continue
+      }
+
       const result = await inboxSendEmail({
         from: prep.fromAddress,
         to: prep.toEmail,
@@ -119,6 +163,7 @@ export async function inboxRunSendSweep(): Promise<void> {
         replyTo: prep.replyTo,
         inReplyTo: prep.inReplyTo,
         references: prep.inReplyTo,
+        attachments: attachments.length ? attachments : undefined,
         userVariables: {
           ...(orgId ? { 'inbox-org': orgId } : {}),
           'inbox-msg': prep.claimed.id
