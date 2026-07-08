@@ -16,6 +16,7 @@ import {
   inboxIsVacationAutoReply
 } from '../../server/utils/inbox-inbound-parse'
 import { inboxConstrainImages } from '../../server/utils/inbox-email-shell'
+import { inboxSniffImageMime, inboxIsInlineImageKey, inboxInlineMimeForKey } from '../../server/utils/inbox-inline-images'
 
 describe('inbox addressing', () => {
   it('parses plain, token, and future signed-shape recipients', () => {
@@ -94,5 +95,25 @@ describe('outbound image constraining', () => {
   it('constrains every img (e.g. quoted history) and leaves non-img HTML alone', () => {
     const out = inboxConstrainImages('<p>hi</p><img src="a.png"><br><img src="b.png">')
     expect(out).toBe(`<p>hi</p><img src="a.png" style="${CAP}"><br><img src="b.png" style="${CAP}">`)
+  })
+})
+
+describe('inline image sniffing', () => {
+  it('accepts the four image types by magic bytes, rejects non-images and shorts', () => {
+    expect(inboxSniffImageMime(new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4]))).toBe('image/png')
+    expect(inboxSniffImageMime(new Uint8Array([0xFF, 0xD8, 0xFF, 1, 2, 3, 4, 5, 6, 7, 8, 9]))).toBe('image/jpeg')
+    expect(inboxSniffImageMime(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 2, 3, 4, 5, 6]))).toBe('image/gif')
+    expect(inboxSniffImageMime(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]))).toBe('image/webp')
+    // "<!DOCTYPE ht" — a .png-named HTML/SVG payload must not sniff as an image.
+    expect(inboxSniffImageMime(new TextEncoder().encode('<!DOCTYPE ht'))).toBeNull()
+    expect(inboxSniffImageMime(new Uint8Array([1, 2, 3]))).toBeNull()
+  })
+
+  it('validates inline-image keys (prefix + no traversal) and derives mime', () => {
+    expect(inboxIsInlineImageKey('inbox-inline/org/abc.png')).toBe(true)
+    expect(inboxIsInlineImageKey('inbox/raw-x.eml')).toBe(false)
+    expect(inboxIsInlineImageKey('inbox-inline/../secret')).toBe(false)
+    expect(inboxInlineMimeForKey('inbox-inline/org/abc.webp')).toBe('image/webp')
+    expect(inboxInlineMimeForKey('inbox-inline/org/abc.eml')).toBeNull()
   })
 })

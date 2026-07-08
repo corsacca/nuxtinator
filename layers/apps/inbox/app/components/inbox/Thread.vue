@@ -10,6 +10,7 @@ const props = defineProps<{
   thread: InboxThread
   assignees: InboxAssignee[]
   sending?: boolean
+  uploadInlineImage?: (file: File) => Promise<string>
 }>()
 
 const emit = defineEmits<{
@@ -79,6 +80,30 @@ function onFilesPicked(e: Event) {
   const files = Array.from(input.files ?? [])
   input.value = '' // let the same file be re-selected
   if (files.length) emit('attachFiles', files, replyBody.value)
+}
+
+// Inline images: upload to the private bucket, then insert the proxy URL into
+// the editor as an <img> (the CID pipeline embeds it at send time).
+const replyEditor = ref<{ editor?: { chain: () => { focus: () => { setImage: (o: { src: string }) => { run: () => void } } } } } | null>(null)
+const imageInput = ref<HTMLInputElement | null>(null)
+const insertingImage = ref(false)
+function pickImage() {
+  imageInput.value?.click()
+}
+async function onImagePicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !props.uploadInlineImage) return
+  insertingImage.value = true
+  try {
+    const url = await props.uploadInlineImage(file)
+    replyEditor.value?.editor?.chain().focus().setImage({ src: url }).run()
+  } catch (err) {
+    useToast().add({ title: 'Image upload failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  } finally {
+    insertingImage.value = false
+  }
 }
 
 // reka-ui selects reject '' as an item value — the unassigned sentinel is a
@@ -198,10 +223,11 @@ function submitContact() {
         </UButtonGroup>
       </div>
       <UEditor
+        ref="replyEditor"
         v-model="replyBody"
         content-type="html"
         placeholder="Write your reply…"
-        :image="false"
+        :image="true"
         :mention="false"
         class="min-h-24 max-h-64 overflow-y-auto rounded-md border border-(--ui-border)"
       />
@@ -217,6 +243,18 @@ function submitContact() {
             @click="pickFiles"
           />
           <input ref="fileInput" type="file" multiple class="hidden" @change="onFilesPicked">
+          <UButton
+            v-if="props.uploadInlineImage"
+            icon="i-lucide-image"
+            label="Image"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            :loading="insertingImage"
+            :disabled="props.sending || insertingImage"
+            @click="pickImage"
+          />
+          <input ref="imageInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" @change="onImagePicked">
           <UButtonGroup v-for="a in currentDraftAttachments" :key="a.id" size="xs">
             <UButton :label="a.filename || 'attachment'" icon="i-lucide-paperclip" color="neutral" variant="subtle" />
             <UButton icon="i-lucide-x" color="neutral" variant="subtle" aria-label="Remove attachment" @click="emit('removeAttachment', a.id)" />

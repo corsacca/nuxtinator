@@ -16,7 +16,7 @@ const selectedId = computed(() => {
 })
 
 const { items, counts, pending, error, scope, status, q, refresh } = useInboxConversations()
-const { thread, error: threadError, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, createContact } = useInboxThread(selectedId)
+const { thread, error: threadError, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact } = useInboxThread(selectedId)
 const { users: assignees } = useInboxAssignees()
 
 const toast = useToast()
@@ -145,6 +145,7 @@ async function onCreateContact(name: string) {
           :thread="thread"
           :assignees="assignees"
           :sending="replying"
+          :upload-inline-image="uploadInlineImage"
           @patch="onPatch"
           @reply="onReply"
           @save-draft="onSaveDraft"

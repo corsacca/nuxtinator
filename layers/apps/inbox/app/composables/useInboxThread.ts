@@ -193,6 +193,16 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     await refresh()
   }
 
+  // Inline images upload immediately (org-scoped, no conversation needed) and
+  // return the auth-proxy URL the editor embeds; the CID pipeline turns it
+  // into an inline part at send time.
+  async function uploadInlineImage(file: File): Promise<string> {
+    const form = new FormData()
+    form.append('image', file)
+    const res = await $fetch<{ url: string }>('/api/inbox/inline-images', { method: 'POST', body: form })
+    return res.url
+  }
+
   async function createContact(name: string) {
     const id = toValue(conversationId)
     if (!id) return
@@ -204,7 +214,7 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     return record
   }
 
-  return { thread, pending, error, refresh, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, createContact }
+  return { thread, pending, error, refresh, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact }
 }
 
 export interface InboxAssignee {

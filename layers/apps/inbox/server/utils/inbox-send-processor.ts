@@ -53,6 +53,42 @@ async function fetchOutboundAttachments(refs: OutboundAttachmentRef[]): Promise<
   return out
 }
 
+// Embed composer inline images as CID parts at send time: scan the assembled
+// HTML for inline-image proxy URLs, dedupe keys, fetch each from S3, and
+// rewrite every occurrence to cid:<basename> (Mailgun requires cid ===
+// filename). An unfetchable image is LEFT AS-IS and the send proceeds — a
+// broken <img> degrades, unlike a missing file attachment which fails the send.
+async function embedInlineImages(html: string): Promise<{ html: string, attachments: InboxEmailAttachment[] }> {
+  if (process.env.VITEST) return { html, attachments: [] }
+  const scan = /\/api\/inbox\/inline-image\/(inbox-inline\/[A-Za-z0-9/_.-]+?\.(?:jpe?g|png|gif|webp))/gi
+  const keys = new Set<string>()
+  let match: RegExpExecArray | null
+  while ((match = scan.exec(html))) keys.add(match[1]!)
+  if (!keys.size) return { html, attachments: [] }
+
+  const attachments: InboxEmailAttachment[] = []
+  let out = html
+  for (const key of keys) {
+    try {
+      const url = await generateSignedUrl(key, 300)
+      const res = await fetch(url)
+      if (!res.ok) continue
+      const basename = key.split('/').pop()!
+      attachments.push({
+        filename: basename,
+        contentType: inboxInlineMimeForKey(key) ?? 'application/octet-stream',
+        data: Buffer.from(await res.arrayBuffer()),
+        cid: basename
+      })
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      out = out.replace(new RegExp(`(?:https?://[^"'\\s)]+)?/api/inbox/inline-image/${escaped}`, 'g'), `cid:${basename}`)
+    } catch {
+      // leave the URL in place; the send still goes out
+    }
+  }
+  return { html: out, attachments }
+}
+
 async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend | null> {
   const conversation = await inboxGetConversation(tx, msg.conversation_id)
   if (!conversation) {
@@ -154,16 +190,21 @@ export async function inboxRunSendSweep(): Promise<void> {
         continue
       }
 
+      // Inline images become CID parts and rewrite the HTML; unfetchable ones
+      // degrade rather than fail the send.
+      const embedded = await embedInlineImages(prep.html)
+      const allAttachments = [...attachments, ...embedded.attachments]
+
       const result = await inboxSendEmail({
         from: prep.fromAddress,
         to: prep.toEmail,
         subject: prep.subject,
-        html: prep.html,
+        html: embedded.html,
         text: prep.text,
         replyTo: prep.replyTo,
         inReplyTo: prep.inReplyTo,
         references: prep.inReplyTo,
-        attachments: attachments.length ? attachments : undefined,
+        attachments: allAttachments.length ? allAttachments : undefined,
         userVariables: {
           ...(orgId ? { 'inbox-org': orgId } : {}),
           'inbox-msg': prep.claimed.id
