@@ -42,6 +42,8 @@ const replyBody = ref('')
 const confirmSpam = ref(false)
 const contactName = ref('')
 const showCreateContact = ref(false)
+// Detail-pane view: the email thread, or the internal notes & activity feed.
+const view = ref<'conversation' | 'notes'>('conversation')
 
 // From identity selection — offered only when the agent has a personal alias.
 const fromOptions = computed(() => {
@@ -70,6 +72,7 @@ watch(() => props.thread.conversation.id, () => {
   currentDraftId.value = null
   showCreateContact.value = false
   fromIdentity.value = defaultFromIdentity.value
+  view.value = 'conversation'
 }, { immediate: true })
 
 function draftPreview(d: InboxThreadDraft): string {
@@ -255,9 +258,28 @@ function submitContact() {
       </div>
     </header>
 
-    <div class="flex-1 overflow-y-auto p-4 space-y-3">
-      <InboxMessageBubble v-for="m in thread.messages" :key="m.id" :message="m" />
+    <div class="flex items-center gap-1 px-3 py-1.5 border-b border-(--ui-border)">
+      <UButton
+        label="Conversation"
+        size="xs"
+        :variant="view === 'conversation' ? 'solid' : 'ghost'"
+        :color="view === 'conversation' ? 'primary' : 'neutral'"
+        @click="view = 'conversation'"
+      />
+      <UButton
+        label="Notes & Activity"
+        icon="i-lucide-sticky-note"
+        size="xs"
+        :variant="view === 'notes' ? 'solid' : 'ghost'"
+        :color="view === 'notes' ? 'primary' : 'neutral'"
+        @click="view = 'notes'"
+      />
     </div>
+
+    <template v-if="view === 'conversation'">
+      <div class="flex-1 overflow-y-auto p-4 space-y-3">
+        <InboxMessageBubble v-for="m in thread.messages" :key="m.id" :message="m" />
+      </div>
 
     <footer
       v-if="thread.capabilities.canSend && thread.conversation.status !== 'spam'"
@@ -341,6 +363,9 @@ function submitContact() {
         </div>
       </div>
     </footer>
+    </template>
+
+    <InboxNotesTimeline v-else :conversation-id="thread.conversation.id" :users="assignees" />
 
     <UModal v-model:open="confirmSpam" title="Mark as spam?">
       <template #body>

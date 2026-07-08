@@ -112,6 +112,19 @@ export interface InboxIdentitiesTable {
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
+// Internal notes on a conversation — plain text. author_id null + author_label
+// set = a system-authored note (never editable). edited_at NULL until edited.
+export interface InboxCommentsTable {
+  id: Generated<string>
+  conversation_id: string
+  author_id: string | null
+  author_label: string | null
+  body: string
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+  updated_at: ColumnType<Date, Date | string | undefined, Date | string>
+  edited_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
+}
+
 declare global {
   interface NuxtinatorDatabaseTables {
     inbox_conversations: InboxConversationsTable
@@ -120,5 +133,6 @@ declare global {
     inbox_blocked_senders: InboxBlockedSendersTable
     inbox_canned_responses: InboxCannedResponsesTable
     inbox_identities: InboxIdentitiesTable
+    inbox_comments: InboxCommentsTable
   }
 }

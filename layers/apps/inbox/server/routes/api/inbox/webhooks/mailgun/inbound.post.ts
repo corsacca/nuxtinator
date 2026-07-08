@@ -400,7 +400,11 @@ export default defineEventHandler(async (event) => {
           assignedUserId: a.conversation.assigned_user_id,
           counterparty: fromName || fromEmail,
           subject: subject || a.conversation.subject,
-          held: a.outcome === 'held'
+          held: a.outcome === 'held',
+          isReply: !a.isNewConversation && a.outcome === 'contact',
+          excerpt: bodyText || bodyStrippedHtml.replace(/<[^>]*>/g, ' '),
+          senderAddress: fromEmail,
+          attachmentNames: attachmentUploads.map(u => u.filename)
         })
       }
 
