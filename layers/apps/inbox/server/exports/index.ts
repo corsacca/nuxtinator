@@ -23,3 +23,7 @@ export { inboxSendCourtesy } from '../utils/inbox-courtesy'
 
 // Org-scope plumbing for session-less callers.
 export { inboxWithScopeTx, inboxListOrgScopes, inboxResolveOrgForApiKey } from '../utils/inbox-org-routing'
+
+// S3 lifecycle cleanup — for an org-deletion hook to purge inbox objects
+// (attachments + raw MIME) before the org's rows cascade away.
+export { inboxCollectOrgS3Keys, inboxCollectConversationS3Keys, inboxDeleteS3Keys } from '../utils/inbox-storage-cleanup'
