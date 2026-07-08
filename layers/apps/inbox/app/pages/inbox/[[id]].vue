@@ -16,12 +16,13 @@ const selectedId = computed(() => {
 })
 
 const { items, counts, pending, error, scope, status, q, refresh } = useInboxConversations()
-const { thread, error: threadError, patch, reply, createContact } = useInboxThread(selectedId)
+const { thread, error: threadError, patch, reply, saveDraft, deleteDraft, createContact } = useInboxThread(selectedId)
 const { users: assignees } = useInboxAssignees()
 
 const toast = useToast()
 const showCompose = ref(false)
 const replying = ref(false)
+const currentDraftId = ref<string | null>(null)
 
 function open(id: string) {
   router.push(withQuery(inboxPath(`/inbox/${id}`)))
@@ -46,16 +47,34 @@ async function onPatch(body: { status?: string, assignedUserId?: string | null, 
   }
 }
 
-async function onReply(body: string) {
+async function onReply(body: string, draftId?: string) {
   replying.value = true
   try {
-    await reply(body)
+    await reply(body, draftId)
     await refresh()
     toast.add({ title: 'Reply queued', icon: 'i-lucide-send', color: 'success' })
   } catch (err) {
     toast.add({ title: 'Reply failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
   } finally {
     replying.value = false
+  }
+}
+
+async function onSaveDraft(body: string) {
+  try {
+    const newId = await saveDraft(body, currentDraftId.value ?? undefined)
+    if (newId) currentDraftId.value = newId
+    toast.add({ title: 'Draft saved', icon: 'i-lucide-save', color: 'success' })
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
+async function onDeleteDraft(draftId: string) {
+  try {
+    await deleteDraft(draftId)
+  } catch (err) {
+    toast.add({ title: 'Discard failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
   }
 }
 
@@ -98,11 +117,14 @@ async function onCreateContact(name: string) {
         </div>
         <InboxThread
           v-if="thread"
+          v-model:draft-id="currentDraftId"
           :thread="thread"
           :assignees="assignees"
           :sending="replying"
           @patch="onPatch"
           @reply="onReply"
+          @save-draft="onSaveDraft"
+          @delete-draft="onDeleteDraft"
           @create-contact="onCreateContact"
         />
         <UEmpty

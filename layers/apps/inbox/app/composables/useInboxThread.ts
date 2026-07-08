@@ -141,10 +141,35 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     await refresh()
   }
 
-  async function reply(body: string) {
+  // Send: a fresh queued reply, or (with draftId) promote that draft.
+  async function reply(body: string, draftId?: string) {
     const id = toValue(conversationId)
     if (!id) return
-    await $fetch(`/api/inbox/conversations/${id}/messages`, { method: 'POST', body: { body } })
+    await $fetch(`/api/inbox/conversations/${id}/messages`, {
+      method: 'POST',
+      body: { body, ...(draftId ? { draftId } : {}) }
+    })
+    await refresh()
+  }
+
+  // Create (no draftId) or update a shared draft; returns its id so the caller
+  // can keep editing the same draft.
+  async function saveDraft(body: string, draftId?: string): Promise<string | undefined> {
+    const id = toValue(conversationId)
+    if (!id) return
+    const res = await $fetch<{ id: string }>(`/api/inbox/conversations/${id}/messages`, {
+      method: 'POST',
+      body: { saveDraft: true, body, ...(draftId ? { draftId } : {}) }
+    })
+    await refresh()
+    return res.id
+  }
+
+  async function deleteDraft(draftId: string) {
+    const id = toValue(conversationId)
+    if (!id) return
+    const url: string = `/api/inbox/conversations/${id}/drafts/${draftId}`
+    await $fetch(url, { method: 'DELETE' })
     await refresh()
   }
 
@@ -159,7 +184,7 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     return record
   }
 
-  return { thread, pending, error, refresh, patch, reply, createContact }
+  return { thread, pending, error, refresh, patch, reply, saveDraft, deleteDraft, createContact }
 }
 
 export interface InboxAssignee {

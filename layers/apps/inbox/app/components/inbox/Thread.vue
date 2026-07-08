@@ -3,7 +3,7 @@
 // flag), the message thread, and the reply composer. Destructive status
 // transitions (spam) confirm first — marking spam blocklists the sender and
 // closes all their threads.
-import type { InboxThread } from '../../composables/useInboxThread'
+import type { InboxThread, InboxThreadDraft } from '../../composables/useInboxThread'
 import type { InboxAssignee } from '../../composables/useInboxThread'
 
 const props = defineProps<{
@@ -14,9 +14,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   patch: [body: { status?: string, assignedUserId?: string | null, needsReview?: boolean }]
-  reply: [body: string]
+  reply: [body: string, draftId?: string]
+  saveDraft: [body: string]
+  deleteDraft: [draftId: string]
   createContact: [name: string]
 }>()
+
+// The draft the composer is currently editing (null = a fresh reply). Owned by
+// the parent so its save handler can write back the new id after creating one.
+const currentDraftId = defineModel<string | null>('draftId', { default: null })
 
 const crmPath = useCrmPath()
 
@@ -27,8 +33,32 @@ const showCreateContact = ref(false)
 
 watch(() => props.thread.conversation.id, () => {
   replyBody.value = ''
+  currentDraftId.value = null
   showCreateContact.value = false
 })
+
+function draftPreview(d: InboxThreadDraft): string {
+  const text = (d.bodyText || d.bodyHtml || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  return text ? (text.length > 28 ? text.slice(0, 28) + '…' : text) : 'Empty draft'
+}
+
+function loadDraft(d: InboxThreadDraft) {
+  replyBody.value = d.bodyHtml || ''
+  currentDraftId.value = d.id
+}
+
+function onSaveDraft() {
+  if (props.sending) return
+  emit('saveDraft', replyBody.value)
+}
+
+function onDeleteDraft(d: InboxThreadDraft) {
+  emit('deleteDraft', d.id)
+  if (currentDraftId.value === d.id) {
+    replyBody.value = ''
+    currentDraftId.value = null
+  }
+}
 
 // reka-ui selects reject '' as an item value — the unassigned sentinel is a
 // real string swapped back to null on change.
@@ -63,8 +93,9 @@ function submitReply() {
   if (props.sending) return
   const body = replyBody.value.trim()
   if (!body || body === '<p></p>') return
-  emit('reply', replyBody.value)
+  emit('reply', replyBody.value, currentDraftId.value ?? undefined)
   replyBody.value = ''
+  currentDraftId.value = null
 }
 
 function submitContact() {
@@ -132,6 +163,19 @@ function submitContact() {
       v-if="thread.capabilities.canSend && thread.conversation.status !== 'spam'"
       class="border-t border-(--ui-border) p-3 space-y-2"
     >
+      <div v-if="thread.drafts.length" class="flex flex-wrap items-center gap-1.5">
+        <span class="text-xs text-(--ui-text-muted)">Drafts:</span>
+        <UButtonGroup v-for="d in thread.drafts" :key="d.id" size="xs">
+          <UButton
+            :label="draftPreview(d)"
+            icon="i-lucide-file-pen-line"
+            color="neutral"
+            :variant="currentDraftId === d.id ? 'solid' : 'subtle'"
+            @click="loadDraft(d)"
+          />
+          <UButton icon="i-lucide-x" color="neutral" variant="subtle" aria-label="Discard draft" @click="onDeleteDraft(d)" />
+        </UButtonGroup>
+      </div>
       <UEditor
         v-model="replyBody"
         content-type="html"
@@ -140,8 +184,24 @@ function submitContact() {
         :mention="false"
         class="min-h-24 max-h-64 overflow-y-auto rounded-md border border-(--ui-border)"
       />
-      <div class="flex justify-end">
-        <UButton label="Send" icon="i-lucide-send" size="sm" :loading="props.sending" :disabled="props.sending" @click="submitReply" />
+      <div class="flex justify-end gap-2">
+        <UButton
+          label="Save draft"
+          icon="i-lucide-save"
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          :disabled="props.sending"
+          @click="onSaveDraft"
+        />
+        <UButton
+          :label="currentDraftId ? 'Send draft' : 'Send'"
+          icon="i-lucide-send"
+          size="sm"
+          :loading="props.sending"
+          :disabled="props.sending"
+          @click="submitReply"
+        />
       </div>
     </footer>
 
