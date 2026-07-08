@@ -74,7 +74,7 @@ export type { CrmActivityAction, CrmActivityOpts } from '../utils/crm-activity'
 export { grantConsent, revokeConsent, getConsentState, getConsentEvents, canSend } from '../utils/consent'
 export type { ConsentStateEntry, ConsentChangeInput, ConsentChangeResult, ConsentEventEntry, CrmConsentActor } from '../utils/consent'
 
-export { suppress, clearSuppression, isSuppressed, getActiveSuppressions } from '../utils/suppression'
+export { suppress, clearSuppression, isSuppressed, getActiveSuppressions, recordDeliverySuppression, forceClearSuppression } from '../utils/suppression'
 export type { SuppressInput, CrmSuppressionRow } from '../utils/suppression'
 
 export {

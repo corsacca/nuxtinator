@@ -29,6 +29,7 @@ const toast = useToast()
 const showCompose = ref(false)
 const showCanned = ref(false)
 const showIdentity = ref(false)
+const showSuppressions = ref(false)
 const replying = ref(false)
 const currentDraftId = ref<string | null>(null)
 
@@ -232,6 +233,15 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
               variant="ghost"
               @click="showCanned = true"
             />
+            <UButton
+              v-if="canManageCanned"
+              label="Suppressions"
+              icon="i-lucide-mail-x"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              @click="showSuppressions = true"
+            />
             <UButton label="New email" icon="i-lucide-pen-line" size="xs" @click="showCompose = true" />
           </div>
         </div>
@@ -307,5 +317,11 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
     />
 
     <InboxIdentityModal v-if="me" v-model:open="showIdentity" :me="me" @save="onSaveIdentity" />
+
+    <InboxSuppressionsModal
+      v-if="canManageCanned"
+      v-model:open="showSuppressions"
+      :can-clear="me?.canManageAliases ?? false"
+    />
   </div>
 </template>

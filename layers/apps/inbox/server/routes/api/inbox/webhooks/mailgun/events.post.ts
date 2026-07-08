@@ -17,7 +17,7 @@
 // unknown message known.
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import { claimChannel, findChannel, suppress, revokeConsent, isSuppressed } from '#crm/server'
+import { claimChannel, findChannel, recordDeliverySuppression, revokeConsent } from '#crm/server'
 
 // Map a Mailgun event to a deliverability-suppression reason, or null when it
 // must not suppress. A `failed` event suppresses only on an explicit
@@ -110,15 +110,15 @@ export default defineEventHandler(async (event) => {
             : await findScopedChannel(tx, recipient)
           if (channel) {
             if (suppressReason) {
-              const already = await isSuppressed(tx, channel.id)
-              if (!already) {
-                await suppress(tx, {
-                  channelId: channel.id,
-                  reason: suppressReason,
-                  detail: reasonText || null,
-                  source: 'mailgun'
-                })
-              }
+              // Insert-or-refresh: a repeat bounce refreshes the detail and a
+              // complaint following a bounce upgrades the reason, instead of
+              // being silently dropped against a stale first-write row.
+              await recordDeliverySuppression(tx, {
+                channelId: channel.id,
+                reason: suppressReason,
+                detail: reasonText || null,
+                source: 'mailgun'
+              })
               suppressed = true
               scopeActed = true
             }
@@ -137,9 +137,12 @@ export default defineEventHandler(async (event) => {
         return scopeActed
       })
 
-      // With an explicit org there's exactly one scope; without one, stop at
-      // the first scope that could act — provider ids match at most one org.
-      if (acted && !orgVar) break
+      // Message-state correlation matches exactly one org, so stop scanning
+      // once a pure delivery/failure event has landed. Address-level
+      // suppression and unsubscribe, though, must fan out to EVERY org holding
+      // the address — don't break when there's such an action to propagate.
+      const needsFanout = !!(suppressReason || eventType === 'unsubscribed')
+      if (acted && !orgVar && !needsFanout) break
     }
 
     if (eventType === 'delivered') return { status: 'delivered', matched }
