@@ -31,3 +31,21 @@ export const INBOX_STATUS_META: Record<string, { label: string, color: 'primary'
   closed: { label: 'Closed', color: 'neutral' },
   spam: { label: 'Spam', color: 'error' }
 }
+
+// How a conversation entered the inbox. Rendered as a small muted badge on
+// list rows so staff can tell an emailed thread from a form submission or a
+// staff-composed one at a glance.
+export const INBOX_SOURCE_META: Record<string, { label: string, icon: string }> = {
+  inbound_email: { label: 'Email', icon: 'i-lucide-mail' },
+  contact_form: { label: 'Form', icon: 'i-lucide-clipboard-list' },
+  staff: { label: 'Staff', icon: 'i-lucide-pen-line' }
+}
+
+// The dot colour for a tag folder/chip. Tag colours are Nuxt UI theme colours,
+// so a chip renders directly as <UBadge :color>; a plain dot uses the matching
+// semantic CSS variable. Inline style (not a Tailwind class) so the value can
+// vary per tag without a dynamic-class purge. Neutral has no --ui-neutral
+// alias; fall back to a muted foreground.
+export function inboxTagDotColor(color: string): string {
+  return color === 'neutral' ? 'var(--ui-text-dimmed)' : `var(--ui-${color})`
+}

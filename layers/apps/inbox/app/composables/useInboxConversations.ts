@@ -12,6 +12,7 @@ export interface InboxConversationListRow {
   needsReview: boolean
   source: string
   counterpartyName: string | null
+  tags: string[]
   channelValue: string
   messageCount: number
   snippet: string | null
@@ -39,6 +40,7 @@ export function useInboxConversations() {
   const items = ref<InboxConversationListRow[]>([])
   const total = ref(0)
   const counts = ref<InboxCounts | null>(null)
+  const tagCounts = ref<Record<string, number>>({})
   const pending = ref(false)
   const error = ref<string | null>(null)
 
@@ -62,12 +64,22 @@ export function useInboxConversations() {
       const raw = queryString('scope')
       return raw === 'unassigned' || raw === 'mine' || raw === 'held' ? raw : 'all'
     },
-    set: v => setQuery({ scope: v === 'all' ? undefined : v })
+    // Scope and tag are competing folder dimensions — picking a scope clears
+    // any active tag so the rail never shows two folders selected at once.
+    set: v => setQuery({ scope: v === 'all' ? undefined : v, tag: undefined })
   })
 
   const status = computed<string>({
     get: () => queryString('status') || 'open',
     set: v => setQuery({ status: v === 'open' ? undefined : v })
+  })
+
+  // The active tag folder (empty = none). Selecting a tag clears the scope and
+  // resets the status to 'all': tag folders are cross-status, so the visible
+  // list must span every status (bar spam) to match the tag's rail count.
+  const tag = computed<string>({
+    get: () => queryString('tag'),
+    set: v => setQuery({ tag: v || undefined, scope: undefined, status: v ? 'all' : undefined })
   })
 
   const q = computed<string>({
@@ -81,7 +93,12 @@ export function useInboxConversations() {
     pending.value = true
     const statusParam = status.value === 'all' ? undefined : status.value
     const query: Record<string, unknown> = { limit: 50 }
-    if (scope.value === 'held') {
+    if (tag.value) {
+      // Tag folder overrides scope. Status may still narrow within it, but
+      // defaults to 'all' (set when the tag was selected).
+      query.tag = tag.value
+      if (statusParam) query.status = statusParam
+    } else if (scope.value === 'held') {
       // The held folder is status-independent — it's the whole review queue.
       query.held = true
     } else {
@@ -91,16 +108,18 @@ export function useInboxConversations() {
     }
     if (q.value) query.q = q.value
     try {
-      const [list, badge] = await Promise.all([
+      const [list, badge, tagRes] = await Promise.all([
         $fetch<{ items: InboxConversationListRow[], total: number }>('/api/inbox/conversations', { query }),
         $fetch<InboxCounts>('/api/inbox/conversations/counts', {
           query: { status: statusParam, scope: scope.value }
-        })
+        }),
+        $fetch<{ counts: Record<string, number> }>('/api/inbox/conversations/tag-counts')
       ])
       if (id !== requestId) return
       items.value = list.items
       total.value = list.total
       counts.value = badge
+      tagCounts.value = tagRes.counts
       error.value = null
     } catch (err) {
       if (id !== requestId) return
@@ -111,11 +130,11 @@ export function useInboxConversations() {
   }
 
   let debounce: ReturnType<typeof setTimeout> | null = null
-  watch([scope, status, orgKey], () => refresh(), { immediate: true })
+  watch([scope, status, tag, orgKey], () => refresh(), { immediate: true })
   watch(q, () => {
     if (debounce) clearTimeout(debounce)
     debounce = setTimeout(() => refresh(), 300)
   })
 
-  return { items, total, counts, pending, error, scope, status, q, refresh }
+  return { items, total, counts, tagCounts, pending, error, scope, status, q, tag, refresh }
 }

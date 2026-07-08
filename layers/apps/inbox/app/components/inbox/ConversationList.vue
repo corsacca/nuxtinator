@@ -3,6 +3,7 @@
 // route-driven — clicking a row navigates to /inbox/:id (org prefix
 // preserved by the router guard via useCrmPath).
 import type { InboxConversationListRow, InboxCounts, InboxScope } from '../../composables/useInboxConversations'
+import type { InboxTag } from '../../composables/useInboxTags'
 
 const props = defineProps<{
   items: InboxConversationListRow[]
@@ -10,7 +11,19 @@ const props = defineProps<{
   pending: boolean
   scope: InboxScope
   selectedId: string | null
+  palette: InboxTag[]
 }>()
+
+// Resolve a stored slug to its palette entry so a row chip shows the current
+// name/colour; a slug missing from the palette falls back to a neutral chip.
+const tagBySlug = computed(() => {
+  const map = new Map<string, InboxTag>()
+  for (const t of props.palette) map.set(t.slug, t)
+  return map
+})
+function rowTags(slugs: string[]): InboxTag[] {
+  return slugs.map(s => tagBySlug.value.get(s) ?? { slug: s, name: s, color: 'neutral' as const })
+}
 
 const status = defineModel<string>('status', { required: true })
 const q = defineModel<string>('q', { required: true })
@@ -71,13 +84,16 @@ const statusTabs = computed(() => [
         @click="emit('select', c.id)"
       >
         <div class="flex items-center gap-2">
+          <UTooltip v-if="INBOX_SOURCE_META[c.source]" :text="INBOX_SOURCE_META[c.source]!.label">
+            <UIcon :name="INBOX_SOURCE_META[c.source]!.icon" class="size-3.5 shrink-0 text-(--ui-text-dimmed)" />
+          </UTooltip>
           <span class="font-medium text-sm truncate flex-1 text-(--ui-text-highlighted)">
             {{ c.counterpartyName || c.channelValue }}
           </span>
           <span class="text-xs text-(--ui-text-dimmed) shrink-0">{{ inboxRelativeTime(c.lastMessageAt || c.createdAt) }}</span>
         </div>
         <div class="text-sm truncate text-(--ui-text-muted)">{{ c.subject || '(no subject)' }}</div>
-        <div class="flex items-center gap-1.5 mt-1">
+        <div class="flex items-center gap-1.5 mt-1 flex-wrap">
           <UBadge
             :label="INBOX_STATUS_META[c.status]?.label ?? c.status"
             :color="INBOX_STATUS_META[c.status]?.color ?? 'neutral'"
@@ -86,6 +102,14 @@ const statusTabs = computed(() => [
           />
           <UBadge v-if="c.needsReview" label="Review" color="warning" size="sm" variant="subtle" icon="i-lucide-shield-alert" />
           <UBadge v-if="c.messageCount === 0" label="No message" color="error" size="sm" variant="subtle" />
+          <UBadge
+            v-for="t in rowTags(c.tags)"
+            :key="t.slug"
+            :label="t.name"
+            :color="t.color"
+            size="sm"
+            variant="subtle"
+          />
           <span v-if="c.assigneeName" class="text-xs text-(--ui-text-dimmed) truncate ml-auto">{{ c.assigneeName }}</span>
         </div>
         <p v-if="c.snippet" class="text-xs text-(--ui-text-dimmed) truncate mt-1">{{ c.snippet }}</p>
