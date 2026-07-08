@@ -30,7 +30,10 @@ export interface InboxConversationFilters {
   mine?: string
   held?: boolean
   search?: string
-  channelId?: string
+  // A single channel, or several — the contact-record panel surfaces every
+  // thread across all of a contact's linked email addresses (channel-strict
+  // threading forks a thread per address).
+  channelId?: string | string[]
   tag?: string
   limit?: number
   offset?: number
@@ -136,18 +139,39 @@ function filterConditions(eb: ConversationEb, filters: InboxConversationFilters)
   if (filters.unassigned) conds.push(eb('inbox_conversations.assigned_user_id', 'is', null))
   if (filters.mine) conds.push(eb('inbox_conversations.assigned_user_id', '=', filters.mine))
   if (filters.assignedUserId) conds.push(eb('inbox_conversations.assigned_user_id', '=', filters.assignedUserId))
-  if (filters.channelId) conds.push(eb('inbox_conversations.channel_id', '=', filters.channelId))
+  if (filters.channelId !== undefined) {
+    const ids = Array.isArray(filters.channelId) ? filters.channelId : [filters.channelId]
+    // An empty set matches nothing (never widen to the whole table).
+    conds.push(ids.length ? eb('inbox_conversations.channel_id', 'in', ids) : sql<SqlBool>`false`)
+  }
   // Containment (@>) — a conversation matches when the slug is anywhere in its
   // tags array. Bound as text then cast to sidestep postgres-js jsonb encoding.
   if (filters.tag) conds.push(sql<SqlBool>`inbox_conversations.tags @> ${JSON.stringify([filters.tag])}::text::jsonb`)
   if (filters.search) {
     const term = `%${filters.search}%`
+    // Match the subject, the denormalized From name, the conversation's own
+    // channel value, the linked CRM contact's record name, and any sibling
+    // channel value on that contact (so "John Smith" finds a thread whose From
+    // header only carried "JS", and a search by the contact's phone/second
+    // address finds their email threads). All joins run inside the org tx, so
+    // RLS scopes them.
     conds.push(sql<SqlBool>`(
       inbox_conversations.subject ILIKE ${term}
       OR inbox_conversations.counterparty_name ILIKE ${term}
       OR EXISTS (
         SELECT 1 FROM crm_channels ch
         WHERE ch.id = inbox_conversations.channel_id AND ch.value ILIKE ${term}
+      )
+      OR EXISTS (
+        SELECT 1 FROM crm_contact_channels cc
+        JOIN crm_records r ON r.id = cc.record_id
+        WHERE cc.channel_id = inbox_conversations.channel_id AND r.name ILIKE ${term}
+      )
+      OR EXISTS (
+        SELECT 1 FROM crm_contact_channels cc
+        JOIN crm_contact_channels sib ON sib.record_id = cc.record_id
+        JOIN crm_channels sch ON sch.id = sib.channel_id
+        WHERE cc.channel_id = inbox_conversations.channel_id AND sch.value ILIKE ${term}
       )
     )`)
   }

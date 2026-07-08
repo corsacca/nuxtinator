@@ -155,3 +155,44 @@ export type InferRecordShape<M extends CrmRecordTypeManifest> = {
 export interface CrmRecordTypeRegistry {}
 
 export type CrmRecordShape<K extends keyof CrmRecordTypeRegistry> = CrmRecordTypeRegistry[K]
+
+// ---------------------------------------------------------------------------
+// Client-side detail-panel registry
+// ---------------------------------------------------------------------------
+// Core's six registries are server-side and can't carry Vue components, so
+// CRM exposes this small client registry for OTHER layers to inject panels
+// onto the record detail page (rendered after the connections panel). Optional
+// both ways: CRM renders zero panels when nothing is registered, and a layer
+// that registers one (e.g. inbox's conversations panel) depends on CRM, never
+// the reverse. A registering layer calls `registerCrmDetailPanel` from a Nuxt
+// app plugin, passing its imported component.
+
+import type { Component } from 'vue'
+
+export interface CrmDetailPanel {
+  /** Stable id; a repeat registration with the same id replaces (HMR-safe). */
+  id: string
+  /** Record-type keys this panel renders for; omit/empty = every type. */
+  recordTypes?: string[]
+  /** The panel component, receiving `recordId` + `recordType` props. */
+  component: Component
+  /** Ascending render order among panels (default 100). */
+  order?: number
+}
+
+const _crmDetailPanels: CrmDetailPanel[] = []
+
+export function registerCrmDetailPanel(panel: CrmDetailPanel): void {
+  const i = _crmDetailPanels.findIndex(p => p.id === panel.id)
+  if (i >= 0) _crmDetailPanels[i] = panel
+  else _crmDetailPanels.push(panel)
+}
+
+// Panels registered for a record type, order-sorted. Registration happens once
+// at app-plugin init (before any record page renders), so the returned array is
+// stable for the page's lifetime.
+export function getCrmDetailPanels(recordType: string): CrmDetailPanel[] {
+  return _crmDetailPanels
+    .filter(p => !p.recordTypes?.length || p.recordTypes.includes(recordType))
+    .sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
+}

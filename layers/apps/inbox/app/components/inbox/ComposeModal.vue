@@ -1,6 +1,10 @@
 <script setup lang="ts">
 // New outbound conversation: recipient + subject + body → POST
-// /api/inbox/conversations, then navigate to the created thread.
+// /api/inbox/conversations, then navigate to the created thread. When opened
+// from a CRM record, `lockedRecipient` pins the recipient to that contact's
+// email channel — the To field is read-only and the send carries channelId
+// instead of a free-text address.
+const props = defineProps<{ lockedRecipient?: { channelId: string, label: string } }>()
 const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ created: [id: string] }>()
 
@@ -20,13 +24,17 @@ watch(open, (v) => {
 })
 
 async function submit() {
-  if (!toEmail.value || !subject.value || !body.value.trim()) return
+  const hasRecipient = props.lockedRecipient ? true : !!toEmail.value
+  if (!hasRecipient || !subject.value || !body.value.trim()) return
   sending.value = true
   error.value = null
   try {
+    const recipient = props.lockedRecipient
+      ? { channelId: props.lockedRecipient.channelId }
+      : { toEmail: toEmail.value }
     const res = await $fetch<{ id: string }>('/api/inbox/conversations', {
       method: 'POST',
-      body: { toEmail: toEmail.value, subject: subject.value, body: body.value }
+      body: { ...recipient, subject: subject.value, body: body.value }
     })
     open.value = false
     emit('created', res.id)
@@ -43,7 +51,13 @@ async function submit() {
     <template #body>
       <div class="space-y-3">
         <UFormField label="To" required>
-          <UInput v-model="toEmail" type="email" placeholder="someone@example.com" class="w-full" />
+          <UInput
+            v-if="lockedRecipient"
+            :model-value="lockedRecipient.label"
+            disabled
+            class="w-full"
+          />
+          <UInput v-else v-model="toEmail" type="email" placeholder="someone@example.com" class="w-full" />
         </UFormField>
         <UFormField label="Subject" required>
           <UInput v-model="subject" placeholder="Subject" class="w-full" />
