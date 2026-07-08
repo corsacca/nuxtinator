@@ -21,8 +21,9 @@ export default defineEventHandler(async (event) => {
       .where('id', '=', conversation.channel_id)
       .executeTakeFirst()
 
-    const [messages, attachments, blocked] = await Promise.all([
+    const [messages, drafts, attachments, blocked] = await Promise.all([
       inboxListMessages(tx, conversation.id),
+      inboxListDrafts(tx, conversation.id),
       inboxListAttachmentsForConversation(tx, conversation.id),
       inboxIsChannelBlocked(tx, conversation.channel_id)
     ])
@@ -92,6 +93,18 @@ export default defineEventHandler(async (event) => {
         deliveredAt: m.delivered_at,
         createdAt: m.created_at,
         attachments: attachmentsByMessage.get(m.id) ?? []
+      })),
+      // Shared drafts — every inbox.send user sees and can send/edit/delete any
+      // of them. Kept separate from `messages` (they're not part of the thread).
+      drafts: drafts.map(d => ({
+        id: d.id,
+        senderName: d.sender_name,
+        fromEmail: d.from_email,
+        subject: d.subject,
+        bodyHtml: d.body_html,
+        bodyText: d.body_text,
+        createdAt: d.created_at,
+        attachments: attachmentsByMessage.get(d.id) ?? []
       }))
     }
   })

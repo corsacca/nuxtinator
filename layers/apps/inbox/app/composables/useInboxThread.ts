@@ -24,6 +24,17 @@ export interface InboxThreadMessage {
   attachments: { id: string, filename: string | null, contentType: string | null, sizeBytes: number | null }[]
 }
 
+export interface InboxThreadDraft {
+  id: string
+  senderName: string | null
+  fromEmail: string | null
+  subject: string | null
+  bodyHtml: string | null
+  bodyText: string | null
+  createdAt: string
+  attachments: { id: string, filename: string | null, contentType: string | null, sizeBytes: number | null }[]
+}
+
 export interface InboxThread {
   conversation: {
     id: string
@@ -40,6 +51,7 @@ export interface InboxThread {
   contacts: { id: string, name: string }[]
   capabilities: { canSend: boolean, canCreateContact: boolean }
   messages: InboxThreadMessage[]
+  drafts: InboxThreadDraft[]
 }
 
 // An outbound message is delivered asynchronously by the send sweep, so a
