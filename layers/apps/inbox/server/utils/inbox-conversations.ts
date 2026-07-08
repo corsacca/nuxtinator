@@ -31,6 +31,7 @@ export interface InboxConversationFilters {
   held?: boolean
   search?: string
   channelId?: string
+  tag?: string
   limit?: number
   offset?: number
 }
@@ -136,6 +137,9 @@ function filterConditions(eb: ConversationEb, filters: InboxConversationFilters)
   if (filters.mine) conds.push(eb('inbox_conversations.assigned_user_id', '=', filters.mine))
   if (filters.assignedUserId) conds.push(eb('inbox_conversations.assigned_user_id', '=', filters.assignedUserId))
   if (filters.channelId) conds.push(eb('inbox_conversations.channel_id', '=', filters.channelId))
+  // Containment (@>) — a conversation matches when the slug is anywhere in its
+  // tags array. Bound as text then cast to sidestep postgres-js jsonb encoding.
+  if (filters.tag) conds.push(sql<SqlBool>`inbox_conversations.tags @> ${JSON.stringify([filters.tag])}::text::jsonb`)
   if (filters.search) {
     const term = `%${filters.search}%`
     conds.push(sql<SqlBool>`(

@@ -31,6 +31,9 @@ export interface InboxConversationsTable {
   counterparty_name: string | null
   last_message_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
   last_message_direction: string | null
+  // Palette slugs applied to this conversation; names/colours resolve from the
+  // per-org tag palette (core_settings namespace 'inbox', key 'tags').
+  tags: Generated<string[]>
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }

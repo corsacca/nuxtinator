@@ -19,6 +19,7 @@ const Query = z.object({
   unassigned: boolParam,
   mine: boolParam,
   assigned_user_id: z.string().uuid().optional(),
+  tag: z.string().max(60).optional(),
   q: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
   offset: z.coerce.number().int().min(0).optional()
@@ -37,6 +38,7 @@ export default defineEventHandler(async (event) => {
       unassigned: q.unassigned || undefined,
       mine: q.mine ? ctx.userId : undefined,
       assignedUserId: q.assigned_user_id,
+      tag: q.tag,
       search: q.q,
       limit: q.limit,
       offset: q.offset
@@ -55,6 +57,7 @@ export default defineEventHandler(async (event) => {
         needsReview: c.needs_review,
         source: c.source,
         counterpartyName: c.counterparty_name,
+        tags: c.tags,
         channelValue: c.channel_value,
         messageCount: c.message_count,
         snippet: c.last_message_snippet,

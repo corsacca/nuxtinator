@@ -64,6 +64,7 @@ export default defineEventHandler(async (event) => {
         needsReview: conversation.needs_review,
         source: conversation.source,
         counterpartyName: conversation.counterparty_name,
+        tags: conversation.tags,
         lastMessageAt: conversation.last_message_at,
         createdAt: conversation.created_at
       },

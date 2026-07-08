@@ -11,6 +11,7 @@ import {
   INBOX_SETTING_CONTACT_ADDRESS,
   INBOX_SETTING_AUTO_ACK
 } from '../utils/inbox-settings'
+import { INBOX_SETTING_TAGS, sanitizeTagPalette, type InboxTag } from '../utils/inbox-tags'
 
 // Single owner of all inbox boot registrations. Deliberately reads nothing
 // from the CRM registries at boot (Nitro plugin order is alphabetical, not
@@ -52,6 +53,13 @@ export default defineNitroPlugin(() => {
     default: true,
     parse: v => v !== false && v !== 'false',
     label: 'Auto-acknowledge new conversations'
+  })
+  registerSetting<InboxTag[]>({
+    namespace: INBOX_SETTINGS_NAMESPACE,
+    key: INBOX_SETTING_TAGS,
+    default: [],
+    parse: v => sanitizeTagPalette(v),
+    label: 'Conversation tags'
   })
   registerApp({
     id: 'inbox',
