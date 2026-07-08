@@ -42,6 +42,18 @@ export interface InboxThread {
   messages: InboxThreadMessage[]
 }
 
+// An outbound message is delivered asynchronously by the send sweep, so a
+// freshly-queued reply is still `queued` when the reply POST returns. Poll the
+// thread while any outbound message sits in `queued`, so the UI reflects the
+// queued→sent/delivered/failed transition without a manual refresh. Bounded so
+// a genuinely stuck queue (sweep disabled) doesn't poll forever.
+const THREAD_POLL_INTERVAL_MS = 2500
+const THREAD_POLL_WINDOW_MS = 60_000
+
+function threadHasPendingOutbound(t: InboxThread | null): boolean {
+  return !!t?.messages.some(m => m.direction === 'outbound' && m.status === 'queued')
+}
+
 export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) {
   const orgKey = useCrmOrgKey()
   const thread = ref<InboxThread | null>(null)
@@ -49,29 +61,63 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
   const error = ref<string | null>(null)
 
   let requestId = 0
-  async function refresh(): Promise<void> {
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
+  let pollUntil = 0
+
+  function stopPoll(): void {
+    if (pollTimer) {
+      clearTimeout(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  // Re-arm the poll after each fetch: keep chasing while an outbound message is
+  // still `queued` and the poll window is open; give up (and reset) once it
+  // settles or the window elapses.
+  function schedulePoll(): void {
+    stopPoll()
+    if (!threadHasPendingOutbound(thread.value)) {
+      pollUntil = 0
+      return
+    }
+    if (pollUntil === 0) pollUntil = Date.now() + THREAD_POLL_WINDOW_MS
+    if (Date.now() > pollUntil) return
+    pollTimer = setTimeout(() => { void refresh({ poll: true }) }, THREAD_POLL_INTERVAL_MS)
+  }
+
+  async function refresh(opts?: { poll?: boolean }): Promise<void> {
     const id = toValue(conversationId)
     if (!id) {
+      stopPoll()
       thread.value = null
       return
     }
     const rid = ++requestId
-    pending.value = true
+    // A background poll must not flip the pane into a loading state.
+    if (!opts?.poll) pending.value = true
     try {
       const res = await $fetch<InboxThread>(`/api/inbox/conversations/${id}`)
       if (rid !== requestId) return
       thread.value = res
       error.value = null
+      schedulePoll()
     } catch (err) {
       if (rid !== requestId) return
       thread.value = null
       error.value = err instanceof Error ? err.message : 'Failed to load conversation'
+      stopPoll()
     } finally {
-      if (rid === requestId) pending.value = false
+      if (rid === requestId && !opts?.poll) pending.value = false
     }
   }
 
-  watch([() => toValue(conversationId), orgKey], () => refresh(), { immediate: true })
+  watch([() => toValue(conversationId), orgKey], () => {
+    pollUntil = 0
+    stopPoll()
+    refresh()
+  }, { immediate: true })
+
+  onScopeDispose(stopPoll)
 
   async function patch(body: { status?: string, assignedUserId?: string | null, needsReview?: boolean }) {
     const id = toValue(conversationId)

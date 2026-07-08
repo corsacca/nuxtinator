@@ -30,6 +30,7 @@ const statusBadge = computed(() => {
   if (m.status === 'held') return { label: 'Held', color: 'warning' as const, icon: 'i-lucide-shield-alert' }
   if (m.status === 'failed') return { label: m.failedReason ? `Failed — ${m.failedReason}` : 'Failed', color: 'error' as const, icon: 'i-lucide-x-circle' }
   if (m.status === 'delivered') return { label: 'Delivered', color: 'success' as const, icon: 'i-lucide-check-check' }
+  if (m.status === 'sent') return { label: 'Sent', color: 'neutral' as const, icon: 'i-lucide-check' }
   if (m.status === 'queued') return { label: 'Sending…', color: 'neutral' as const, icon: 'i-lucide-clock' }
   return null
 })

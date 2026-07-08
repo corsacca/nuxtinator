@@ -15,6 +15,7 @@ import {
   inboxIsAutoResponderOrBounce,
   inboxIsVacationAutoReply
 } from '../../server/utils/inbox-inbound-parse'
+import { inboxConstrainImages } from '../../server/utils/inbox-email-shell'
 
 describe('inbox addressing', () => {
   it('parses plain, token, and future signed-shape recipients', () => {
@@ -69,5 +70,29 @@ describe('inbound parsing', () => {
     expect(inboxIsAutoResponderOrBounce(human, 'mailer-daemon@x.test')).toBe(true)
     expect(inboxIsVacationAutoReply(human, 'mailer-daemon@x.test')).toBe(false)
     expect(inboxIsAutoResponderOrBounce(human, 'a@x.test')).toBe(false)
+  })
+})
+
+describe('outbound image constraining', () => {
+  const CAP = 'max-width:100%;max-height:480px;height:auto;'
+
+  it('adds a size cap to a bare img', () => {
+    expect(inboxConstrainImages('<img src="x.png">')).toBe(`<img src="x.png" style="${CAP}">`)
+  })
+
+  it('appends the cap LAST inside an existing style, both quote styles', () => {
+    expect(inboxConstrainImages('<img src="x.png" style="width:900px">'))
+      .toBe(`<img src="x.png" style="width:900px;${CAP}">`)
+    expect(inboxConstrainImages("<img style='color:red' src='x.png'>"))
+      .toBe(`<img style='color:red;${CAP}' src='x.png'>`)
+  })
+
+  it('preserves a self-closing tag', () => {
+    expect(inboxConstrainImages('<img src="x.png" />')).toBe(`<img src="x.png" style="${CAP}" />`)
+  })
+
+  it('constrains every img (e.g. quoted history) and leaves non-img HTML alone', () => {
+    const out = inboxConstrainImages('<p>hi</p><img src="a.png"><br><img src="b.png">')
+    expect(out).toBe(`<p>hi</p><img src="a.png" style="${CAP}"><br><img src="b.png" style="${CAP}">`)
   })
 })

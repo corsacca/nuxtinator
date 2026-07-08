@@ -9,6 +9,7 @@ import type { InboxAssignee } from '../../composables/useInboxThread'
 const props = defineProps<{
   thread: InboxThread
   assignees: InboxAssignee[]
+  sending?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,7 +21,6 @@ const emit = defineEmits<{
 const crmPath = useCrmPath()
 
 const replyBody = ref('')
-const sending = ref(false)
 const confirmSpam = ref(false)
 const contactName = ref('')
 const showCreateContact = ref(false)
@@ -59,16 +59,12 @@ const statusValue = computed({
   }
 })
 
-async function submitReply() {
+function submitReply() {
+  if (props.sending) return
   const body = replyBody.value.trim()
   if (!body || body === '<p></p>') return
-  sending.value = true
-  try {
-    emit('reply', replyBody.value)
-    replyBody.value = ''
-  } finally {
-    sending.value = false
-  }
+  emit('reply', replyBody.value)
+  replyBody.value = ''
 }
 
 function submitContact() {
@@ -145,7 +141,7 @@ function submitContact() {
         class="min-h-24 max-h-64 overflow-y-auto rounded-md border border-(--ui-border)"
       />
       <div class="flex justify-end">
-        <UButton label="Send" icon="i-lucide-send" size="sm" :loading="sending" @click="submitReply" />
+        <UButton label="Send" icon="i-lucide-send" size="sm" :loading="props.sending" :disabled="props.sending" @click="submitReply" />
       </div>
     </footer>
 

@@ -21,6 +21,7 @@ const { users: assignees } = useInboxAssignees()
 
 const toast = useToast()
 const showCompose = ref(false)
+const replying = ref(false)
 
 function open(id: string) {
   router.push(withQuery(inboxPath(`/inbox/${id}`)))
@@ -31,21 +32,30 @@ function withQuery(path: string) {
 }
 
 async function onPatch(body: { status?: string, assignedUserId?: string | null, needsReview?: boolean }) {
+  const wasSpam = thread.value?.conversation.status === 'spam'
   try {
     await patch(body)
     await refresh()
+    if (body.status === 'spam') {
+      toast.add({ title: 'Marked as spam', icon: 'i-lucide-shield-ban', color: 'success' })
+    } else if (wasSpam && body.status) {
+      toast.add({ title: 'Removed from spam', icon: 'i-lucide-shield-check', color: 'success' })
+    }
   } catch (err) {
     toast.add({ title: 'Update failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
   }
 }
 
 async function onReply(body: string) {
+  replying.value = true
   try {
     await reply(body)
     await refresh()
     toast.add({ title: 'Reply queued', icon: 'i-lucide-send', color: 'success' })
   } catch (err) {
     toast.add({ title: 'Reply failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  } finally {
+    replying.value = false
   }
 }
 
@@ -90,6 +100,7 @@ async function onCreateContact(name: string) {
           v-if="thread"
           :thread="thread"
           :assignees="assignees"
+          :sending="replying"
           @patch="onPatch"
           @reply="onReply"
           @create-contact="onCreateContact"

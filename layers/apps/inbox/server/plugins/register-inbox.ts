@@ -1,5 +1,6 @@
 import { registerPermissions } from '#core/server/utils/permissions-registry'
 import { registerDefaultGrants } from '#core/server/utils/default-grants-registry'
+import { registerStaticRole } from '#core/server/utils/roles-registry'
 import { registerApp } from '#core/server/utils/app-registry'
 import { registerNavItem } from '#core/server/utils/nav-registry'
 import { registerSetting } from '#core/server/utils/settings-registry'
@@ -18,6 +19,16 @@ import {
 export default defineNitroPlugin(() => {
   registerPermissions(INBOX_PERMISSIONS, INBOX_PERMISSION_META)
   registerDefaultGrants('inbox', INBOX_DEFAULT_GRANTS)
+
+  // A ready-made role so an org can hand a non-admin the whole inbox in one
+  // assignment instead of assembling a custom role or per-user grants.
+  registerStaticRole({
+    key: 'inbox_agent',
+    name: 'Inbox Agent',
+    description: 'Handles the shared email inbox — read, triage, compose, and reply.',
+    permissions: [...INBOX_PERMISSIONS],
+    source: 'inbox'
+  })
 
   // Per-org settings (core_settings overrides; these are the code defaults).
   const config = useRuntimeConfig()

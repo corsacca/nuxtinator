@@ -24,7 +24,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: 'Attachment fetch failed' })
   }
 
-  const safeName = (attachment.filename || 'attachment').replace(/["\r\n]/g, '')
+  // Strip quotes, CR/LF, AND backslashes (a trailing backslash would escape
+  // the closing quote of the quoted-string header) and bound the length.
+  const safeName = (attachment.filename || 'attachment').replace(/[\\"\r\n]/g, '_').slice(0, 200)
   setResponseHeaders(event, {
     'Content-Type': 'application/octet-stream',
     'Content-Disposition': `attachment; filename="${safeName}"`,

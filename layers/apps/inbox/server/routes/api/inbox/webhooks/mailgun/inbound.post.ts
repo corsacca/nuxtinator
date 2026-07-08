@@ -252,7 +252,7 @@ export default defineEventHandler(async (event) => {
       const outcome: 'contact' | 'held' = senderIsCounterparty ? 'contact' : 'held'
 
       const looksAutoReply = inboxIsAutoResponderOrBounce(headers, fromEmail)
-      const isVacationReply = outcome === 'contact' && inboxIsVacationAutoReply(headers, fromEmail)
+      const isVacationReply = inboxIsVacationAutoReply(headers, fromEmail)
 
       const stored = await inboxCreateMessageIfNew(tx, {
         conversationId: conversation.id,
@@ -357,9 +357,12 @@ export default defineEventHandler(async (event) => {
         }
       } else {
         // held
-        if (a.looksAutoReply) {
-          // An auto-responder from an unrecognized sender is noise, not an
-          // inquiry — close quietly, don't flag or notify.
+        if (a.isVacationReply) {
+          // A vacation / OOO auto-reply from an unrecognized sender is noise,
+          // not an inquiry — close quietly, don't flag or notify. A DSN or
+          // list/bulk message still lands held + needs-review + notify so a
+          // human sees it (bounces reaching the inbound route are worth
+          // surfacing; they normally arrive via the delivery webhook instead).
           await inboxUpdateConversationStatus(tx, a.conversation.id, 'closed')
         } else {
           await inboxSetNeedsReview(tx, a.conversation.id, true)
@@ -368,7 +371,7 @@ export default defineEventHandler(async (event) => {
       }
 
       const notify
-        = (a.outcome === 'held' && !a.looksAutoReply)
+        = (a.outcome === 'held' && !a.isVacationReply)
           || (a.outcome === 'contact' && !a.isVacationReply)
       if (notify) {
         await inboxNotifyNewMessage(tx, {
@@ -380,6 +383,18 @@ export default defineEventHandler(async (event) => {
           held: a.outcome === 'held'
         })
       }
+
+      // Audit trail (system actor — no session). A new-conversation origin row
+      // followed by the per-inbound outcome; both explain how a thread grew.
+      if (a.isNewConversation) {
+        await inboxLogConversationEvent(tx, a.conversation.id, 'inbox_conversation_created', 'Conversation opened', {
+          extra: { source: 'inbound_email', recipient }
+        })
+      }
+      const autoReplyNote = a.isVacationReply ? ', auto-reply → closed' : ''
+      await inboxLogConversationEvent(tx, a.conversation.id, 'inbox_inbound_received', `Inbound email (${a.outcome}${autoReplyNote})`, {
+        extra: { outcome: a.outcome, authenticated: a.authenticated, autoReply: a.looksAutoReply, vacation: a.isVacationReply }
+      })
 
       return await getInboxSettings(tx)
     })

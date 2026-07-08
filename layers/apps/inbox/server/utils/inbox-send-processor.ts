@@ -91,7 +91,7 @@ async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend |
     fromAddress: inboxBuildFromAddress({ displayName: senderName, contactAddress: settings.contactAddress }),
     replyTo: inboxBuildReplyAddress(conversation.reply_token, settings.contactAddress),
     subject,
-    html: inboxRenderMessageEmail({ bodyHtml, subject }),
+    html: inboxRenderMessageEmail({ bodyHtml: inboxConstrainImages(bodyHtml), subject }),
     text: bodyText || undefined,
     inReplyTo: lastInbound?.email_message_id ?? undefined
   }

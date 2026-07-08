@@ -13,6 +13,25 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;')
 }
 
+// Force a size cap onto every <img> in outbound HTML. Email clients ignore
+// <style>/external CSS, so the constraint has to live inline on each tag. Runs
+// over the fully assembled body + quoted history, so it also caps images the
+// contact sent that we quote back to them. The cap is appended LAST inside any
+// existing style attribute so it wins over a sender-supplied width/height.
+export function inboxConstrainImages(html: string): string {
+  const cap = 'max-width:100%;max-height:480px;height:auto;'
+  return html.replace(/<img\b([^>]*)>/gi, (_tag, rawAttrs: string) => {
+    const selfClose = /\/\s*$/.test(rawAttrs)
+    // Drop a trailing self-close slash and any surrounding whitespace so the
+    // injected style joins with a single space.
+    const attrs = rawAttrs.replace(/\s*\/?\s*$/, '')
+    const styled = /\bstyle\s*=\s*("|')/i.test(attrs)
+      ? attrs.replace(/(\bstyle\s*=\s*)("|')([\s\S]*?)\2/i, (_m, pre, quote, val) => `${pre}${quote}${val};${cap}${quote}`)
+      : `${attrs} style="${cap}"`
+    return `<img${styled}${selfClose ? ' /' : ''}>`
+  })
+}
+
 export function inboxRenderMessageEmail(opts: {
   bodyHtml: string
   subject?: string

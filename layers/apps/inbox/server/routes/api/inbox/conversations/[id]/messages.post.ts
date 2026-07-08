@@ -1,8 +1,9 @@
 // POST /api/inbox/conversations/:id/messages
 // Body: { body } (HTML). Queues a reply on the conversation: the message row
 // lands with status 'queued' and the send sweep delivers it. Replying
-// auto-assigns an unassigned conversation to the sender and flips the
-// conversation to 'pending' (waiting on the contact).
+// auto-assigns an unassigned conversation to the sender, flips the
+// conversation to 'pending' (waiting on the contact), and clears the
+// needs-review flag (a reply resolves any pending held-message review).
 
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
@@ -42,7 +43,12 @@ export default defineEventHandler(async (event) => {
 
     await inboxAssignIfUnassigned(tx, conversation.id, ctx.userId)
     await inboxUpdateConversationStatus(tx, conversation.id, 'pending')
+    await inboxSetNeedsReview(tx, conversation.id, false)
     await inboxTouchLastMessage(tx, conversation.id, message.created_at, 'outbound')
+    await inboxLogConversationEvent(tx, conversation.id, 'inbox_reply_queued', 'Reply queued', {
+      userId: ctx.userId,
+      extra: { messageId: message.id, direction: 'outbound' }
+    })
 
     return { id: message.id, status: message.status }
   })

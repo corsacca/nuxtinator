@@ -5,11 +5,19 @@
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
 
+// Query flags arrive as strings; z.coerce.boolean() treats ANY non-empty
+// string as true (so ?held=false → true). Parse leniently: only 'true'/'1'
+// are true, everything else false, absent stays undefined (no filter).
+const boolParam = z
+  .string()
+  .optional()
+  .transform(v => (v === undefined ? undefined : v === 'true' || v === '1'))
+
 const Query = z.object({
   status: z.enum(['open', 'pending', 'closed', 'spam']).optional(),
-  held: z.coerce.boolean().optional(),
-  unassigned: z.coerce.boolean().optional(),
-  mine: z.coerce.boolean().optional(),
+  held: boolParam,
+  unassigned: boolParam,
+  mine: boolParam,
   assigned_user_id: z.string().uuid().optional(),
   q: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),

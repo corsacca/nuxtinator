@@ -2,7 +2,8 @@
 // Body: { status?, assignedUserId?, needsReview? }. Triage mutations:
 // - closing clears the review flag (reviewed by definition)
 // - entering 'spam' blocklists the sender and closes their threads; leaving
-//   'spam' un-blocklists (the status transition IS the blocklist toggle)
+//   'spam' un-blocklists and clears the review flag (the status transition IS
+//   the blocklist toggle)
 // - assignee must hold inbox.access (a conversation can't be assigned to
 //   someone who can't open it)
 
@@ -36,6 +37,12 @@ export default defineEventHandler(async (event) => {
         }
       }
       await inboxAssignConversation(tx, id, patch.assignedUserId)
+      await inboxLogConversationEvent(
+        tx, id,
+        patch.assignedUserId ? 'inbox_assigned' : 'inbox_unassigned',
+        patch.assignedUserId ? 'Assigned' : 'Unassigned',
+        { userId: ctx.userId, extra: { assignedUserId: patch.assignedUserId } }
+      )
     }
 
     if (patch.status && patch.status !== conversation.status) {
@@ -47,12 +54,28 @@ export default defineEventHandler(async (event) => {
       if (patch.status === 'spam') {
         await inboxBlockChannel(tx, conversation.channel_id, ctx.userId)
         await inboxCloseForChannelAsSpam(tx, conversation.channel_id)
+        // Log the sender's address (not the FK): the blocklist row — with its
+        // created_by — is deleted on unblock, so this is the surviving trail.
+        const channel = await tx.selectFrom('crm_channels').select('value').where('id', '=', conversation.channel_id).executeTakeFirst()
+        await inboxLogConversationEvent(tx, id, 'inbox_spam_marked', 'Marked as spam', {
+          userId: ctx.userId, extra: { channel: channel?.value ?? null }
+        })
       } else if (conversation.status === 'spam') {
         await inboxUnblockChannel(tx, conversation.channel_id)
         await inboxReopenFromSpam(tx, conversation.channel_id)
         await inboxUpdateConversationStatus(tx, id, patch.status)
+        // Leaving spam clears the review flag: a held-then-spammed thread must
+        // not keep inflating the (status-independent) needs-review count.
+        await inboxSetNeedsReview(tx, id, false)
+        const channel = await tx.selectFrom('crm_channels').select('value').where('id', '=', conversation.channel_id).executeTakeFirst()
+        await inboxLogConversationEvent(tx, id, 'inbox_spam_unmarked', 'Removed from spam', {
+          userId: ctx.userId, extra: { channel: channel?.value ?? null, status: patch.status }
+        })
       } else {
         await inboxUpdateConversationStatus(tx, id, patch.status)
+        await inboxLogConversationEvent(tx, id, 'inbox_status_changed', `Status → ${patch.status}`, {
+          userId: ctx.userId, extra: { from: conversation.status, to: patch.status }
+        })
       }
       if (patch.status === 'closed') {
         await inboxSetNeedsReview(tx, id, false)

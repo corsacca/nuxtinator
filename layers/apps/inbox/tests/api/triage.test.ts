@@ -177,6 +177,26 @@ describe('triage API', () => {
     expect(detail.conversation.assignedUserId).toBeTruthy()
   })
 
+  it('records a conversation activity trail readable via the activity endpoint', async () => {
+    const { opts, domain } = await createInboxOrgWith(sql)
+    const res = await postInbound({ recipient: `hello@${domain}`, from: `A <${uniqueSender('trail')}>` })
+    const id = res.body.conversation_id as string
+
+    await $fetch(`/api/inbox/conversations/${id}`, { method: 'PATCH', body: { status: 'closed' }, ...opts })
+
+    const trail = await $fetch<{ items: Array<{ eventType: string, message: string | null }> }>(
+      `/api/inbox/conversations/${id}/activity`, opts
+    )
+    const types = trail.items.map(i => i.eventType)
+    // Inbound created two origin rows; the triage patch added a status row.
+    expect(types).toContain('inbox_conversation_created')
+    expect(types).toContain('inbox_inbound_received')
+    expect(types).toContain('inbox_status_changed')
+    // Newest-first: the status change is the most recent event.
+    expect(trail.items[0]!.eventType).toBe('inbox_status_changed')
+    expect(trail.items[0]!.message).toBe('Status → closed')
+  })
+
   it('denies triage across orgs and to roles without inbox grants', async () => {
     const { domain } = await createInboxOrgWith(sql)
     const res = await postInbound({ recipient: `hello@${domain}`, from: `J <${uniqueSender()}>` })

@@ -60,6 +60,10 @@ export default defineEventHandler(async (event) => {
       bodyText: html.replace(/<[^>]*>/g, '')
     })
     await inboxTouchLastMessage(tx, conversation.id, message.created_at, 'outbound')
+    await inboxLogConversationEvent(tx, conversation.id, 'inbox_conversation_created', 'Conversation created', {
+      userId: ctx.userId,
+      extra: { source: 'staff', recipient: toEmail }
+    })
 
     return { id: conversation.id, messageId: message.id }
   })
