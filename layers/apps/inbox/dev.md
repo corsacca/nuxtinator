@@ -153,14 +153,31 @@ path). Tests: `bun run test -- --project inbox`. The app seeds into the catalog 
   table; alias management (admin) vs own-signature (inbox.send); `GET /api/inbox/me`;
   personal From snapshot + signature at queue time; alias-routed inbound auto-assign;
   composer From selector + signature notice + self-service identity editor.
+- **Internal notes + activity feed** (Phase 7): `inbox_comments` (plain text,
+  keyset-paginated, `edited_at` marker, own-or-admin moderation), @mention notify via an
+  explicit id list, a woven "Notes & Activity" tab, and assignee notification enrichment
+  (reply-vs-message verb, excerpt, sender, attachment list).
+- **Suppression admin + deliverability hardening** (Phase 8): org-wide suppression list
+  + admin un-suppress (bypasses CRM's manual-only clear via additive
+  `forceClearSuppression`); delivery webhook insert-or-refresh + reason upgrade
+  (`recordDeliverySuppression`) + multi-org suppression/unsubscribe fanout.
+- **Public contact-form endpoint** (Phase 9): `POST /api/inbox/contact`, API-key-gated
+  (the key routes to the org via a scope scan, `contact_form_api_key` setting), plus the
+  `#inbox/server` barrel exposing the conversation-creation + channel-claim primitives.
+- **S3 lifecycle cleanup** (Phase 2d): GDPR conversation purge
+  (`/conversations/:id/purge`, admin) deleting attachments + raw `.eml`, and
+  org-offboarding key collectors exported for a tenancy org-delete hook.
 
 ## Deferred (planned, not built)
 
-Conversation notes / merged activity feed + @mentions + notification enrichment
-(Phase 7) · suppression admin list + un-suppress + bounce write-path hardening
-(Phase 8) · public contact-form endpoint + `#inbox/server` barrel + double-opt-in
-consent (Phase 9) · S3 lifecycle cleanup on org-deletion / GDPR purge (Phase 2d) ·
-AI drafting/grounding/knowledge base as a shared `@nuxtinator/ai` layer on OpenRouter
-+ inbox consumption (Phase 10) · staff reply-by-email signed addresses
-(`contact+<token>.<exp>.<sig>@`; the recipient parser already tolerates the shape) ·
-i18n + localized courtesy mail (Phase 11, deferred to core-first i18n).
+- **AI drafting/grounding/knowledge base** (Phase 10) — a shared `@nuxtinator/ai` layer
+  on OpenRouter (`#ai`/`#ai/server`, admin model enablement) + inbox consumption
+  (grounding store/sync, KB, `ai_*` columns, draft-reply generation with forced
+  tool-calls, AI-draft UI). The largest phase; needs `OPENROUTER_API_KEY` wired for real
+  verification. Buildable as its own focused effort.
+- **Smaller deferred items rolled out of earlier phases:** per-user notification
+  preferences (a core-level prefs change, Phase 7) · double-opt-in consent verification
+  (reissue-and-overwrite on the dormant `crm_channels.verification_token_*` columns,
+  Phase 9) · `bounce_count` history column + contact-record "Not receiving" badge
+  (Phase 8, both need CRM-side changes) · staff reply-by-email signed addresses · i18n +
+  localized courtesy mail (Phase 11, deferred to core-first i18n).
