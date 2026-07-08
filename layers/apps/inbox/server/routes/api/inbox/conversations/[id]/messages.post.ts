@@ -11,13 +11,17 @@
 // does none of that — it only stores text.
 
 import { z } from 'zod'
+import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
 import type { InboxMessageRow } from '../../../../../utils/inbox-messages'
 
 const Body = z.object({
   body: z.string().max(500_000).optional(),
   saveDraft: z.boolean().optional(),
-  draftId: z.string().uuid().optional()
+  draftId: z.string().uuid().optional(),
+  // Which From address a send goes out on. 'personal' uses the sender's alias
+  // (with a hard fallback to 'contact' when they have none); default 'contact'.
+  fromIdentity: z.enum(['personal', 'contact']).optional()
 })
 
 export default defineEventHandler(async (event) => {
@@ -87,6 +91,23 @@ export default defineEventHandler(async (event) => {
         bodyHtml: html,
         bodyText: text
       })
+    }
+
+    // From identity: snapshot the personal From onto the row at queue time
+    // (an admin removing the alias later can't change an already-queued send),
+    // and bake the signature into body_html only. Personal with no alias falls
+    // back to the contact address (from_email stays null → resolved at send).
+    if (parsed.data.fromIdentity === 'personal') {
+      const settings = await getInboxSettings(tx)
+      const { personalFrom, signature } = await inboxResolvePersonalIdentity(tx, ctx.userId, settings)
+      if (personalFrom) {
+        const sig = signature ? `<br><br>${inboxSanitizeEmailHtml(signature)}` : ''
+        await tx
+          .updateTable('inbox_messages')
+          .set({ from_email: personalFrom, body_html: sql`COALESCE(body_html, '') || ${sig}`, updated_at: new Date() })
+          .where('id', '=', message.id)
+          .execute()
+      }
     }
 
     await inboxAssignIfUnassigned(tx, conversation.id, ctx.userId)

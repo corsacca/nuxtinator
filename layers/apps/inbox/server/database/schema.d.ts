@@ -89,11 +89,36 @@ export interface InboxBlockedSendersTable {
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
+// Shared, org-wide reply snippets. Single-body HTML (no per-locale variants
+// until core grows i18n). created_by is SET NULL so a snippet survives the
+// teammate who authored it.
+export interface InboxCannedResponsesTable {
+  id: Generated<string>
+  title: string
+  body_html: Generated<string>
+  created_by: string | null
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+  updated_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
+// Per-user sending identity: an optional routable alias and an HTML signature.
+// One row per user (per org in multi mode).
+export interface InboxIdentitiesTable {
+  id: Generated<string>
+  user_id: string
+  alias: string | null
+  signature: string | null
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+  updated_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
 declare global {
   interface NuxtinatorDatabaseTables {
     inbox_conversations: InboxConversationsTable
     inbox_messages: InboxMessagesTable
     inbox_attachments: InboxAttachmentsTable
     inbox_blocked_senders: InboxBlockedSendersTable
+    inbox_canned_responses: InboxCannedResponsesTable
+    inbox_identities: InboxIdentitiesTable
   }
 }

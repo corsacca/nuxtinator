@@ -44,6 +44,7 @@ export interface InboxThread {
     needsReview: boolean
     source: string
     counterpartyName: string | null
+    tags: string[]
     lastMessageAt: string | null
     createdAt: string
   }
@@ -141,13 +142,14 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     await refresh()
   }
 
-  // Send: a fresh queued reply, or (with draftId) promote that draft.
-  async function reply(body: string, draftId?: string) {
+  // Send: a fresh queued reply, or (with draftId) promote that draft. The From
+  // identity (personal alias vs shared contact address) rides the send.
+  async function reply(body: string, draftId?: string, fromIdentity?: 'personal' | 'contact') {
     const id = toValue(conversationId)
     if (!id) return
     await $fetch(`/api/inbox/conversations/${id}/messages`, {
       method: 'POST',
-      body: { body, ...(draftId ? { draftId } : {}) }
+      body: { body, ...(draftId ? { draftId } : {}), ...(fromIdentity ? { fromIdentity } : {}) }
     })
     await refresh()
   }

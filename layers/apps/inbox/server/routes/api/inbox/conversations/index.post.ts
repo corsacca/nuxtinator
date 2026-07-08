@@ -6,6 +6,7 @@
 // send sweep.
 
 import { z } from 'zod'
+import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
 import { claimChannel } from '#crm/server'
 
@@ -13,7 +14,8 @@ const Body = z.object({
   toEmail: z.string().email().optional(),
   channelId: z.string().uuid().optional(),
   subject: z.string().min(1).max(500),
-  body: z.string().min(1).max(500_000)
+  body: z.string().min(1).max(500_000),
+  fromIdentity: z.enum(['personal', 'contact']).optional()
 }).refine(b => b.toEmail || b.channelId, { message: 'toEmail or channelId is required' })
 
 export default defineEventHandler(async (event) => {
@@ -49,14 +51,27 @@ export default defineEventHandler(async (event) => {
       assignedUserId: ctx.userId,
       source: 'staff'
     })
+    // Snapshot the personal From address + bake the signature at queue time
+    // (personal only; no alias falls back to the shared contact address).
+    let fromEmail: string | null = null
+    let bodyHtml = html
+    if (parsed.data.fromIdentity === 'personal') {
+      const { personalFrom, signature } = await inboxResolvePersonalIdentity(tx, ctx.userId, { inboundDomain: (await getInboxSettings(tx)).inboundDomain })
+      if (personalFrom) {
+        fromEmail = personalFrom
+        if (signature) bodyHtml = `${html}<br><br>${inboxSanitizeEmailHtml(signature)}`
+      }
+    }
+
     const message = await inboxCreateMessage(tx, {
       conversationId: conversation.id,
       direction: 'outbound',
       status: 'queued',
       senderUserId: ctx.userId,
+      fromEmail,
       toEmail,
       subject: parsed.data.subject,
-      bodyHtml: html,
+      bodyHtml,
       bodyText: html.replace(/<[^>]*>/g, '')
     })
     await inboxTouchLastMessage(tx, conversation.id, message.created_at, 'outbound')

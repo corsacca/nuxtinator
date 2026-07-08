@@ -235,13 +235,33 @@ export default defineEventHandler(async (event) => {
         // Reuse a recent message-less shell for this sender: it only exists
         // because a prior inbound failed after the conversation committed, so
         // provider retries converge on one conversation.
-        conversation = await inboxGetRecentEmptyForChannel(tx, channel.id)
-          ?? await inboxCreateConversation(tx, {
+        const reused = await inboxGetRecentEmptyForChannel(tx, channel.id)
+        if (reused) {
+          conversation = reused
+        } else {
+          // Alias routing: tokenless mail to <alias>@domain (a local part that
+          // is neither the shared contact address nor the bounce VERP)
+          // auto-assigns the fresh conversation to that alias's owner — turning
+          // the staff alert from a broadcast into an assignee-immediate one.
+          // reply-token beats alias beats References, so this only runs when no
+          // token matched. It applies to fresh conversations only, never the
+          // reused empty shell above.
+          let assignedUserId: string | null = null
+          if (!parsedRecipient.token && !inboxIsBounceRecipient(parsedRecipient)) {
+            const settings = await getInboxSettings(tx)
+            const contactBase = inboxParseRecipient(settings.contactAddress)?.base ?? 'contact'
+            if (parsedRecipient.base !== contactBase) {
+              assignedUserId = await inboxResolveAliasUser(tx, parsedRecipient.base)
+            }
+          }
+          conversation = await inboxCreateConversation(tx, {
             channelId: channel.id,
             subject: subject || null,
             source: 'inbound_email',
-            counterpartyName: fromName
+            counterpartyName: fromName,
+            assignedUserId
           })
+        }
       }
 
       // Classification: mail that reached an existing conversation with a

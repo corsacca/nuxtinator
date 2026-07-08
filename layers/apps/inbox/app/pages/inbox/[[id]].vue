@@ -3,6 +3,8 @@
 // Selection rides the route (/inbox/:id) so threads are linkable; the org
 // prefix on internal navigation is preserved by useInboxPath. All list state
 // (scope/status/q) lives in the URL query.
+import type { InboxTagColor } from '../../composables/useInboxTags'
+
 definePageMeta({ middleware: 'auth' })
 
 const route = useRoute()
@@ -15,14 +17,30 @@ const selectedId = computed(() => {
   return id || null
 })
 
-const { items, counts, pending, error, scope, status, q, refresh } = useInboxConversations()
-const { thread, error: threadError, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact } = useInboxThread(selectedId)
+const { items, counts, tagCounts, pending, error, scope, status, q, tag, refresh } = useInboxConversations()
+const { thread, error: threadError, refresh: refreshThread, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact } = useInboxThread(selectedId)
 const { users: assignees } = useInboxAssignees()
+const { palette, createTag, deleteTag, setConversationTags } = useInboxTags()
+const { items: cannedItems, create: createCanned, update: updateCanned, remove: removeCanned } = useInboxCanned()
+const { me, saveIdentity } = useInboxMe()
+const { hasPermission } = usePermissions()
 
 const toast = useToast()
 const showCompose = ref(false)
+const showCanned = ref(false)
+const showIdentity = ref(false)
 const replying = ref(false)
 const currentDraftId = ref<string | null>(null)
+
+// The canned-response manager is a compose/reply-authority tool.
+const canManageCanned = computed(() => hasPermission('inbox.send'))
+
+// The middle-pane heading follows the active folder: a tag name when one is
+// selected, otherwise the scope.
+const viewLabel = computed(() => {
+  if (tag.value) return palette.value.find(t => t.slug === tag.value)?.name ?? tag.value
+  return scope.value === 'held' ? 'Needs review' : scope.value
+})
 
 function open(id: string) {
   router.push(withQuery(inboxPath(`/inbox/${id}`)))
@@ -47,10 +65,10 @@ async function onPatch(body: { status?: string, assignedUserId?: string | null, 
   }
 }
 
-async function onReply(body: string, draftId?: string) {
+async function onReply(body: string, draftId?: string, fromIdentity?: 'personal' | 'contact') {
   replying.value = true
   try {
-    await reply(body, draftId)
+    await reply(body, draftId, fromIdentity)
     await refresh()
     toast.add({ title: 'Reply queued', icon: 'i-lucide-send', color: 'success' })
   } catch (err) {
@@ -110,17 +128,112 @@ async function onCreateContact(name: string) {
     toast.add({ title: 'Contact creation failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
   }
 }
+
+// Tag mutations refresh both panes: the thread (its chips/picker state) and the
+// list (row chips + rail tag counts change server-side).
+async function onSetTags(slugs: string[]) {
+  const id = selectedId.value
+  if (!id) return
+  try {
+    await setConversationTags(id, slugs)
+    await Promise.all([refreshThread(), refresh()])
+  } catch (err) {
+    toast.add({ title: 'Tagging failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
+async function onCreateTag(name: string, color: InboxTagColor) {
+  const id = selectedId.value
+  if (!id) return
+  try {
+    // Create-or-return, then assign to the open conversation in one step.
+    const created = await createTag(name, color)
+    const next = [...(thread.value?.conversation.tags ?? []), created.slug]
+    await setConversationTags(id, next)
+    await Promise.all([refreshThread(), refresh()])
+  } catch (err) {
+    toast.add({ title: 'Create tag failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
+async function onDeleteTag(slug: string) {
+  try {
+    // Server strips the slug from every conversation; refresh both panes so no
+    // ghost chips linger, and drop the tag filter if it was the active folder.
+    await deleteTag(slug)
+    if (tag.value === slug) tag.value = ''
+    await Promise.all([refreshThread(), refresh()])
+  } catch (err) {
+    toast.add({ title: 'Delete tag failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
+async function onCreateCanned(title: string, bodyHtml: string) {
+  try {
+    await createCanned(title, bodyHtml)
+    toast.add({ title: 'Canned response saved', icon: 'i-lucide-save', color: 'success' })
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
+async function onUpdateCanned(id: string, title: string, bodyHtml: string) {
+  try {
+    await updateCanned(id, { title, bodyHtml })
+    toast.add({ title: 'Canned response updated', icon: 'i-lucide-save', color: 'success' })
+  } catch (err) {
+    toast.add({ title: 'Update failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
+async function onDeleteCanned(id: string) {
+  try {
+    await removeCanned(id)
+    toast.add({ title: 'Canned response deleted', icon: 'i-lucide-trash-2', color: 'success' })
+  } catch (err) {
+    toast.add({ title: 'Delete failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
+async function onSaveIdentity(patch: { alias?: string | null, signature?: string | null }) {
+  try {
+    await saveIdentity(patch)
+    toast.add({ title: 'Identity saved', icon: 'i-lucide-save', color: 'success' })
+  } catch (err) {
+    toast.add({ title: 'Save failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
 </script>
 
 <template>
   <div class="flex h-[calc(100vh-57px)] -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
-    <InboxRail v-model:scope="scope" :counts="counts" />
+    <InboxRail v-model:scope="scope" v-model:tag="tag" :counts="counts" :tags="palette" :tag-counts="tagCounts" />
 
     <section class="flex-1 flex min-w-0 overflow-hidden">
       <div class="flex flex-col min-h-0" :class="selectedId ? 'hidden lg:flex' : 'flex w-full lg:w-auto'">
         <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-(--ui-border)">
-          <span class="text-sm font-medium text-(--ui-text-muted) capitalize">{{ scope === 'held' ? 'Needs review' : scope }}</span>
-          <UButton label="New email" icon="i-lucide-pen-line" size="xs" @click="showCompose = true" />
+          <span class="text-sm font-medium text-(--ui-text-muted) capitalize">{{ viewLabel }}</span>
+          <div class="flex items-center gap-1.5">
+            <UButton
+              v-if="me"
+              label="Identity"
+              icon="i-lucide-signature"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              @click="showIdentity = true"
+            />
+            <UButton
+              v-if="canManageCanned"
+              label="Canned"
+              icon="i-lucide-message-square-text"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              @click="showCanned = true"
+            />
+            <UButton label="New email" icon="i-lucide-pen-line" size="xs" @click="showCompose = true" />
+          </div>
         </div>
         <InboxConversationList
           v-model:status="status"
@@ -130,6 +243,7 @@ async function onCreateContact(name: string) {
           :pending="pending"
           :scope="scope"
           :selected-id="selectedId"
+          :palette="palette"
           class="flex-1 min-h-0"
           @select="open"
         />
@@ -144,6 +258,9 @@ async function onCreateContact(name: string) {
           v-model:draft-id="currentDraftId"
           :thread="thread"
           :assignees="assignees"
+          :palette="palette"
+          :canned="cannedItems"
+          :me="me"
           :sending="replying"
           :upload-inline-image="uploadInlineImage"
           @patch="onPatch"
@@ -153,6 +270,9 @@ async function onCreateContact(name: string) {
           @attach-files="onAttachFiles"
           @remove-attachment="onRemoveAttachment"
           @create-contact="onCreateContact"
+          @set-tags="onSetTags"
+          @create-tag="onCreateTag"
+          @delete-tag="onDeleteTag"
         />
         <UEmpty
           v-else-if="threadError"
@@ -176,5 +296,16 @@ async function onCreateContact(name: string) {
     <UAlert v-if="error" color="error" variant="subtle" :title="error" class="absolute bottom-4 right-4 w-80" />
 
     <InboxComposeModal v-model:open="showCompose" @created="open" />
+
+    <InboxCannedManager
+      v-if="canManageCanned"
+      v-model:open="showCanned"
+      :items="cannedItems"
+      @create="onCreateCanned"
+      @update="onUpdateCanned"
+      @delete="onDeleteCanned"
+    />
+
+    <InboxIdentityModal v-if="me" v-model:open="showIdentity" :me="me" @save="onSaveIdentity" />
   </div>
 </template>

@@ -5,22 +5,31 @@
 // closes all their threads.
 import type { InboxThread, InboxThreadDraft } from '../../composables/useInboxThread'
 import type { InboxAssignee } from '../../composables/useInboxThread'
+import type { InboxTag, InboxTagColor } from '../../composables/useInboxTags'
+import type { InboxCannedResponse } from '../../composables/useInboxCanned'
+import type { InboxMe } from '../../composables/useInboxMe'
 
 const props = defineProps<{
   thread: InboxThread
   assignees: InboxAssignee[]
+  palette: InboxTag[]
+  canned: InboxCannedResponse[]
+  me: InboxMe | null
   sending?: boolean
   uploadInlineImage?: (file: File) => Promise<string>
 }>()
 
 const emit = defineEmits<{
   patch: [body: { status?: string, assignedUserId?: string | null, needsReview?: boolean }]
-  reply: [body: string, draftId?: string]
+  reply: [body: string, draftId?: string, fromIdentity?: 'personal' | 'contact']
   saveDraft: [body: string]
   deleteDraft: [draftId: string]
   attachFiles: [files: File[], body: string]
   removeAttachment: [attachmentId: string]
   createContact: [name: string]
+  setTags: [slugs: string[]]
+  createTag: [name: string, color: InboxTagColor]
+  deleteTag: [slug: string]
 }>()
 
 // The draft the composer is currently editing (null = a fresh reply). Owned by
@@ -34,11 +43,34 @@ const confirmSpam = ref(false)
 const contactName = ref('')
 const showCreateContact = ref(false)
 
+// From identity selection — offered only when the agent has a personal alias.
+const fromOptions = computed(() => {
+  const opts: { label: string, value: 'personal' | 'contact' }[] = []
+  if (props.me?.personalFrom) opts.push({ label: `You · ${props.me.personalFrom}`, value: 'personal' })
+  opts.push({ label: `Shared · ${props.me?.contactAddress ?? 'contact address'}`, value: 'contact' })
+  return opts
+})
+// Continuity heuristic: default to the shared address, unless a prior non-draft
+// outbound in this thread already went out on a personal address.
+const defaultFromIdentity = computed<'personal' | 'contact'>(() => {
+  const contact = props.me?.contactAddress?.toLowerCase()
+  const priorPersonal = props.thread.messages.some(m =>
+    m.direction === 'outbound' && m.status !== 'draft' && m.fromEmail && contact && m.fromEmail.toLowerCase() !== contact
+  )
+  return priorPersonal && props.me?.personalFrom ? 'personal' : 'contact'
+})
+const fromIdentity = ref<'personal' | 'contact'>('contact')
+const signatureNotice = computed(() => {
+  if (fromIdentity.value !== 'personal') return 'no signature'
+  return props.me?.signature ? 'your signature is added' : 'no signature set'
+})
+
 watch(() => props.thread.conversation.id, () => {
   replyBody.value = ''
   currentDraftId.value = null
   showCreateContact.value = false
-})
+  fromIdentity.value = defaultFromIdentity.value
+}, { immediate: true })
 
 function draftPreview(d: InboxThreadDraft): string {
   const text = (d.bodyText || d.bodyHtml || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -106,6 +138,20 @@ async function onImagePicked(e: Event) {
   }
 }
 
+// Canned responses append into the composer (never replace). Insert through
+// the editor so the HTML renders as markup; a leading <br> separates it from
+// existing content. Falls back to the v-model string if the editor handle
+// isn't mounted yet.
+function insertCanned(bodyHtml: string) {
+  const ed = replyEditor.value?.editor as unknown as { isEmpty?: boolean, chain: () => { focus: (pos?: string) => { insertContent: (c: string) => { run: () => void } } } } | undefined
+  if (!ed) {
+    replyBody.value = replyBody.value ? `${replyBody.value}<br>${bodyHtml}` : bodyHtml
+    return
+  }
+  const prefix = ed.isEmpty ? '' : '<br>'
+  ed.chain().focus('end').insertContent(prefix + bodyHtml).run()
+}
+
 // reka-ui selects reject '' as an item value — the unassigned sentinel is a
 // real string swapped back to null on change.
 const UNASSIGNED = '__none__'
@@ -139,7 +185,7 @@ function submitReply() {
   if (props.sending) return
   const body = replyBody.value.trim()
   if (!body || body === '<p></p>') return
-  emit('reply', replyBody.value, currentDraftId.value ?? undefined)
+  emit('reply', replyBody.value, currentDraftId.value ?? undefined, props.me?.personalFrom ? fromIdentity.value : undefined)
   replyBody.value = ''
   currentDraftId.value = null
 }
@@ -198,6 +244,14 @@ function submitContact() {
           color="neutral"
           @click="contactName = thread.conversation.counterpartyName || ''; showCreateContact = true"
         />
+        <InboxTagPicker
+          class="ml-auto"
+          :palette="palette"
+          :selected="thread.conversation.tags"
+          @set-tags="emit('setTags', $event)"
+          @create-tag="(name, color) => emit('createTag', name, color)"
+          @delete-tag="emit('deleteTag', $event)"
+        />
       </div>
     </header>
 
@@ -221,6 +275,11 @@ function submitContact() {
           />
           <UButton icon="i-lucide-x" color="neutral" variant="subtle" aria-label="Discard draft" @click="onDeleteDraft(d)" />
         </UButtonGroup>
+      </div>
+      <div v-if="me?.personalFrom" class="flex items-center gap-2 text-xs">
+        <span class="text-(--ui-text-muted) shrink-0">From:</span>
+        <USelect v-model="fromIdentity" :items="fromOptions" size="xs" class="w-64" />
+        <span class="text-(--ui-text-dimmed) truncate">· {{ signatureNotice }}</span>
       </div>
       <UEditor
         ref="replyEditor"
@@ -255,6 +314,7 @@ function submitContact() {
             @click="pickImage"
           />
           <input ref="imageInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" @change="onImagePicked">
+          <InboxCannedPicker :items="canned" @insert="insertCanned" />
           <UButtonGroup v-for="a in currentDraftAttachments" :key="a.id" size="xs">
             <UButton :label="a.filename || 'attachment'" icon="i-lucide-paperclip" color="neutral" variant="subtle" />
             <UButton icon="i-lucide-x" color="neutral" variant="subtle" aria-label="Remove attachment" @click="emit('removeAttachment', a.id)" />

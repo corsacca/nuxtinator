@@ -153,10 +153,17 @@ async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend |
   const attachmentRefs: OutboundAttachmentRef[] = (await inboxListAttachmentsForMessage(tx, claimed.id))
     .map(a => ({ s3Key: a.s3_key, filename: a.filename, contentType: a.content_type }))
 
+  // From address: the personal alias snapshotted onto the row at queue time,
+  // else the shared contact address. The display name is re-derived here from
+  // the sender's CURRENT display_name (not snapshotted) so a rename shows on
+  // pending sends. Reply-To always stays the contact+<token> address so the
+  // contact's reply threads back regardless of which From we sent on.
+  const fromBase = claimed.from_email || settings.contactAddress
+
   return {
     claimed,
     toEmail,
-    fromAddress: inboxBuildFromAddress({ displayName: senderName, contactAddress: settings.contactAddress }),
+    fromAddress: inboxBuildFromAddress({ displayName: senderName, contactAddress: fromBase }),
     replyTo: inboxBuildReplyAddress(conversation.reply_token, settings.contactAddress),
     subject,
     html: inboxRenderMessageEmail({ bodyHtml: inboxConstrainImages(bodyHtml), subject }),

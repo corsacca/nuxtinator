@@ -138,14 +138,29 @@ locally with a signed multipart POST — the fixture builder in
 path). Tests: `bun run test -- --project inbox`. The app seeds into the catalog as
 `available` — enable it per org (host admin UI or an `org_apps` row).
 
+## Built since the initial port (see PLAN.md phases)
+
+- **Shared drafts + outbound attachments + inline-image CID pipeline** (Phase 2).
+- **Conversation tags** (Phase 3): per-org palette in core_settings, `tags jsonb` on
+  the conversation, rail folders / list chips / picker, cross-status counts + filter.
+- **Canned responses** (Phase 4): `inbox_canned_responses` (single-body), CRUD API,
+  two-pane manager modal + composer picker.
+- **CRM contact-page conversations panel** (Phase 5): a client-side
+  `registerCrmDetailPanel` seam in crm (`#crm` alias) + an inbox app plugin; the panel
+  lists all threads across a contact's channels with inline quick-reply and
+  compose-to-contact; list search now joins CRM record name + sibling channels.
+- **Per-user sending identities/signatures** (Phase 6): `inbox_identities` per-org
+  table; alias management (admin) vs own-signature (inbox.send); `GET /api/inbox/me`;
+  personal From snapshot + signature at queue time; alias-routed inbound auto-assign;
+  composer From selector + signature notice + self-service identity editor.
+
 ## Deferred (planned, not built)
 
-Tags · canned responses · conversation notes/activity feed · shared drafts + outbound
-attachments + inline-image CID pipeline · per-user sending identities/signatures
-(`inbox_identities` per-org table; also restores alias-routed inbound) · staff
-reply-by-email signed addresses (`contact+<token>.<exp>.<sig>@`; the recipient parser
-already tolerates the shape) · contact-form endpoint + `#inbox/server` barrel (for a
-future forms layer) · AI drafting/grounding/knowledge base (copy the context layer's
-anthropic-client adapter; `ai_*` columns in their own migration) · CRM contact-page
-conversations panel (needs a `registerCrmDetailPanel` seam in crm — wait for perms-v2
-to land before touching `[type]/[id].vue`).
+Conversation notes / merged activity feed + @mentions + notification enrichment
+(Phase 7) · suppression admin list + un-suppress + bounce write-path hardening
+(Phase 8) · public contact-form endpoint + `#inbox/server` barrel + double-opt-in
+consent (Phase 9) · S3 lifecycle cleanup on org-deletion / GDPR purge (Phase 2d) ·
+AI drafting/grounding/knowledge base as a shared `@nuxtinator/ai` layer on OpenRouter
++ inbox consumption (Phase 10) · staff reply-by-email signed addresses
+(`contact+<token>.<exp>.<sig>@`; the recipient parser already tolerates the shape) ·
+i18n + localized courtesy mail (Phase 11, deferred to core-first i18n).
