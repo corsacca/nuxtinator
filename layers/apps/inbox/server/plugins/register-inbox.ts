@@ -9,7 +9,8 @@ import {
   INBOX_SETTINGS_NAMESPACE,
   INBOX_SETTING_INBOUND_DOMAIN,
   INBOX_SETTING_CONTACT_ADDRESS,
-  INBOX_SETTING_AUTO_ACK
+  INBOX_SETTING_AUTO_ACK,
+  INBOX_SETTING_CONTACT_FORM_API_KEY
 } from '../utils/inbox-settings'
 import { INBOX_SETTING_TAGS, sanitizeTagPalette, type InboxTag } from '../utils/inbox-tags'
 
@@ -53,6 +54,13 @@ export default defineNitroPlugin(() => {
     default: true,
     parse: v => v !== false && v !== 'false',
     label: 'Auto-acknowledge new conversations'
+  })
+  registerSetting<string>({
+    namespace: INBOX_SETTINGS_NAMESPACE,
+    key: INBOX_SETTING_CONTACT_FORM_API_KEY,
+    default: '',
+    parse: v => String(v ?? '').trim(),
+    label: 'Contact-form API key'
   })
   registerSetting<InboxTag[]>({
     namespace: INBOX_SETTINGS_NAMESPACE,

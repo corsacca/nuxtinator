@@ -4,12 +4,36 @@
 // croner-swept queue on inbox_messages itself.
 //
 // The layer imports CRM kernel services from `#crm/server` (registered by the
-// crm layer's own nuxt.config; aliases merge across extends:, so no alias is
-// declared here). Mailgun sending credentials are shared with the
-// email-mailgun layer (same env names — duplicate runtimeConfig declarations
-// merge harmlessly); the webhook signing key and inbox addressing are
-// inbox-specific.
+// crm layer's own nuxt.config; aliases merge across extends:). Mailgun sending
+// credentials are shared with the email-mailgun layer (same env names —
+// duplicate runtimeConfig declarations merge harmlessly); the webhook signing
+// key and inbox addressing are inbox-specific.
+//
+// `#inbox/server` exposes the conversation-creation + channel-claim primitives
+// so a future forms layer can create inbox conversations without reaching into
+// this layer's file layout. The barrel lives in server/exports/ (not
+// server/utils/) so nitro's auto-import scan doesn't double-import the names.
+import { fileURLToPath } from 'node:url'
+
+const layerRoot = fileURLToPath(new URL('.', import.meta.url))
+
 export default defineNuxtConfig({
+  alias: {
+    '#inbox/server': fileURLToPath(new URL('./server/exports/index.ts', import.meta.url))
+  },
+
+  nitro: {
+    typescript: {
+      tsConfig: {
+        compilerOptions: {
+          paths: {
+            '#inbox/server': [`${layerRoot}server/exports/index.ts`]
+          }
+        }
+      }
+    }
+  },
+
   runtimeConfig: {
     mailgunApiKey: process.env.MAILGUN_API_KEY || '',
     mailgunDomain: process.env.MAILGUN_DOMAIN || '',

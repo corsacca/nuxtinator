@@ -86,3 +86,24 @@ export async function inboxResolveOrgForRecipientDomain(domain: string): Promise
   }
   return undefined
 }
+
+// Resolve which org a contact-form submission belongs to by matching the
+// presented API key against each scope's `contact_form_api_key` setting. Same
+// scope-scan shape as domain routing; returns undefined when no scope (or more
+// than one) matches, so an unknown/duplicate key is rejected rather than
+// guessed. An empty key never matches (the form is disabled by default).
+export async function inboxResolveOrgForApiKey(key: string): Promise<string | null | undefined> {
+  if (!key) return undefined
+  const matches: (string | null)[] = []
+  for (const scope of await inboxListOrgScopes()) {
+    const settings = await inboxWithScopeTx(scope, tx => getInboxSettings(tx))
+    if (settings.contactFormApiKey && settings.contactFormApiKey === key) {
+      matches.push(scope)
+    }
+  }
+  if (matches.length === 1) return matches[0]
+  if (matches.length > 1) {
+    console.error('[inbox] contact-form API key matches multiple org scopes — keys must be unique; ignoring the submission')
+  }
+  return undefined
+}

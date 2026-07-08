@@ -1,0 +1,102 @@
+// POST /api/inbox/contact — public, server-to-server contact-form intake.
+// No session, no CORS: the request is authorized by an API key (X-API-Key or a
+// Bearer token) that ALSO identifies which org the submission belongs to. The
+// submission becomes a source='contact_form' conversation with the message as
+// its first inbound message; staff are notified and an auto-ack is sent. The
+// submission is never lost to a notification/courtesy failure — those are
+// best-effort and swallowed.
+import { z } from 'zod'
+import { claimChannel } from '#crm/server'
+
+const Body = z.object({
+  email: z.string().email(),
+  name: z.string().max(300).optional(),
+  subject: z.string().max(500).optional(),
+  message: z.string().min(1).max(500_000)
+})
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+export default defineEventHandler(async (event) => {
+  const key = getHeader(event, 'x-api-key')
+    || (getHeader(event, 'authorization')?.replace(/^Bearer\s+/i, '') ?? '')
+  const scope = key ? await inboxResolveOrgForApiKey(key) : undefined
+  if (scope === undefined) {
+    throw createError({ statusCode: 401, statusMessage: 'Invalid API key' })
+  }
+
+  const parsed = Body.safeParse(await readBody(event))
+  if (!parsed.success) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid submission', data: parsed.error.flatten() })
+  }
+  const { email, name, message } = parsed.data
+  const firstLine = message.split('\n').map(l => l.trim()).find(Boolean) ?? ''
+  const subject = parsed.data.subject?.trim() || firstLine.slice(0, 120) || 'Contact form message'
+  const html = inboxSanitizeEmailHtml(`<p>${message.split('\n').map(escapeHtml).join('<br>')}</p>`)
+
+  const created = await inboxWithScopeTx(scope, async (tx) => {
+    const channel = await claimChannel(tx, { channelType: 'email', value: email })
+    const conversation = await inboxCreateConversation(tx, {
+      channelId: channel.id,
+      subject,
+      status: 'open',
+      source: 'contact_form',
+      counterpartyName: name ?? null
+    })
+    // Log the origin BEFORE the first message insert, so a failed message write
+    // still leaves an explainable shell.
+    await inboxLogConversationEvent(tx, conversation.id, 'inbox_conversation_created', 'Conversation opened', {
+      extra: { source: 'contact_form', recipient: email }
+    })
+    const msg = await inboxCreateMessage(tx, {
+      conversationId: conversation.id,
+      direction: 'inbound',
+      status: 'received',
+      fromEmail: email,
+      fromName: name ?? null,
+      subject,
+      bodyHtml: html,
+      bodyText: message
+    })
+    await inboxTouchLastMessage(tx, conversation.id, msg.created_at, 'inbound', { counterpartyName: name ?? null })
+    await inboxLogConversationEvent(tx, conversation.id, 'inbox_inbound_received', 'Inbound email (contact)', {
+      extra: { outcome: 'contact', source: 'contact_form' }
+    })
+
+    const settings = await getInboxSettings(tx)
+    // Staff notification — best-effort; a failure must not fail the submission.
+    await inboxNotifyNewMessage(tx, {
+      orgId: scope,
+      conversationId: conversation.id,
+      assignedUserId: null,
+      counterparty: name || email,
+      subject,
+      held: false,
+      excerpt: message,
+      senderAddress: email
+    }).catch(err => console.warn('[inbox] contact-form notify failed:', err))
+
+    return {
+      conversationId: conversation.id,
+      replyToken: conversation.reply_token,
+      contactAddress: settings.contactAddress,
+      autoAck: settings.autoAckEnabled
+    }
+  })
+
+  // Post-commit auto-ack (fire-and-forget — never blocks or fails the POST).
+  if (created.autoAck && created.contactAddress) {
+    void inboxSendCourtesy('auto_ack', {
+      toEmail: email,
+      toName: name ?? null,
+      subject,
+      replyToken: created.replyToken,
+      contactAddress: created.contactAddress,
+      appName: String(useRuntimeConfig().appName || 'Support')
+    }).catch(err => console.warn('[inbox] contact-form auto-ack failed:', err))
+  }
+
+  return { status: 'received', conversationId: created.conversationId }
+})
