@@ -4,6 +4,7 @@
 // prefix on internal navigation is preserved by useInboxPath. All list state
 // (scope/status/q) lives in the URL query.
 import type { InboxTagColor } from '../../composables/useInboxTags'
+import type { InboxAiMetadata } from '../../composables/useInboxThread'
 
 definePageMeta({ middleware: 'auth' })
 
@@ -18,20 +19,28 @@ const selectedId = computed(() => {
 })
 
 const { items, counts, tagCounts, pending, error, scope, status, q, tag, refresh } = useInboxConversations()
-const { thread, error: threadError, refresh: refreshThread, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact } = useInboxThread(selectedId)
+const { thread, error: threadError, refresh: refreshThread, patch, reply, saveDraft, deleteDraft, saveAiDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact } = useInboxThread(selectedId)
 const { users: assignees } = useInboxAssignees()
 const { palette, createTag, deleteTag, setConversationTags } = useInboxTags()
 const { items: cannedItems, create: createCanned, update: updateCanned, remove: removeCanned } = useInboxCanned()
 const { me, saveIdentity } = useInboxMe()
 const { hasPermission } = usePermissions()
+const { available: aiAvailable } = useInboxAiStatus('inbox.draft')
 
 const toast = useToast()
 const showCompose = ref(false)
 const showCanned = ref(false)
 const showIdentity = ref(false)
 const showSuppressions = ref(false)
+const showAiDraft = ref(false)
+const showAddKb = ref(false)
+const showKnowledge = ref(false)
 const replying = ref(false)
 const currentDraftId = ref<string | null>(null)
+// Composer body + the loaded AI draft's reviewer pack (parent-owned so the AI
+// modal can push a draft into the composer and surface its review panel).
+const replyBody = ref('')
+const aiMeta = ref<InboxAiMetadata | null>(null)
 
 // The canned-response manager is a compose/reply-authority tool.
 const canManageCanned = computed(() => hasPermission('inbox.send'))
@@ -196,6 +205,21 @@ async function onDeleteCanned(id: string) {
   }
 }
 
+// The AI modal generated a draft the reviewer chose; persist it as a shared
+// ai_generated draft, load it into the composer, and surface its review panel.
+async function onUseAiDraft({ html, text, meta }: { html: string, text: string, meta: InboxAiMetadata }) {
+  try {
+    const draftId = await saveAiDraft({ html, text, meta })
+    currentDraftId.value = draftId ?? null
+    replyBody.value = html
+    aiMeta.value = meta
+    await refresh()
+    toast.add({ title: 'AI draft ready to review', icon: 'i-lucide-sparkles', color: 'success' })
+  } catch (err) {
+    toast.add({ title: 'Could not save AI draft', description: err instanceof Error ? err.message : undefined, color: 'error' })
+  }
+}
+
 async function onSaveIdentity(patch: { alias?: string | null, signature?: string | null }) {
   try {
     await saveIdentity(patch)
@@ -242,6 +266,15 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
               variant="ghost"
               @click="showSuppressions = true"
             />
+            <UButton
+              v-if="aiAvailable"
+              label="Knowledge"
+              icon="i-lucide-book-open"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              @click="showKnowledge = true"
+            />
             <UButton label="New email" icon="i-lucide-pen-line" size="xs" @click="showCompose = true" />
           </div>
         </div>
@@ -266,6 +299,7 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
         <InboxThread
           v-if="thread"
           v-model:draft-id="currentDraftId"
+          v-model:reply-body="replyBody"
           :thread="thread"
           :assignees="assignees"
           :palette="palette"
@@ -273,6 +307,8 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
           :me="me"
           :sending="replying"
           :upload-inline-image="uploadInlineImage"
+          :ai-available="aiAvailable"
+          :ai-meta="aiMeta"
           @patch="onPatch"
           @reply="onReply"
           @save-draft="onSaveDraft"
@@ -283,6 +319,10 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
           @set-tags="onSetTags"
           @create-tag="onCreateTag"
           @delete-tag="onDeleteTag"
+          @ai-draft="showAiDraft = true"
+          @add-knowledge="showAddKb = true"
+          @dismiss-ai-meta="aiMeta = null"
+          @load-draft-meta="aiMeta = $event"
         />
         <UEmpty
           v-else-if="threadError"
@@ -322,6 +362,24 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
       v-if="canManageCanned"
       v-model:open="showSuppressions"
       :can-clear="me?.canManageAliases ?? false"
+    />
+
+    <InboxAiDraftModal
+      v-if="thread"
+      v-model:open="showAiDraft"
+      :conversation-id="thread.conversation.id"
+      @use="onUseAiDraft"
+    />
+
+    <InboxAddToKnowledgeBaseModal
+      v-if="thread"
+      v-model:open="showAddKb"
+      :conversation-id="thread.conversation.id"
+    />
+
+    <InboxKnowledgeManager
+      v-model:open="showKnowledge"
+      :can-manage="canManageCanned"
     />
   </div>
 </template>

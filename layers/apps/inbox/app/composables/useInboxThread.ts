@@ -4,6 +4,17 @@
 
 import type { MaybeRefOrGetter } from 'vue'
 
+// Reviewer-only metadata on an AI-generated draft (never emailed). Mirrors the
+// server's InboxAiDraftMetadata; declared here so client code doesn't reach into
+// server/.
+export interface InboxAiMetadata {
+  gloss: string
+  language: string
+  sources: string[]
+  uncertainty: string[]
+  model: string
+}
+
 export interface InboxThreadMessage {
   id: string
   direction: 'inbound' | 'outbound'
@@ -21,6 +32,7 @@ export interface InboxThreadMessage {
   failedReason: string | null
   deliveredAt: string | null
   createdAt: string
+  aiGenerated: boolean
   attachments: { id: string, filename: string | null, contentType: string | null, sizeBytes: number | null }[]
 }
 
@@ -32,7 +44,19 @@ export interface InboxThreadDraft {
   bodyHtml: string | null
   bodyText: string | null
   createdAt: string
+  aiGenerated: boolean
+  aiMetadata: InboxAiMetadata | null
   attachments: { id: string, filename: string | null, contentType: string | null, sizeBytes: number | null }[]
+}
+
+// A generated (unpersisted) draft preview returned by the AI generate call.
+export interface InboxAiDraftPreview {
+  draft_language: string
+  draft_html: string
+  draft_text: string
+  english_gloss: string
+  sources_used: string[]
+  uncertainty: string[]
 }
 
 export interface InboxThread {
@@ -58,10 +82,16 @@ export interface InboxThread {
 // An outbound message is delivered asynchronously by the send sweep, so a
 // freshly-queued reply is still `queued` when the reply POST returns. Poll the
 // thread while any outbound message sits in `queued`, so the UI reflects the
-// queued→sent/delivered/failed transition without a manual refresh. Bounded so
-// a genuinely stuck queue (sweep disabled) doesn't poll forever.
-const THREAD_POLL_INTERVAL_MS = 2500
-const THREAD_POLL_WINDOW_MS = 60_000
+// queued→sent/delivered/failed transition without a manual refresh. A healthy
+// send resolves within one sweep tick (seconds), but a provider failure backs
+// off 2 then 4 minutes before going terminal — so poll fast at first, then
+// slowly for the rest of the retry lifecycle. The overall window outlives the
+// worst-case retry chain; only a genuinely wedged queue (sweep disabled) is
+// left un-polled after that.
+const THREAD_POLL_FAST_MS = 2500
+const THREAD_POLL_SLOW_MS = 15_000
+const THREAD_POLL_FAST_WINDOW_MS = 60_000
+const THREAD_POLL_WINDOW_MS = 600_000
 
 function threadHasPendingOutbound(t: InboxThread | null): boolean {
   return !!t?.messages.some(m => m.direction === 'outbound' && m.status === 'queued')
@@ -86,7 +116,8 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
 
   // Re-arm the poll after each fetch: keep chasing while an outbound message is
   // still `queued` and the poll window is open; give up (and reset) once it
-  // settles or the window elapses.
+  // settles or the window elapses. Fast cadence for the first stretch (the
+  // healthy-send path), slow cadence for the remainder (the retry-backoff path).
   function schedulePoll(): void {
     stopPoll()
     if (!threadHasPendingOutbound(thread.value)) {
@@ -95,7 +126,11 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     }
     if (pollUntil === 0) pollUntil = Date.now() + THREAD_POLL_WINDOW_MS
     if (Date.now() > pollUntil) return
-    pollTimer = setTimeout(() => { void refresh({ poll: true }) }, THREAD_POLL_INTERVAL_MS)
+    const pollStartedAt = pollUntil - THREAD_POLL_WINDOW_MS
+    const interval = Date.now() - pollStartedAt < THREAD_POLL_FAST_WINDOW_MS
+      ? THREAD_POLL_FAST_MS
+      : THREAD_POLL_SLOW_MS
+    pollTimer = setTimeout(() => { void refresh({ poll: true }) }, interval)
   }
 
   async function refresh(opts?: { poll?: boolean }): Promise<void> {
@@ -175,6 +210,50 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     await refresh()
   }
 
+  // Generate an AI draft preview (no persistence). `baseDraft` + `direction`
+  // drive the steer/refine loop.
+  async function generateAiDraft(input: { direction?: string, baseDraft?: string } = {}): Promise<InboxAiDraftPreview> {
+    const id = toValue(conversationId)
+    if (!id) throw new Error('No conversation selected')
+    const url: string = `/api/inbox/conversations/${id}/draft-reply`
+    return await $fetch<InboxAiDraftPreview>(url, {
+      method: 'POST',
+      body: { direction: input.direction, baseDraft: input.baseDraft }
+    })
+  }
+
+  // Persist the reviewer's chosen AI draft verbatim as a shared ai_generated
+  // draft; returns its id (reused on regenerate via draftId). Refreshes so the
+  // draft appears in the thread.
+  async function saveAiDraft(input: {
+    html: string
+    text?: string
+    meta: InboxAiMetadata
+    draftId?: string
+    fromIdentity?: 'personal' | 'contact'
+  }): Promise<string | undefined> {
+    const id = toValue(conversationId)
+    if (!id) return
+    const url: string = `/api/inbox/conversations/${id}/draft-reply`
+    const res = await $fetch<{ id: string }>(url, {
+      method: 'POST',
+      body: {
+        draftId: input.draftId,
+        fromIdentity: input.fromIdentity,
+        save: {
+          html: input.html,
+          text: input.text,
+          language: input.meta.language,
+          gloss: input.meta.gloss,
+          sources: input.meta.sources,
+          uncertainty: input.meta.uncertainty
+        }
+      }
+    })
+    await refresh()
+    return res.id
+  }
+
   // Attachments bind to a draft. The caller ensures a draft exists first.
   async function uploadAttachment(draftId: string, file: File): Promise<void> {
     const id = toValue(conversationId)
@@ -216,7 +295,7 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
     return record
   }
 
-  return { thread, pending, error, refresh, patch, reply, saveDraft, deleteDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact }
+  return { thread, pending, error, refresh, patch, reply, saveDraft, deleteDraft, generateAiDraft, saveAiDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact }
 }
 
 export interface InboxAssignee {

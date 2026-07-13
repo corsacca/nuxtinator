@@ -38,7 +38,10 @@ export function useInboxRecordConversations(recordId: MaybeRefOrGetter<string>) 
     if (!id) return
     pending.value = true
     try {
-      const res = await $fetch<{ items: InboxRecordConversationRow[], channels: InboxRecordChannel[] }>(
+      // The second generic pins the request type to `string` so $fetch resolves
+      // its return against the fallback branch instead of deep-instantiating over
+      // the full typed-route union (which trips TS2589 as the app grows).
+      const res = await $fetch<{ items: InboxRecordConversationRow[], channels: InboxRecordChannel[] }, string>(
         `/api/inbox/records/${id}/conversations`
       )
       items.value = res.items

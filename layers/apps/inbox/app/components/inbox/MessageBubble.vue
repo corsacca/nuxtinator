@@ -53,6 +53,14 @@ const statusBadge = computed(() => {
       <UTooltip v-if="!isOutbound && message.authenticated" text="Sender authenticated (DKIM/DMARC)">
         <UIcon name="i-lucide-badge-check" class="size-3.5 text-(--ui-success)" />
       </UTooltip>
+      <UBadge
+        v-if="message.aiGenerated"
+        label="AI"
+        color="info"
+        variant="subtle"
+        size="sm"
+        icon="i-lucide-sparkles"
+      />
       <span class="ml-auto shrink-0">{{ inboxRelativeTime(message.createdAt) }}</span>
     </div>
 

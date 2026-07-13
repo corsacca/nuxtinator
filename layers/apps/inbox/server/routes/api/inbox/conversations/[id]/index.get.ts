@@ -93,6 +93,7 @@ export default defineEventHandler(async (event) => {
         failedReason: m.failed_reason,
         deliveredAt: m.delivered_at,
         createdAt: m.created_at,
+        aiGenerated: m.ai_generated,
         attachments: attachmentsByMessage.get(m.id) ?? []
       })),
       // Shared drafts — every inbox.send user sees and can send/edit/delete any
@@ -105,6 +106,10 @@ export default defineEventHandler(async (event) => {
         bodyHtml: d.body_html,
         bodyText: d.body_text,
         createdAt: d.created_at,
+        aiGenerated: d.ai_generated,
+        // Reviewer-only AI pack (gloss/sources/uncertainty); re-surfaced in the
+        // composer when an AI draft is reopened. Never part of the outbound mail.
+        aiMetadata: d.ai_metadata,
         attachments: attachmentsByMessage.get(d.id) ?? []
       }))
     }

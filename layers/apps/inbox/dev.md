@@ -167,14 +167,26 @@ path). Tests: `bun run test -- --project inbox`. The app seeds into the catalog 
 - **S3 lifecycle cleanup** (Phase 2d): GDPR conversation purge
   (`/conversations/:id/purge`, admin) deleting attachments + raw `.eml`, and
   org-offboarding key collectors exported for a tenancy org-delete hook.
+- **AI drafting + knowledge base + grounding** (Phase 10): consumes the new shared
+  `@nuxtinator/ai` layer (Phase 10a — `#ai/server`, OpenRouter, admin model enablement;
+  see [../../ai/dev.md](../../ai/dev.md)). Inbox side (10b): `inbox_grounding_documents`
+  + `inbox_knowledge_entries` tables (+ `_T006/T007` rescopes), `ai_generated`/`ai_metadata`
+  on messages. `draft-reply.post.ts` has two intents — **generate** (preview, no persist,
+  for the steer/refine modal) and **save** (persist the reviewed draft verbatim as a shared
+  `ai_generated` draft; the `ai_generated=true` DB guard on `inboxUpdateAiDraft` means
+  regenerate never clobbers a human draft). Grounding pack = tone guide (code-owned,
+  brand-neutral) + reference docs (per-org `grounding_source_urls`, synced by a daily
+  per-org scheduler with a distinct advisory lock `...42`) + separate KB block; contact-record
+  formatter EXCLUDES channel-storage fields (email/phone — data minimization). Knowledge
+  extraction PROPOSES only (PII shield reviewed before save). Registers two `#ai/server`
+  features (`inbox.draft`, `inbox.knowledge`). UI: steer/refine modal (text preview + English
+  gloss when non-en), add-to-KB modal (auto-suggest + removed-PII alert), two-pane KB manager
+  + grounding-refresh, AI badge on messages, reviewer-only AI review panel above the composer,
+  all gated on `GET /api/ai/status`. 9 tests (`tests/api/ai-draft.test.ts`). Live generation
+  needs `OPENROUTER_API_KEY` (tests use the layer's VITEST stub).
 
 ## Deferred (planned, not built)
 
-- **AI drafting/grounding/knowledge base** (Phase 10) — a shared `@nuxtinator/ai` layer
-  on OpenRouter (`#ai`/`#ai/server`, admin model enablement) + inbox consumption
-  (grounding store/sync, KB, `ai_*` columns, draft-reply generation with forced
-  tool-calls, AI-draft UI). The largest phase; needs `OPENROUTER_API_KEY` wired for real
-  verification. Buildable as its own focused effort.
 - **Smaller deferred items rolled out of earlier phases:** per-user notification
   preferences (a core-level prefs change, Phase 7) · double-opt-in consent verification
   (reissue-and-overwrite on the dormant `crm_channels.verification_token_*` columns,

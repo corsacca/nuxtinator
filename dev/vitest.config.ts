@@ -66,7 +66,8 @@ export default defineConfig({
       layerProject('files', '../layers/apps/files/tests'),
       layerProject('context', '../layers/apps/context/tests'),
       layerProject('crm', '../layers/apps/crm/tests'),
-      layerProject('inbox', '../layers/apps/inbox/tests')
+      layerProject('inbox', '../layers/apps/inbox/tests'),
+      layerProject('ai', '../layers/ai/tests')
     ]
   }
 })

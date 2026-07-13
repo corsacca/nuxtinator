@@ -51,18 +51,27 @@ export async function inboxWithScopeTx<T>(
 export const INBOX_SEND_SWEEP_LOCK_KEY = '7203914082716530041'
 
 export async function inboxWithAdvisoryLock(key: string, label: string, fn: () => Promise<void>): Promise<void> {
-  const lockRow = await sql<{ got: boolean }>`
-    select pg_try_advisory_lock(${sql.raw(key)}::bigint) as got
-  `.execute(db)
-  if (!lockRow.rows[0]?.got) {
-    console.log(`[inbox] another replica holds the ${label} lock — skipping`)
-    return
-  }
-  try {
-    await fn()
-  } finally {
-    await sql`select pg_advisory_unlock(${sql.raw(key)}::bigint)`.execute(db)
-  }
+  // Session-scoped lock ops must share ONE pinned connection: `db` is a pool,
+  // and if acquire and unlock ran as independent queries they could land on
+  // different sessions — the unlock would no-op ("you don't own a lock"
+  // warning) and the lock would stay held by the acquiring session, silently
+  // skipping every later run until the pool happens to reuse that session.
+  // The pinned connection sits idle while fn() runs (fn opens its own
+  // transactions from the pool); it only anchors the lock.
+  await db.connection().execute(async (conn) => {
+    const lockRow = await sql<{ got: boolean }>`
+      select pg_try_advisory_lock(${sql.raw(key)}::bigint) as got
+    `.execute(conn)
+    if (!lockRow.rows[0]?.got) {
+      console.log(`[inbox] another replica holds the ${label} lock — skipping`)
+      return
+    }
+    try {
+      await fn()
+    } finally {
+      await sql`select pg_advisory_unlock(${sql.raw(key)}::bigint)`.execute(conn)
+    }
+  })
 }
 
 // Resolve which org's inbox a tokenless inbound recipient belongs to, by

@@ -10,6 +10,7 @@
 import { sql } from 'kysely'
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
+import type { InboxAiDraftMetadata } from '../database/schema'
 import type { InboxMessageRow } from './inbox-messages'
 
 type Tx = Transaction<Database>
@@ -69,6 +70,62 @@ export async function inboxUpdateDraft(tx: Tx, params: {
     .where('id', '=', params.id)
     .where('conversation_id', '=', params.conversationId)
     .where('status', '=', 'draft')
+    .returningAll()
+    .executeTakeFirst()
+  return row ?? null
+}
+
+// Create an AI-authored draft: an outbound draft flagged ai_generated with its
+// reviewer-only metadata. It's edited/sent through the normal composer path.
+export async function inboxCreateAiDraft(tx: Tx, data: {
+  conversationId: string
+  senderUserId: string
+  bodyHtml: string
+  bodyText: string
+  subject: string | null
+  fromEmail?: string | null
+  aiMetadata: InboxAiDraftMetadata
+}): Promise<InboxMessageRow> {
+  return await inboxCreateMessage(tx, {
+    conversationId: data.conversationId,
+    direction: 'outbound',
+    status: 'draft',
+    senderUserId: data.senderUserId,
+    fromEmail: data.fromEmail ?? null,
+    subject: data.subject,
+    bodyHtml: data.bodyHtml,
+    bodyText: data.bodyText,
+    aiGenerated: true,
+    aiMetadata: data.aiMetadata
+  })
+}
+
+// Overwrite an existing AI draft in place (regenerate). Guarded by
+// `ai_generated = true` in addition to the draft/conversation scope, so a
+// human-written draft is NEVER clobbered — the boolean is the write-guard.
+// Returns null when no matching AI draft exists (sent, deleted, human-authored,
+// or wrong conversation), and the caller falls through to creating a new one.
+export async function inboxUpdateAiDraft(tx: Tx, params: {
+  id: string
+  conversationId: string
+  bodyHtml: string
+  bodyText: string
+  fromEmail?: string | null
+  aiMetadata: InboxAiDraftMetadata
+}): Promise<InboxMessageRow | null> {
+  const row = await tx
+    .updateTable('inbox_messages')
+    .set({
+      body_html: params.bodyHtml,
+      body_text: params.bodyText,
+      from_email: sql`COALESCE(${params.fromEmail ?? null}, from_email)`,
+      ai_metadata: sql`${JSON.stringify(params.aiMetadata)}::text::jsonb`,
+      updated_at: new Date()
+    })
+    .where('id', '=', params.id)
+    .where('conversation_id', '=', params.conversationId)
+    .where('status', '=', 'draft')
+    .where('ai_generated', '=', true)
     .returningAll()
     .executeTakeFirst()
   return row ?? null

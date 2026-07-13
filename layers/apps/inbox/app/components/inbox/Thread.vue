@@ -3,7 +3,7 @@
 // flag), the message thread, and the reply composer. Destructive status
 // transitions (spam) confirm first — marking spam blocklists the sender and
 // closes all their threads.
-import type { InboxThread, InboxThreadDraft } from '../../composables/useInboxThread'
+import type { InboxThread, InboxThreadDraft, InboxAiMetadata } from '../../composables/useInboxThread'
 import type { InboxAssignee } from '../../composables/useInboxThread'
 import type { InboxTag, InboxTagColor } from '../../composables/useInboxTags'
 import type { InboxCannedResponse } from '../../composables/useInboxCanned'
@@ -17,6 +17,11 @@ const props = defineProps<{
   me: InboxMe | null
   sending?: boolean
   uploadInlineImage?: (file: File) => Promise<string>
+  // Whether AI drafting is available (configured + a model enabled for the org).
+  aiAvailable?: boolean
+  // Reviewer-only AI pack for the loaded draft — shown above the composer, never
+  // emailed.
+  aiMeta?: InboxAiMetadata | null
 }>()
 
 const emit = defineEmits<{
@@ -30,6 +35,10 @@ const emit = defineEmits<{
   setTags: [slugs: string[]]
   createTag: [name: string, color: InboxTagColor]
   deleteTag: [slug: string]
+  aiDraft: []
+  addKnowledge: []
+  dismissAiMeta: []
+  loadDraftMeta: [meta: InboxAiMetadata | null]
 }>()
 
 // The draft the composer is currently editing (null = a fresh reply). Owned by
@@ -38,8 +47,19 @@ const currentDraftId = defineModel<string | null>('draftId', { default: null })
 
 const crmPath = useCrmPath()
 
-const replyBody = ref('')
+// Composer body — parent-owned (v-model:reply-body) so an AI draft can be pushed
+// in from the AI modal and land in the editor.
+const replyBody = defineModel<string>('replyBody', { default: '' })
 const confirmSpam = ref(false)
+
+// Whether the conversation is resolved enough to capture a knowledge entry from.
+const canAddKnowledge = computed(() =>
+  props.aiAvailable && ['pending', 'closed'].includes(props.thread.conversation.status)
+)
+// Gloss is shown only when the draft isn't English (an English reviewer aid).
+const showAiGloss = computed(() =>
+  !!props.aiMeta?.gloss && !props.aiMeta.language.toLowerCase().startsWith('en')
+)
 const contactName = ref('')
 const showCreateContact = ref(false)
 // Detail-pane view: the email thread, or the internal notes & activity feed.
@@ -73,6 +93,7 @@ watch(() => props.thread.conversation.id, () => {
   showCreateContact.value = false
   fromIdentity.value = defaultFromIdentity.value
   view.value = 'conversation'
+  emit('dismissAiMeta')
 }, { immediate: true })
 
 function draftPreview(d: InboxThreadDraft): string {
@@ -83,6 +104,8 @@ function draftPreview(d: InboxThreadDraft): string {
 function loadDraft(d: InboxThreadDraft) {
   replyBody.value = d.bodyHtml || ''
   currentDraftId.value = d.id
+  // Re-surface the AI review panel when reopening an AI draft (null clears it).
+  emit('loadDraftMeta', d.aiMetadata)
 }
 
 function onSaveDraft() {
@@ -191,6 +214,7 @@ function submitReply() {
   emit('reply', replyBody.value, currentDraftId.value ?? undefined, props.me?.personalFrom ? fromIdentity.value : undefined)
   replyBody.value = ''
   currentDraftId.value = null
+  emit('dismissAiMeta')
 }
 
 function submitContact() {
@@ -216,6 +240,15 @@ function submitContact() {
           color="warning"
           variant="subtle"
           @click="emit('patch', { needsReview: false })"
+        />
+        <UButton
+          v-if="canAddKnowledge"
+          label="Add to KB"
+          icon="i-lucide-book-plus"
+          size="xs"
+          color="info"
+          variant="ghost"
+          @click="emit('addKnowledge')"
         />
         <USelect v-model="statusValue" :items="statusItems" size="xs" class="w-28" />
         <USelect v-model="assigneeValue" :items="assigneeItems" size="xs" class="w-36" />
@@ -303,6 +336,65 @@ function submitContact() {
         <USelect v-model="fromIdentity" :items="fromOptions" size="xs" class="w-64" />
         <span class="text-(--ui-text-dimmed) truncate">· {{ signatureNotice }}</span>
       </div>
+      <!-- AI review panel — reviewer-only (uncertainty, English gloss, sources);
+           never part of the outbound email. -->
+      <div
+        v-if="aiMeta"
+        class="rounded-md border border-(--ui-info)/40 bg-(--ui-info)/5 p-2 space-y-2 text-sm"
+      >
+        <div class="flex items-center gap-2">
+          <UBadge label="AI draft" icon="i-lucide-sparkles" color="info" variant="subtle" size="sm" />
+          <span class="text-xs text-(--ui-text-muted)">Reviewer notes — not emailed</span>
+          <UButton
+            icon="i-lucide-x"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            class="ml-auto"
+            aria-label="Dismiss AI notes"
+            @click="emit('dismissAiMeta')"
+          />
+        </div>
+        <div
+          v-if="aiMeta.uncertainty.length"
+          class="text-xs"
+        >
+          <span class="font-medium text-(--ui-warning)">Confirm before sending:</span>
+          <ul class="list-disc pl-4 mt-0.5">
+            <li
+              v-for="(u, i) in aiMeta.uncertainty"
+              :key="i"
+            >
+              {{ u }}
+            </li>
+          </ul>
+        </div>
+        <details
+          v-if="showAiGloss"
+          class="text-xs"
+        >
+          <summary class="cursor-pointer text-(--ui-text-muted)">
+            English translation ({{ aiMeta.language }} draft)
+          </summary>
+          <div class="whitespace-pre-wrap mt-1 text-(--ui-text-muted)">
+            {{ aiMeta.gloss }}
+          </div>
+        </details>
+        <div
+          v-if="aiMeta.sources.length"
+          class="flex flex-wrap items-center gap-1"
+        >
+          <span class="text-xs text-(--ui-text-muted)">Grounded on:</span>
+          <UBadge
+            v-for="(s, i) in aiMeta.sources"
+            :key="i"
+            :label="s"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+          />
+        </div>
+      </div>
       <UEditor
         ref="replyEditor"
         v-model="replyBody"
@@ -337,6 +429,16 @@ function submitContact() {
           />
           <input ref="imageInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" @change="onImagePicked">
           <InboxCannedPicker :items="canned" @insert="insertCanned" />
+          <UButton
+            v-if="aiAvailable"
+            icon="i-lucide-sparkles"
+            label="AI draft"
+            size="xs"
+            color="info"
+            variant="ghost"
+            :disabled="props.sending"
+            @click="emit('aiDraft')"
+          />
           <UButtonGroup v-for="a in currentDraftAttachments" :key="a.id" size="xs">
             <UButton :label="a.filename || 'attachment'" icon="i-lucide-paperclip" color="neutral" variant="subtle" />
             <UButton icon="i-lucide-x" color="neutral" variant="subtle" aria-label="Remove attachment" @click="emit('removeAttachment', a.id)" />

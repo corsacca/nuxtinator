@@ -4,15 +4,20 @@ import { registerStaticRole } from '#core/server/utils/roles-registry'
 import { registerApp } from '#core/server/utils/app-registry'
 import { registerNavItem } from '#core/server/utils/nav-registry'
 import { registerSetting } from '#core/server/utils/settings-registry'
+import { registerAiFeature } from '#ai/server'
 import { INBOX_PERMISSIONS, INBOX_PERMISSION_META, INBOX_DEFAULT_GRANTS } from '../../app/utils/permissions'
 import {
   INBOX_SETTINGS_NAMESPACE,
   INBOX_SETTING_INBOUND_DOMAIN,
   INBOX_SETTING_CONTACT_ADDRESS,
   INBOX_SETTING_AUTO_ACK,
-  INBOX_SETTING_CONTACT_FORM_API_KEY
+  INBOX_SETTING_CONTACT_FORM_API_KEY,
+  INBOX_SETTING_GROUNDING_SOURCE_URLS,
+  sanitizeGroundingUrls
 } from '../utils/inbox-settings'
 import { INBOX_SETTING_TAGS, sanitizeTagPalette, type InboxTag } from '../utils/inbox-tags'
+import { INBOX_AI_DRAFT_FEATURE } from '../utils/inbox-ai-draft'
+import { INBOX_AI_KNOWLEDGE_FEATURE } from '../utils/inbox-ai-knowledge-extract'
 
 // Single owner of all inbox boot registrations. Deliberately reads nothing
 // from the CRM registries at boot (Nitro plugin order is alphabetical, not
@@ -69,6 +74,28 @@ export default defineNitroPlugin(() => {
     parse: v => sanitizeTagPalette(v),
     label: 'Conversation tags'
   })
+  registerSetting<string[]>({
+    namespace: INBOX_SETTINGS_NAMESPACE,
+    key: INBOX_SETTING_GROUNDING_SOURCE_URLS,
+    default: [],
+    parse: v => sanitizeGroundingUrls(v),
+    label: 'AI grounding source URLs'
+  })
+
+  // AI features — the admin AI page (@nuxtinator/ai) shows a model picker for
+  // each. registerAiFeature is a no-op if the AI layer isn't loaded (core ships
+  // a fallback), so this is always safe.
+  registerAiFeature({
+    key: INBOX_AI_DRAFT_FEATURE,
+    label: 'Inbox — draft replies',
+    description: 'Generates a grounded draft reply for a conversation.'
+  })
+  registerAiFeature({
+    key: INBOX_AI_KNOWLEDGE_FEATURE,
+    label: 'Inbox — knowledge extraction',
+    description: 'Turns a resolved thread into an anonymised knowledge-base entry.'
+  })
+
   registerApp({
     id: 'inbox',
     title: 'Inbox',

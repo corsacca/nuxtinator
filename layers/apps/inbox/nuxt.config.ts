@@ -49,6 +49,8 @@ export default defineNuxtConfig({
     inboxContactAddress: process.env.INBOX_CONTACT_ADDRESS || '',
     // Send-sweep cadence in seconds. Tests lower it to make queued sends
     // observable quickly.
-    inboxSendSweepSeconds: process.env.INBOX_SEND_SWEEP_SECONDS || '20'
+    inboxSendSweepSeconds: process.env.INBOX_SEND_SWEEP_SECONDS || '20',
+    // Cron for the daily AI grounding sync (UTC). Default 03:00.
+    inboxGroundingSyncCron: process.env.INBOX_GROUNDING_SYNC_CRON || '0 3 * * *'
   }
 })

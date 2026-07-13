@@ -14,6 +14,7 @@
 import { sql } from 'kysely'
 import type { Selectable, Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
+import type { InboxAiDraftMetadata } from '../database/schema'
 
 type Tx = Transaction<Database>
 
@@ -42,6 +43,8 @@ export interface InboxCreateMessageData {
   authenticated?: boolean
   authResult?: string | null
   holdReason?: string | null
+  aiGenerated?: boolean
+  aiMetadata?: InboxAiDraftMetadata | null
 }
 
 function toRowValues(data: InboxCreateMessageData) {
@@ -63,7 +66,15 @@ function toRowValues(data: InboxCreateMessageData) {
     spam_score: data.spamScore === null || data.spamScore === undefined ? null : String(data.spamScore),
     authenticated: data.authenticated ?? false,
     auth_result: data.authResult ?? null,
-    hold_reason: data.holdReason ?? null
+    hold_reason: data.holdReason ?? null,
+    ai_generated: data.aiGenerated ?? false,
+    // jsonb write: the intermediate ::text stops kysely-postgres-js from
+    // JSON-encoding the already-stringified value a second time (settings-store
+    // gotcha) — a bare ::jsonb would store a quoted-string scalar. The generic
+    // types the RawBuilder to the column so the insert object typechecks.
+    ai_metadata: data.aiMetadata == null
+      ? null
+      : sql<InboxAiDraftMetadata>`${JSON.stringify(data.aiMetadata)}::text::jsonb`
   }
 }
 

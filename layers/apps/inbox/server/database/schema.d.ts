@@ -38,6 +38,23 @@ export interface InboxConversationsTable {
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
+// Reviewer-only metadata attached to an AI-generated draft. Stored in
+// inbox_messages.ai_metadata (jsonb); surfaced in the composer's AI review panel
+// and never included in the outbound email.
+export interface InboxAiDraftMetadata {
+  // Faithful English back-translation of the draft (equals the draft when it's
+  // already English). Lets an English-only reviewer vet a foreign-language draft.
+  gloss: string
+  // ISO language code the draft was written in.
+  language: string
+  // Short labels of grounding pieces that informed the answer.
+  sources: string[]
+  // Facts the model was unsure about / bracketed placeholders to fill in.
+  uncertainty: string[]
+  // The resolved model id that produced the draft.
+  model: string
+}
+
 export interface InboxMessagesTable {
   id: Generated<string>
   conversation_id: string
@@ -68,6 +85,10 @@ export interface InboxMessagesTable {
   // Outbound queue bookkeeping — the message row IS the send job.
   attempts: Generated<number>
   next_attempt_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
+  // AI drafting. ai_generated is the regenerate write-guard (a human draft is
+  // never overwritten); ai_metadata is the reviewer-only pack (never emailed).
+  ai_generated: Generated<boolean>
+  ai_metadata: InboxAiDraftMetadata | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
@@ -125,6 +146,33 @@ export interface InboxCommentsTable {
   edited_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
 }
 
+// Snapshotted external reference content the AI drafter grounds on. Upserted by
+// the grounding sync keyed on (source, doc_key) — org-leading in multi mode.
+// fetched_at doubles as the cross-instance cache-freshness signal (max per org).
+export interface InboxGroundingDocumentsTable {
+  id: Generated<string>
+  source: string
+  doc_key: string
+  title: string | null
+  body_text: string
+  fetched_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
+// Anonymised Q&A entries grown from resolved threads; active entries ground
+// future drafts. source_conversation_id is SET NULL (outlives its thread);
+// created_by SET NULL (outlives its author). status is a zod-owned open string.
+export interface InboxKnowledgeEntriesTable {
+  id: Generated<string>
+  question: string
+  answer: string
+  language: Generated<string>
+  source_conversation_id: string | null
+  status: Generated<string>
+  created_by: string | null
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+  updated_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
 declare global {
   interface NuxtinatorDatabaseTables {
     inbox_conversations: InboxConversationsTable
@@ -134,5 +182,7 @@ declare global {
     inbox_canned_responses: InboxCannedResponsesTable
     inbox_identities: InboxIdentitiesTable
     inbox_comments: InboxCommentsTable
+    inbox_grounding_documents: InboxGroundingDocumentsTable
+    inbox_knowledge_entries: InboxKnowledgeEntriesTable
   }
 }
