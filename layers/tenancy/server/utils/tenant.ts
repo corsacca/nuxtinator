@@ -241,7 +241,13 @@ export function decodeFlowOrg(combined: string): { state: string, orgSlug: strin
 //
 // Org discovery (in priority order):
 //   1. `event.context.orgSlug` if set by upstream middleware
-//   2. `active-org-slug` cookie
+//   2. `X-Active-Org` header — bearer-authenticated requests (MCP tools) carry
+//      the header but no session cookie, so the tenancy middleware (which
+//      requires a cookie session) never populates `event.context` for them.
+//      Client-controlled, same trust model as the cookie below: this selects
+//      the org, it does not authorize — authorization is the caller's gate
+//      (MCP: token scope + RBAC).
+//   3. `active-org-slug` cookie
 // If no org is found, opens the txn anyway with no GUC — RLS-protected
 // INSERTs will fail loudly via `current_org_id() → NULL → NOT NULL` constraint.
 export async function runInOrgTransaction<T>(
@@ -252,6 +258,7 @@ export async function runInOrgTransaction<T>(
 
   if (!orgId) {
     const slug = (event.context.orgSlug as string | undefined)
+      ?? getRequestHeader(event, 'x-active-org')
       ?? getCookie(event, 'active-org-slug')
     if (slug) {
       const row = await adminDb

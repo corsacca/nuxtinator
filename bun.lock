@@ -73,6 +73,9 @@
     "layers/apps/feedback": {
       "name": "@nuxtinator/feedback",
       "version": "1.0.2",
+      "dependencies": {
+        "zod": "^3.23.0",
+      },
       "optionalDependencies": {
         "@nuxtinator/core": "*",
       },

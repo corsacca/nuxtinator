@@ -49,6 +49,9 @@ export default defineNuxtModule({
         // skip an unreadable package.json
       }
     }
-    nuxt.options.runtimeConfig.layerCompat = compat
+    // The generated runtimeConfig type snapshots this value with one literal
+    // key per loaded layer, so a plain Record<string, string> doesn't satisfy
+    // it; widen through the generated type.
+    nuxt.options.runtimeConfig.layerCompat = compat as typeof nuxt.options.runtimeConfig.layerCompat
   }
 })
