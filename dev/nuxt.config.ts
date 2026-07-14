@@ -71,7 +71,8 @@ export default defineNuxtConfig({
   },
 
   devServer: {
-    port: 2080
+    // NUXT_PORT in dev/.env overrides per-instance without touching this file
+    port: Number(process.env.NUXT_PORT) || 2080
   },
 
   compatibilityDate: '2025-01-15',

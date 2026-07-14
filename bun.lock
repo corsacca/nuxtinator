@@ -72,7 +72,7 @@
     },
     "layers/apps/feedback": {
       "name": "@nuxtinator/feedback",
-      "version": "1.0.0",
+      "version": "1.0.2",
       "optionalDependencies": {
         "@nuxtinator/core": "*",
       },
@@ -142,7 +142,7 @@
     },
     "layers/apps/videos": {
       "name": "@nuxtinator/videos",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "fix-webm-duration": "^1.0.6",
         "mediabunny": "^1.25.1",
@@ -160,7 +160,7 @@
     },
     "layers/core": {
       "name": "@nuxtinator/core",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "@bradenmacdonald/s3-lite-client": "^0.9.6",
         "bcrypt": "^6.0.0",
