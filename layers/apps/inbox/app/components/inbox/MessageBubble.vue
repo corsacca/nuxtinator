@@ -50,6 +50,11 @@ const statusBadge = computed(() => {
         {{ isOutbound ? (message.senderName || 'Team') : (message.fromName || message.fromEmail) }}
       </span>
       <span v-if="!isOutbound && message.fromName" class="truncate">&lt;{{ message.fromEmail }}&gt;</span>
+      <!-- Address line: which of our addresses received it / which it left on
+           (outbound from_email is null on shared-address sends until queue-time
+           snapshotting — nothing to show then). -->
+      <span v-if="!isOutbound && message.toEmail" class="truncate text-(--ui-text-dimmed)">To: {{ message.toEmail }}</span>
+      <span v-if="isOutbound && message.fromEmail" class="truncate text-(--ui-text-dimmed)">From: {{ message.fromEmail }}</span>
       <UTooltip v-if="!isOutbound && message.authenticated" text="Sender authenticated (DKIM/DMARC)">
         <UIcon name="i-lucide-badge-check" class="size-3.5 text-(--ui-success)" />
       </UTooltip>

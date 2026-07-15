@@ -233,6 +233,17 @@ function submitContact() {
   emit('createContact', name)
   showCreateContact.value = false
 }
+
+// How this conversation entered the inbox (email / form / staff) — read-at-a-
+// glance badge in the header.
+const sourceMeta = computed(() => INBOX_SOURCE_META[props.thread.conversation.source])
+// Applied tags as visible chips (the picker edits; these show). Slugs missing
+// from the palette (deleted tag) still render, by slug, in neutral.
+const appliedTags = computed(() =>
+  props.thread.conversation.tags.map(slug =>
+    props.palette.find(t => t.slug === slug) ?? { slug, name: slug, color: 'neutral' as const }
+  )
+)
 </script>
 
 <template>
@@ -264,7 +275,18 @@ function submitContact() {
         <USelect v-model="assigneeValue" :items="assigneeItems" size="xs" class="w-36" />
       </div>
       <div class="flex items-center gap-2 flex-wrap text-sm">
+        <span v-if="thread.conversation.counterpartyName" class="font-medium text-(--ui-text) truncate">
+          {{ thread.conversation.counterpartyName }}
+        </span>
         <span class="text-(--ui-text-muted) truncate">{{ thread.channel?.value }}</span>
+        <UBadge
+          v-if="sourceMeta"
+          :label="sourceMeta.label"
+          :icon="sourceMeta.icon"
+          color="neutral"
+          size="sm"
+          variant="subtle"
+        />
         <UTooltip v-if="thread.channel?.verified" text="Address ownership verified by authenticated inbound mail">
           <UBadge label="Verified" color="success" size="sm" variant="subtle" icon="i-lucide-badge-check" />
         </UTooltip>
@@ -289,6 +311,14 @@ function submitContact() {
           variant="outline"
           color="neutral"
           @click="contactName = thread.conversation.counterpartyName || ''; showCreateContact = true"
+        />
+        <UBadge
+          v-for="t in appliedTags"
+          :key="t.slug"
+          :label="t.name"
+          :color="t.color"
+          size="sm"
+          variant="subtle"
         />
         <InboxTagPicker
           class="ml-auto"
@@ -321,6 +351,17 @@ function submitContact() {
 
     <template v-if="view === 'conversation'">
       <div class="flex-1 overflow-y-auto p-4 space-y-3">
+        <!-- An empty shell means the origin row committed but the message
+             never persisted (a failed webhook awaiting redelivery, or one
+             that never came back) — say so rather than showing a blank pane. -->
+        <UAlert
+          v-if="!thread.messages.length"
+          icon="i-lucide-mail-question"
+          color="warning"
+          variant="subtle"
+          title="No messages stored"
+          description="This conversation exists but its message content was never stored — the original delivery may have failed and could still be retried by the mail provider."
+        />
         <InboxMessageBubble v-for="m in thread.messages" :key="m.id" :message="m" />
       </div>
 
