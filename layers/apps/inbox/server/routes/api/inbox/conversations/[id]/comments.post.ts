@@ -22,14 +22,22 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Invalid body', data: parsed.error.flatten() })
     }
     const comment = await inboxAddComment(tx, id, ctx.userId, parsed.data.body)
-    const mentions = [...new Set(parsed.data.mentions ?? [])].filter(uid => uid !== ctx.userId)
-    if (mentions.length) {
-      await inboxNotifyMention(tx, {
-        conversationId: id,
-        mentionedUserIds: mentions,
-        actorName: comment.authorName,
-        subject: conversation.subject
-      })
+    const requested = [...new Set(parsed.data.mentions ?? [])].filter(uid => uid !== ctx.userId)
+    if (requested.length) {
+      // The client's id list is untrusted: only teammates who can open this
+      // inbox are notifiable. Anything else (cross-org ids, users without
+      // inbox access, nonexistent uuids) is silently dropped — which also
+      // keeps a bad id from FK-failing the transaction and losing the note.
+      const allowed = new Set(await inboxUsersWithAccess(tx, ctx.orgId))
+      const mentions = requested.filter(uid => allowed.has(uid))
+      if (mentions.length) {
+        await inboxNotifyMention(tx, {
+          conversationId: id,
+          mentionedUserIds: mentions,
+          actorName: comment.authorName,
+          subject: conversation.subject
+        })
+      }
     }
     return comment
   })
