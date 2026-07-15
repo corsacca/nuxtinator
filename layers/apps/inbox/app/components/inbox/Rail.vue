@@ -11,10 +11,15 @@ const props = defineProps<{
   counts: InboxCounts | null
   tags: InboxTag[]
   tagCounts: Record<string, number>
+  // Shows the org-admin settings link in the footer (the settings endpoints
+  // are admin-gated; non-admins get no dead entry).
+  showSettings?: boolean
 }>()
 
 const scope = defineModel<InboxScope>('scope', { required: true })
 const tag = defineModel<string>('tag', { required: true })
+
+const inboxPath = useInboxPath()
 
 const folders = computed(() => [
   { key: 'held' as const, label: 'Needs review', icon: 'i-lucide-shield-alert', count: props.counts?.held ?? 0, alert: true },
@@ -77,5 +82,15 @@ function selectTag(slug: string) {
         </button>
       </template>
     </nav>
+
+    <template v-if="showSettings" #footer>
+      <NuxtLink
+        :to="inboxPath('/inbox/settings')"
+        class="flex items-center gap-2 text-sm text-(--ui-text-muted) hover:text-(--ui-text) transition-colors"
+      >
+        <UIcon name="i-lucide-settings" class="size-4 shrink-0" />
+        Settings
+      </NuxtLink>
+    </template>
   </SidebarPanel>
 </template>

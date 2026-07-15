@@ -5,6 +5,8 @@
 // clearing a field falls back to the deployment default at read time.
 definePageMeta({ middleware: 'auth' })
 
+const inboxPath = useInboxPath()
+
 interface InboxAdminSettings {
   inboundDomain: string
   contactAddress: string
@@ -123,13 +125,24 @@ function generateApiKey() {
 
 <template>
   <div class="max-w-2xl space-y-6">
-    <header>
-      <h1 class="text-2xl font-bold">
-        Inbox settings
-      </h1>
-      <p class="text-sm text-(--ui-text-muted)">
-        Mail routing, courtesy replies, and integrations for this organization's inbox.
-      </p>
+    <header class="space-y-2">
+      <UButton
+        :to="inboxPath('/inbox')"
+        label="Back to inbox"
+        icon="i-lucide-arrow-left"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        class="-ml-2"
+      />
+      <div>
+        <h1 class="text-2xl font-bold">
+          Inbox settings
+        </h1>
+        <p class="text-sm text-(--ui-text-muted)">
+          Mail routing, courtesy replies, and integrations for this organization's inbox.
+        </p>
+      </div>
     </header>
 
     <UAlert

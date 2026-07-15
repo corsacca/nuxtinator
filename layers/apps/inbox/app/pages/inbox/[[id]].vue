@@ -271,7 +271,7 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
 
 <template>
   <div class="flex h-[calc(100vh-57px)] -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
-    <InboxRail v-model:scope="scope" v-model:tag="tag" :counts="counts" :tags="palette" :tag-counts="tagCounts" />
+    <InboxRail v-model:scope="scope" v-model:tag="tag" :counts="counts" :tags="palette" :tag-counts="tagCounts" :show-settings="me?.canManageAliases ?? false" />
 
     <section class="flex-1 flex min-w-0 overflow-hidden">
       <div class="flex flex-col min-h-0" :class="selectedId ? 'hidden lg:flex' : 'flex w-full lg:w-auto'">
