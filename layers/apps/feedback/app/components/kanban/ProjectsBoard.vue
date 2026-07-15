@@ -14,6 +14,10 @@ const props = defineProps<{
   swimlanes: Swimlane[]
   cards: Card[]
   scope?: string
+  // Single-project view: lane rows split the container height evenly and cells
+  // scroll internally, so the board uses the full screen height. Manual row
+  // resizing and project reordering are disabled in this mode.
+  fillHeight?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -194,20 +198,52 @@ function projectCardCount(projectId: string): number {
   return props.cards.filter(c => c.project_id === projectId).length
 }
 
+// Column headers count only cards belonging to the projects on display, so a
+// single-project view doesn't show totals from projects it isn't rendering.
 function cardCountInColumn(columnId: string): number {
-  return props.cards.filter(c => c.column_id === columnId).length
+  const visible = new Set(props.projects.map(p => p.id))
+  return props.cards.filter(c => c.column_id === columnId && visible.has(c.project_id)).length
 }
 
+// In fill (single-project) mode the label column shrinks to a slim rail —
+// the project name already sits in the page header, so the rail only carries
+// vertically-written labels.
 const gridTemplate = computed(
-  () => `240px repeat(${sortedColumns.value.length}, minmax(240px, 1fr))`
+  () => `${props.fillHeight ? '40px' : '240px'} repeat(${sortedColumns.value.length}, minmax(240px, 1fr))`
 )
+
+// One grid row per rendered lane row: pooled (collapsed) projects contribute
+// one, expanded projects one per swimlane. Drives the explicit row template
+// in fill mode so each lane row gets an equal share of the height.
+const laneRowCount = computed(() =>
+  props.projects.reduce((n, p) =>
+    n + (isProjectExpanded(p) ? lanesOf(p.id).length : (defaultLaneOf(p.id) ? 1 : 0)), 0)
+)
+
+const gridStyle = computed(() => ({
+  gridTemplateColumns: gridTemplate.value,
+  ...(props.fillHeight
+    ? { gridTemplateRows: `auto repeat(${laneRowCount.value}, minmax(0, 1fr))` }
+    : {})
+}))
 </script>
 
 <template>
   <div class="flex-1 min-h-0 overflow-auto">
-    <div class="min-w-fit grid" :style="{ gridTemplateColumns: gridTemplate }">
-      <div class="px-3 py-2 border-b border-r border-(--ui-border) bg-(--ui-bg-elevated) text-xs font-semibold uppercase text-(--ui-text-muted) sticky top-0 z-10">
-        Projects
+    <div
+      class="min-w-fit grid"
+      :class="fillHeight ? 'h-full' : ''"
+      :style="gridStyle"
+    >
+      <div
+        class="border-b border-r border-(--ui-border) sticky top-0 z-10"
+        :class="fillHeight
+          ? 'bg-primary-500/10'
+          : 'px-3 py-2 bg-(--ui-bg-elevated) text-xs font-semibold uppercase text-(--ui-text-muted)'"
+      >
+        <template v-if="!fillHeight">
+          Projects
+        </template>
       </div>
       <div
         v-for="col in sortedColumns"
@@ -232,9 +268,14 @@ const gridTemplate = computed(
       <template v-for="project in projects" :key="project.id">
         <template v-if="!isProjectExpanded(project) && defaultLaneOf(project.id)">
           <div
-            class="px-3 py-2 border-b border-r border-(--ui-border) bg-(--ui-bg-muted) flex items-center gap-2 min-w-0 cursor-grab group/projrow"
-            :class="dragOverProjectId === project.id ? 'border-l-2 border-l-primary-500' : ''"
-            draggable="true"
+            class="border-b border-r border-(--ui-border) flex min-w-0 group/projrow"
+            :class="[
+              fillHeight
+                ? 'bg-primary-500/10 flex-col items-center gap-1 px-1 py-2'
+                : 'px-3 py-2 bg-(--ui-bg-muted) items-center gap-2 cursor-grab',
+              dragOverProjectId === project.id ? 'border-l-2 border-l-primary-500' : ''
+            ]"
+            :draggable="fillHeight ? 'false' : 'true'"
             @dragstart="onProjectDragStart($event, project)"
             @dragover="onProjectDragOver($event, project)"
             @dragleave="onProjectDragLeave()"
@@ -242,38 +283,58 @@ const gridTemplate = computed(
             @dragend="onProjectDragEnd()"
             @contextmenu.prevent="emit('projectContextMenu', { x: $event.clientX, y: $event.clientY, project })"
           >
-            <button
-              v-if="hasMultipleLanes(project.id)"
-              type="button"
-              class="shrink-0 text-(--ui-text-muted) hover:text-(--ui-text) p-0.5"
-              :title="`Expand ${project.name} — show swimlanes`"
-              @click.stop="emit('toggleProjectExpand', project)"
-            >
-              <UIcon name="i-lucide-chevron-right" class="w-4 h-4" />
-            </button>
-            <span v-else class="shrink-0 w-5" aria-hidden="true" />
-            <span class="text-sm font-semibold truncate flex-1 min-w-0">{{ project.name }}</span>
-            <span class="text-[11px] text-(--ui-text-muted) shrink-0">
-              {{ projectCardCount(project.id) }}
-            </span>
-            <div class="ml-auto hidden group-hover/projrow:flex items-center gap-1">
-              <UButton
-                icon="i-lucide-plus"
-                variant="ghost"
-                color="neutral"
-                size="xs"
-                aria-label="Add swimlane"
-                @click.stop="emit('addSwimlane', project.id)"
-              />
-              <UButton
-                icon="i-lucide-pencil"
-                variant="ghost"
-                color="neutral"
-                size="xs"
-                aria-label="Rename project"
-                @click.stop="emit('renameProject', project)"
-              />
-            </div>
+            <template v-if="fillHeight">
+              <button
+                v-if="hasMultipleLanes(project.id)"
+                type="button"
+                class="shrink-0 text-(--ui-text-muted) hover:text-(--ui-text) p-0.5"
+                :title="`Expand ${project.name} — show swimlanes`"
+                @click.stop="emit('toggleProjectExpand', project)"
+              >
+                <UIcon name="i-lucide-chevron-right" class="w-4 h-4" />
+              </button>
+              <span
+                class="[writing-mode:vertical-rl] rotate-180 text-xs font-semibold tracking-wide text-(--ui-text-muted) flex-1 min-h-0 truncate"
+                :title="project.name"
+              >{{ project.name }}</span>
+              <span class="text-[10px] text-(--ui-text-muted) shrink-0">
+                {{ projectCardCount(project.id) }}
+              </span>
+            </template>
+            <template v-else>
+              <button
+                v-if="hasMultipleLanes(project.id)"
+                type="button"
+                class="shrink-0 text-(--ui-text-muted) hover:text-(--ui-text) p-0.5"
+                :title="`Expand ${project.name} — show swimlanes`"
+                @click.stop="emit('toggleProjectExpand', project)"
+              >
+                <UIcon name="i-lucide-chevron-right" class="w-4 h-4" />
+              </button>
+              <span v-else class="shrink-0 w-5" aria-hidden="true" />
+              <span class="text-sm font-semibold truncate flex-1 min-w-0">{{ project.name }}</span>
+              <span class="text-[11px] text-(--ui-text-muted) shrink-0">
+                {{ projectCardCount(project.id) }}
+              </span>
+              <div class="ml-auto hidden group-hover/projrow:flex items-center gap-1">
+                <UButton
+                  icon="i-lucide-plus"
+                  variant="ghost"
+                  color="neutral"
+                  size="xs"
+                  aria-label="Add swimlane"
+                  @click.stop="emit('addSwimlane', project.id)"
+                />
+                <UButton
+                  icon="i-lucide-pencil"
+                  variant="ghost"
+                  color="neutral"
+                  size="xs"
+                  aria-label="Rename project"
+                  @click.stop="emit('renameProject', project)"
+                />
+              </div>
+            </template>
           </div>
           <KanbanCell
             v-for="col in sortedColumns"
@@ -284,13 +345,15 @@ const gridTemplate = computed(
             :scope="scope"
             :cards="cards"
             :swimlane-filter-ids="allLaneIdsOf(project.id)"
-            :height-px="heightFor(keyForPooled(project.id))"
+            :height-px="fillHeight ? undefined : heightFor(keyForPooled(project.id))"
+            :fill="fillHeight"
             @add-card="(p) => emit('addCard', p)"
             @card-click="(c) => emit('cardClick', c)"
             @card-context-menu="(p) => emit('cardContextMenu', p)"
             @card-drop="(p) => emit('cardDrop', p)"
           />
           <div
+            v-if="!fillHeight"
             class="swimlane-resize-handle"
             :class="resizingKey === keyForPooled(project.id) ? 'active' : ''"
             :style="{ gridColumn: '1 / -1' }"
@@ -302,12 +365,15 @@ const gridTemplate = computed(
         <template v-else>
           <template v-for="(lane, idx) in lanesOf(project.id)" :key="lane.id">
             <div
-              class="px-3 py-2 border-b border-r border-(--ui-border) bg-(--ui-bg-muted) flex items-center gap-2 min-w-0"
+              class="border-b border-r border-(--ui-border) flex min-w-0"
               :class="[
-                idx === 0 ? 'cursor-grab group/projrow' : 'pl-10',
+                fillHeight
+                  ? 'bg-primary-500/10 flex-col items-center gap-1 px-1 py-2'
+                  : ['px-3 py-2 bg-(--ui-bg-muted) items-center gap-2', idx === 0 ? 'cursor-grab' : 'pl-10'],
+                idx === 0 ? 'group/projrow' : '',
                 dragOverProjectId === project.id && idx === 0 ? 'border-l-2 border-l-primary-500' : ''
               ]"
-              :draggable="idx === 0 ? 'true' : 'false'"
+              :draggable="idx === 0 && !fillHeight ? 'true' : 'false'"
               @dragstart="idx === 0 && onProjectDragStart($event, project)"
               @dragover="idx === 0 && onProjectDragOver($event, project)"
               @dragleave="idx === 0 && onProjectDragLeave()"
@@ -315,7 +381,33 @@ const gridTemplate = computed(
               @dragend="idx === 0 && onProjectDragEnd()"
               @contextmenu.prevent="idx === 0 && emit('projectContextMenu', { x: $event.clientX, y: $event.clientY, project })"
             >
-              <template v-if="idx === 0">
+              <template v-if="fillHeight">
+                <template v-if="idx === 0">
+                  <button
+                    v-if="hasMultipleLanes(project.id)"
+                    type="button"
+                    class="shrink-0 text-(--ui-text-muted) hover:text-(--ui-text) p-0.5"
+                    :title="`Collapse ${project.name}`"
+                    @click.stop="emit('toggleProjectExpand', project)"
+                  >
+                    <UIcon name="i-lucide-chevron-down" class="w-4 h-4" />
+                  </button>
+                  <span
+                    class="[writing-mode:vertical-rl] rotate-180 text-xs font-semibold tracking-wide text-(--ui-text-muted) flex-1 min-h-0 truncate"
+                    :title="project.name"
+                  >{{ project.name }}</span>
+                  <span class="text-[10px] text-(--ui-text-muted) shrink-0">
+                    {{ projectCardCount(project.id) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span
+                    class="[writing-mode:vertical-rl] rotate-180 text-xs text-(--ui-text-muted) flex-1 min-h-0 truncate"
+                    :title="lane.name"
+                  >{{ lane.name }}</span>
+                </template>
+              </template>
+              <template v-else-if="idx === 0">
                 <button
                   v-if="hasMultipleLanes(project.id)"
                   type="button"
@@ -362,13 +454,15 @@ const gridTemplate = computed(
               :project="project"
               :scope="scope"
               :cards="cards"
-              :height-px="heightFor(keyForLane(project.id, lane.id))"
+              :height-px="fillHeight ? undefined : heightFor(keyForLane(project.id, lane.id))"
+              :fill="fillHeight"
               @add-card="(p) => emit('addCard', p)"
               @card-click="(c) => emit('cardClick', c)"
               @card-context-menu="(p) => emit('cardContextMenu', p)"
               @card-drop="(p) => emit('cardDrop', p)"
             />
             <div
+              v-if="!fillHeight"
               class="swimlane-resize-handle"
               :class="resizingKey === keyForLane(project.id, lane.id) ? 'active' : ''"
               :style="{ gridColumn: '1 / -1' }"
@@ -379,22 +473,24 @@ const gridTemplate = computed(
         </template>
       </template>
 
-      <div class="border-b border-r border-(--ui-border) p-2">
-        <UButton
-          icon="i-lucide-plus"
-          variant="ghost"
-          color="neutral"
-          size="sm"
-          @click="emit('requestAddProject')"
-        >
-          Add project
-        </UButton>
-      </div>
-      <div
-        v-for="col in sortedColumns"
-        :key="`add-${col.id}`"
-        class="border-b border-(--ui-border)"
-      />
+      <template v-if="!fillHeight">
+        <div class="border-b border-r border-(--ui-border) p-2">
+          <UButton
+            icon="i-lucide-plus"
+            variant="ghost"
+            color="neutral"
+            size="sm"
+            @click="emit('requestAddProject')"
+          >
+            Add project
+          </UButton>
+        </div>
+        <div
+          v-for="col in sortedColumns"
+          :key="`add-${col.id}`"
+          class="border-b border-(--ui-border)"
+        />
+      </template>
     </div>
   </div>
 </template>
