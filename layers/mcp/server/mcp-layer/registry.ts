@@ -71,6 +71,17 @@ export function createRegistry(): McpRegistry {
     }
 
     const inputJsonSchema = projectSchema(tool.input)
+    // The MCP spec requires a tool's inputSchema to be a JSON Schema object.
+    // A top-level z.union() (bare anyOf) or similar wrapper erases the object
+    // type, and strict clients (Claude Code) reject the server's ENTIRE tool
+    // list over one bad tool — fail loudly at boot instead.
+    if (inputJsonSchema.type !== 'object') {
+      throw new Error(
+        `MCP tool "${tool.name}" input must project to a JSON Schema object `
+        + `(got type: ${JSON.stringify(inputJsonSchema.type)}). Use a single z.object() `
+        + `input and validate variants in the handler.`
+      )
+    }
     const outputJsonSchema = tool.output ? projectSchema(tool.output) : undefined
     const entry: RegisteredTool = { def: tool as McpToolDef, inputJsonSchema, outputJsonSchema }
 

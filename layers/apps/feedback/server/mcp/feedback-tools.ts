@@ -138,7 +138,7 @@ export const listCardsTool = defineMcpTool({
 
 export const createCardTool = defineMcpTool({
   name: 'feedback_create_card',
-  description: 'Create a card on a project board in the active org. New findings/ideas belong in the default FEEDBACK INBOX column for human triage — only target another column when explicitly asked. Use post_meta for machine data (e.g. repo, branch, file, line, category, dedupe_key).',
+  description: 'Create a card on a project board in the active org. New findings/ideas belong in the default FEEDBACK INBOX column for human triage — only target another column when explicitly asked. Start the description with a "## What happens" section in plain behavior-first language a teammate can read without opening code (when someone does X, Y goes wrong — instead of Z; no function names or jargon there), then "## Why it matters", then "## Technical detail" with file:line evidence. Put the proposed fix as concrete steps in post_meta.plan (not in the description); use post_meta for machine data too (repo, branch, file, line, category, dedupe_key).',
   scope: 'feedback.write',
   input: z.object({
     project_id: z.string().uuid(),
