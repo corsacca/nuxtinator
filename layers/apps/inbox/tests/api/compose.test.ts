@@ -64,6 +64,22 @@ describe('compose (staff-started conversation)', () => {
     ).rejects.toMatchObject({ statusCode: 404 })
   })
 
+  it('sends a new conversation from the personal alias, with signature, when chosen', async () => {
+    const { opts, user, domain } = await createInboxOrgWith(sql)
+    await $fetch(`/api/inbox/identities/${user.id}`, {
+      method: 'PUT', body: { alias: 'jane', signature: '<p>Best, Jane</p>' }, ...opts
+    })
+    const toEmail = `test-inbox-personal-${randomUUID().slice(0, 8)}@recipient.example`
+    const res = await $fetch<{ messageId: string }>('/api/inbox/conversations', {
+      method: 'POST',
+      body: { toEmail, subject: 'Intro', body: '<p>Hello!</p>', fromIdentity: 'personal' },
+      ...opts
+    })
+    const [msg] = await sql`SELECT from_email, body_html FROM inbox_messages WHERE id = ${res.messageId}`
+    expect(msg!.from_email).toBe(`jane@${domain}`)
+    expect(msg!.body_html).toContain('Best, Jane')
+  })
+
   it('requires inbox.send', async () => {
     const member = await createInboxOrgWith(sql, ['member'])
     await expect(
