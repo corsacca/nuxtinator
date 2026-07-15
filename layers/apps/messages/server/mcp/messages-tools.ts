@@ -680,16 +680,23 @@ export const reactTool = defineMcpTool({
 
 export const markReadTool = defineMcpTool({
   name: 'messages_mark_read',
-  description: 'Mark a conversation as read (UPSERT messages_conversation_reads.last_read_at) or mark notification IDs as read.',
+  description: 'Mark a conversation as read (UPSERT messages_conversation_reads.last_read_at) or mark notification IDs as read. Provide exactly one of conversation_id or notification_ids.',
   scope: 'messages.write',
-  input: z.union([
-    z.object({ conversation_id: z.string().uuid() }).strict(),
-    z.object({ notification_ids: z.array(z.string().uuid()).min(1).max(100) }).strict()
-  ]),
+  // MCP requires a tool's input to project to a single JSON Schema object — a
+  // top-level z.union() projects to a bare anyOf, which strict clients
+  // (Claude Code) reject wholesale. The either/or contract is enforced in the
+  // handler instead.
+  input: z.object({
+    conversation_id: z.string().uuid().optional(),
+    notification_ids: z.array(z.string().uuid()).min(1).max(100).optional()
+  }).strict(),
   handler: async (input, ctx) => {
     try {
+      if (!!input.conversation_id === !!input.notification_ids) {
+        throw createError({ statusCode: 400, statusMessage: 'Provide exactly one of conversation_id or notification_ids.' })
+      }
       const result = await runInOrgTransaction(ctx.event, async (tx) => {
-        if ('conversation_id' in input) {
+        if (input.conversation_id) {
           const conv = await loadConversation(tx, input.conversation_id)
           if (!conv) {
             throw createError({ statusCode: 404, statusMessage: 'Conversation not found.' })
@@ -711,20 +718,21 @@ export const markReadTool = defineMcpTool({
           return { marked: 'conversation' as const, conversation_id: input.conversation_id }
         }
 
+        const notificationIds = input.notification_ids!
         await tx
           .updateTable('notifications')
           .set({ read_at: sql<Date>`now()` })
           .where('user_id', '=', ctx.auth.userId)
           .where('app_id', '=', 'messages')
-          .where('id', 'in', input.notification_ids)
+          .where('id', 'in', notificationIds)
           .execute()
-        await mcpLog('UPDATE', 'notifications', input.notification_ids[0]!, ctx, {
+        await mcpLog('UPDATE', 'notifications', notificationIds[0]!, ctx, {
           mark: 'notifications',
-          count: input.notification_ids.length
+          count: notificationIds.length
         }, asAuditExecutor(tx))
         return {
           marked: 'notifications' as const,
-          count: input.notification_ids.length
+          count: notificationIds.length
         }
       })
 

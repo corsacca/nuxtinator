@@ -11,6 +11,9 @@ const props = defineProps<{
   scope?: string
   swimlaneFilterIds?: string[]
   heightPx?: number
+  // When true the cell carries no height of its own and stretches to fill its
+  // grid row (single-project view sizes rows to the viewport instead).
+  fill?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -111,11 +114,6 @@ function handleAdd() {
     projectId: props.project.id
   })
 }
-
-const APPROX_VISIBLE = 5
-const hiddenCount = computed(() =>
-  isCollapsed.value ? 0 : Math.max(0, cellCards.value.length - APPROX_VISIBLE)
-)
 </script>
 
 <template>
@@ -125,10 +123,10 @@ const hiddenCount = computed(() =>
     :class="{
       'drag-over bg-blue-500/10 ring-1 ring-blue-400 dark:bg-blue-950/40': isDragOver,
       'overflow-y-auto scrollbar-thin': !isCollapsed,
-      'h-80': !isCollapsed && heightPx === undefined,
+      'h-80': !isCollapsed && heightPx === undefined && !fill,
       'h-12 overflow-hidden': isCollapsed
     }"
-    :style="!isCollapsed && heightPx !== undefined ? { height: `${heightPx}px` } : undefined"
+    :style="!isCollapsed && !fill && heightPx !== undefined ? { height: `${heightPx}px` } : undefined"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
@@ -181,13 +179,6 @@ const hiddenCount = computed(() =>
       >
         + Add card
       </button>
-
-      <div
-        v-if="hiddenCount > 0"
-        class="shrink-0 text-center text-[11px] text-(--ui-text-muted) bg-(--ui-bg-accented) rounded px-1 py-0.5 mt-0.5 select-none"
-      >
-        Scroll for {{ hiddenCount }} more
-      </div>
     </template>
 
     <div

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useActiveOrg } from '#tenant'
 import ProjectsBoard from '../../components/kanban/ProjectsBoard.vue'
+import ProjectsSidebar from '../../components/kanban/ProjectsSidebar.vue'
 import CardEditSidePanel from '../../components/kanban/CardEditSidePanel.vue'
 import KanbanContextMenu from '../../components/kanban/KanbanContextMenu.vue'
 import type {
@@ -21,6 +22,20 @@ definePageMeta({
 // crosstalk. In single-mode it falls back to a constant.
 const { slug: orgSlug } = useActiveOrg()
 const scope = computed(() => orgSlug.value ?? 'default')
+
+// ---------- Project selection (sidebar) ----------
+const route = useRoute()
+const router = useRouter()
+const sidebarOpen = ref(false)
+
+// The focused project lives in the `project` query param so a single-project
+// board is deep-linkable and survives reloads. null = all-projects view.
+const selectedProjectId = computed(() =>
+  typeof route.query.project === 'string' ? route.query.project : null
+)
+function selectProject(id: string | null) {
+  router.replace({ query: { ...route.query, project: id ?? undefined } })
+}
 
 // ---------- Ctrl+scroll zoom ----------
 const zoomLevel = ref(100)
@@ -54,6 +69,28 @@ const error = ref('')
 
 const cardPanelOpen = ref(false)
 const activeCard = ref<Card | null>(null)
+
+// An unknown/stale query id (deleted project, org switch) falls back to the
+// all-projects view rather than an empty board.
+const selectedProject = computed(() =>
+  projects.value.find(p => p.id === selectedProjectId.value) ?? null
+)
+const visibleProjects = computed(() =>
+  selectedProject.value ? [selectedProject.value] : projects.value
+)
+
+// Per-project count of cards sitting in FEEDBACK INBOX, shown as sidebar
+// badges. The column is mandatory and rename-protected, so matching on its
+// name is stable (same pattern as the ARCHIVE lookup in archiveCard).
+const inboxCounts = computed<Record<string, number>>(() => {
+  const inboxCol = columns.value.find(c => c.name === 'FEEDBACK INBOX')
+  const counts: Record<string, number> = {}
+  if (!inboxCol) return counts
+  for (const c of cards.value) {
+    if (c.column_id === inboxCol.id) counts[c.project_id] = (counts[c.project_id] ?? 0) + 1
+  }
+  return counts
+})
 
 async function loadAll() {
   loading.value = true
@@ -205,6 +242,7 @@ async function deleteProject(p: Project) {
     projects.value = projects.value.filter(x => x.id !== p.id)
     swimlanes.value = swimlanes.value.filter(s => s.project_id !== p.id)
     cards.value = cards.value.filter(c => c.project_id !== p.id)
+    if (selectedProjectId.value === p.id) selectProject(null)
   } catch (e: any) {
     toast.add({ title: 'Delete failed', description: e?.data?.statusMessage, color: 'error' })
   }
@@ -453,6 +491,35 @@ async function onArchiveCard(patch: Partial<Card>) {
   }
 }
 
+// Header gear dropdown for the focused project — same actions as the
+// project right-click menu.
+const projectMenuItems = computed(() => {
+  const p = selectedProject.value
+  if (!p) return []
+  return [
+    [
+      {
+        label: 'Settings',
+        icon: 'i-lucide-settings',
+        onSelect: () => openRenameProject(p)
+      },
+      {
+        label: 'Add swimlane',
+        icon: 'i-lucide-plus',
+        onSelect: () => openAddSwimlane(p.id)
+      }
+    ],
+    [
+      {
+        label: 'Delete project',
+        icon: 'i-lucide-trash-2',
+        color: 'error' as const,
+        onSelect: () => deleteProject(p)
+      }
+    ]
+  ]
+})
+
 // --- Context menu ---
 const ctxMenu = ref<{
   open: boolean
@@ -488,7 +555,7 @@ function openProjectCtx(e: { x: number; y: number; project: Project }) {
     y: e.y,
     target: { kind: 'project', project: e.project },
     items: [
-      { label: 'Rename', icon: 'i-lucide-pencil', action: 'rename' },
+      { label: 'Settings', icon: 'i-lucide-settings', action: 'rename' },
       { label: 'Add swimlane', icon: 'i-lucide-plus', action: 'add-swimlane' },
       { label: 'Delete', icon: 'i-lucide-trash-2', danger: true, action: 'delete' }
     ]
@@ -589,13 +656,33 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
 </script>
 
 <template>
-  <div class="flex flex-col h-[calc(100vh-57px)] min-h-0 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
+  <div class="flex h-[calc(100vh-57px)] min-h-0 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
+    <ProjectsSidebar
+      v-model:open="sidebarOpen"
+      :projects="projects"
+      :inbox-counts="inboxCounts"
+      :selected-id="selectedProject?.id ?? null"
+      @select="selectProject"
+      @add-project="openCreateProject"
+      @settings="openSettings"
+    />
+
+    <section class="flex-1 flex flex-col min-w-0 overflow-hidden border-l-0 lg:border-l border-(--ui-border)">
     <div class="shrink-0 bg-(--ui-bg-elevated) border-b border-(--ui-border) px-4 py-2 flex items-center gap-2">
+      <UButton
+        class="lg:hidden"
+        icon="i-lucide-menu"
+        variant="ghost"
+        color="neutral"
+        size="sm"
+        aria-label="Open projects"
+        @click="sidebarOpen = true"
+      />
       <div class="flex items-center gap-3 min-w-0 flex-1">
         <UIcon name="i-lucide-inbox" class="shrink-0" />
         <div class="min-w-0">
           <h1 class="font-semibold truncate text-sm sm:text-base">
-            Feedback
+            {{ selectedProject ? selectedProject.name : 'Feedback' }}
           </h1>
         </div>
       </div>
@@ -614,13 +701,17 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
           aria-label="Reload"
           @click="loadAll"
         />
-        <UButton
-          variant="ghost"
-          size="sm"
-          icon="i-lucide-settings"
-          aria-label="Feedback settings"
-          @click="openSettings"
-        />
+        <UDropdownMenu
+          v-if="selectedProject"
+          :items="projectMenuItems"
+        >
+          <UButton
+            variant="ghost"
+            size="sm"
+            icon="i-lucide-settings"
+            :aria-label="`${selectedProject.name} actions`"
+          />
+        </UDropdownMenu>
         <UButton
           variant="soft"
           size="sm"
@@ -657,11 +748,12 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
         </div>
 
         <ProjectsBoard
-          :projects="projects"
+          :projects="visibleProjects"
           :columns="columns"
           :swimlanes="swimlanes"
           :cards="cards"
           :scope="scope"
+          :fill-height="!!selectedProject"
           @add-card="openAddCard"
           @card-click="openCard"
           @card-context-menu="openCardCtx"
@@ -677,6 +769,7 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
         />
       </div>
     </div>
+    </section>
 
     <CardEditSidePanel
       v-model="cardPanelOpen"
@@ -689,7 +782,7 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
       @archive="onArchiveCard"
     />
 
-    <UModal v-model:open="projectModalOpen" :title="projectForm.mode === 'create' ? 'New project' : 'Rename project'">
+    <UModal v-model:open="projectModalOpen" :title="projectForm.mode === 'create' ? 'New project' : 'Project settings'">
       <template #body>
         <div class="space-y-4">
           <UFormField label="Name" required>
