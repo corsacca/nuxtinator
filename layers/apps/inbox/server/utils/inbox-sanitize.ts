@@ -23,3 +23,39 @@ export function inboxSanitizeEmailHtml(html: string | null | undefined): string 
     }
   })
 }
+
+// Internal-note bodies: staff-authored rich HTML rendered only in the browser
+// (never an email sink). Email formatting minus images, plus the Tiptap
+// mention span (data-type / data-id / data-label) so @mentions survive the
+// round trip — the server extracts notification recipients from THIS
+// sanitized markup, never from a client-supplied id list.
+export function inboxSanitizeNoteHtml(html: string | null | undefined): string {
+  if (!html) return ''
+  return sanitizeHtml(html, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat(['h1', 'h2']),
+    allowedAttributes: {
+      ...sanitizeHtml.defaults.allowedAttributes,
+      a: ['href', 'name', 'target', 'rel'],
+      span: ['data-type', 'data-id', 'data-label', 'class']
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    transformTags: {
+      a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer' }, true)
+    }
+  })
+}
+
+const MENTION_SPAN_RE = /<span\b[^>]*\bdata-type="mention"[^>]*>/gi
+const MENTION_ID_RE = /\bdata-id="([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i
+
+// User ids @mentioned in a sanitized note body, deduped. Only well-formed
+// uuids in mention spans count — anything else is markup noise, not a
+// recipient.
+export function inboxExtractMentionIds(sanitizedHtml: string): string[] {
+  const ids = new Set<string>()
+  for (const tag of sanitizedHtml.match(MENTION_SPAN_RE) ?? []) {
+    const m = MENTION_ID_RE.exec(tag)
+    if (m?.[1]) ids.add(m[1].toLowerCase())
+  }
+  return [...ids]
+}

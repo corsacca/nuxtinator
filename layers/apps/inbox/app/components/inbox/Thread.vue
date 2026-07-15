@@ -467,7 +467,7 @@ function submitContact() {
     </footer>
     </template>
 
-    <InboxNotesTimeline v-else :conversation-id="thread.conversation.id" :users="assignees" />
+    <InboxNotesTimeline v-else :conversation-id="thread.conversation.id" :users="assignees" :can-moderate="me?.canManageAliases ?? false" />
 
     <UModal v-model:open="confirmSpam" title="Mark as spam?">
       <template #body>

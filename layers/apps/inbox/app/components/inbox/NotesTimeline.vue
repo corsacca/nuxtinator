@@ -1,12 +1,14 @@
 <script setup lang="ts">
-// The "Notes & Activity" tab body: a note composer (plain text + a teammate
-// mention picker) and the merged newest-first feed of internal notes and audit
-// activity. Own notes are editable/removable inline; system notes and activity
-// rows are read-only.
+// The "Notes & Activity" tab body: a rich note composer (formatting + inline
+// @mentions of teammates) and the merged newest-first feed of internal notes
+// and audit activity. Own notes are editable/removable inline; admins can
+// moderate anyone's note; system notes and activity rows are read-only.
+// Mention recipients ride the note markup — the server extracts and validates
+// them from the sanitized body.
 import type { InboxAssignee } from '../../composables/useInboxThread'
 import type { InboxTimelineEntry } from '../../composables/useInboxNotesTimeline'
 
-const props = defineProps<{ conversationId: string, users: InboxAssignee[] }>()
+const props = defineProps<{ conversationId: string, users: InboxAssignee[], canModerate?: boolean }>()
 
 const { user } = useAuth()
 const currentUserId = computed(() => (user.value as { id?: string } | null)?.id ?? null)
@@ -15,19 +17,20 @@ const toast = useToast()
 const { entries, hasMore, pending, error, loadOlder, post, editNote, removeNote } = useInboxNotesTimeline(() => props.conversationId)
 
 const noteBody = ref('')
-const mentionIds = ref<string[]>([])
 const posting = ref(false)
 
-const mentionItems = computed(() => props.users.map(u => ({ label: u.displayName, value: u.id })))
+const mentionItems = computed(() => props.users.map(u => ({ id: u.id, label: u.displayName })))
+
+function hasContent(html: string): boolean {
+  return !!html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+}
 
 async function submitNote() {
-  const body = noteBody.value.trim()
-  if (!body || posting.value) return
+  if (!hasContent(noteBody.value) || posting.value) return
   posting.value = true
   try {
-    await post(body, mentionIds.value)
+    await post(noteBody.value)
     noteBody.value = ''
-    mentionIds.value = []
   } catch (err) {
     toast.add({ title: 'Note failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
   } finally {
@@ -44,10 +47,9 @@ function startEdit(id: string, body: string) {
 }
 async function saveEdit() {
   const id = editingId.value
-  const body = editBody.value.trim()
-  if (!id || !body) { editingId.value = null; return }
+  if (!id || !hasContent(editBody.value)) { editingId.value = null; return }
   try {
-    await editNote(id, body)
+    await editNote(id, editBody.value)
   } catch (err) {
     toast.add({ title: 'Edit failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
   } finally {
@@ -77,37 +79,36 @@ function activityIcon(eventType: string): string {
 function isOwn(e: InboxTimelineEntry): boolean {
   return e.kind === 'note' && e.note.authorId !== null && e.note.authorId === currentUserId.value
 }
+// The moderation bar: own notes always, anyone's note for an admin — but
+// never system notes (null author; the server refuses those too).
+function canManage(e: InboxTimelineEntry): boolean {
+  if (e.kind !== 'note' || e.note.authorId === null) return false
+  return isOwn(e) || props.canModerate === true
+}
 </script>
 
 <template>
   <div class="flex-1 flex flex-col min-h-0">
     <div class="p-3 border-b border-(--ui-border) space-y-2">
-      <UTextarea
+      <UEditor
+        v-slot="{ editor }"
         v-model="noteBody"
-        :rows="2"
-        autoresize
-        placeholder="Add an internal note… (only staff see this)"
-        class="w-full"
+        content-type="html"
+        :image="false"
+        placeholder="Add an internal note… (only staff see this, @ mentions a teammate)"
+        class="min-h-16 max-h-48 overflow-y-auto rounded-md border border-(--ui-border) text-sm"
         @keydown.meta.enter="submitNote"
         @keydown.ctrl.enter="submitNote"
-      />
-      <div class="flex items-center gap-2">
-        <USelectMenu
-          v-model="mentionIds"
-          :items="mentionItems"
-          value-key="value"
-          multiple
-          placeholder="Notify teammates"
-          icon="i-lucide-at-sign"
-          size="xs"
-          class="flex-1 min-w-0"
-        />
+      >
+        <UEditorMentionMenu :editor="editor" :items="mentionItems" />
+      </UEditor>
+      <div class="flex justify-end">
         <UButton
           label="Add note"
           icon="i-lucide-message-square-plus"
           size="xs"
           :loading="posting"
-          :disabled="!noteBody.trim()"
+          :disabled="!hasContent(noteBody)"
           @click="submitNote"
         />
       </div>
@@ -130,19 +131,31 @@ function isOwn(e: InboxTimelineEntry): boolean {
               <span class="font-medium text-(--ui-text-highlighted) truncate">{{ entry.note.authorName }}</span>
               <span class="text-(--ui-text-dimmed)">{{ inboxRelativeTime(entry.note.createdAt) }}</span>
               <span v-if="entry.note.editedAt" class="text-(--ui-text-dimmed)">(edited)</span>
-              <template v-if="isOwn(entry) && editingId !== entry.note.id">
+              <template v-if="canManage(entry) && editingId !== entry.note.id">
                 <UButton icon="i-lucide-pencil" size="xs" variant="ghost" color="neutral" class="ml-auto" aria-label="Edit note" @click="startEdit(entry.note.id, entry.note.body)" />
                 <UButton icon="i-lucide-trash-2" size="xs" variant="ghost" color="error" aria-label="Delete note" @click="onRemove(entry.note.id)" />
               </template>
             </div>
             <template v-if="editingId === entry.note.id">
-              <UTextarea v-model="editBody" :rows="2" autoresize class="w-full mt-1" @keydown.meta.enter="saveEdit" @keydown.ctrl.enter="saveEdit" @keydown.esc="editingId = null" />
+              <UEditor
+                v-slot="{ editor }"
+                v-model="editBody"
+                content-type="html"
+                :image="false"
+                class="min-h-16 max-h-48 overflow-y-auto rounded-md border border-(--ui-border) text-sm mt-1"
+                @keydown.meta.enter="saveEdit"
+                @keydown.ctrl.enter="saveEdit"
+                @keydown.esc="editingId = null"
+              >
+                <UEditorMentionMenu :editor="editor" :items="mentionItems" />
+              </UEditor>
               <div class="flex justify-end gap-2 mt-1">
                 <UButton label="Cancel" size="xs" variant="ghost" color="neutral" @click="editingId = null" />
                 <UButton label="Save" size="xs" @click="saveEdit" />
               </div>
             </template>
-            <p v-else class="text-sm text-(--ui-text-toned) whitespace-pre-wrap break-words mt-0.5">{{ entry.note.body }}</p>
+            <!-- eslint-disable-next-line vue/no-v-html -- server-sanitized note HTML, re-sanitized for this sink -->
+            <div v-else class="inbox-note-body text-sm text-(--ui-text-toned) break-words mt-0.5" v-html="inboxSanitizeDisplayHtml(entry.note.body)" />
           </div>
         </div>
 
@@ -160,3 +173,14 @@ function isOwn(e: InboxTimelineEntry): boolean {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Mention chips inside rendered note bodies (Tiptap's default mention class). */
+.inbox-note-body :deep(.mention) {
+  color: var(--ui-primary);
+  font-weight: 500;
+}
+.inbox-note-body :deep(p) {
+  margin: 0;
+}
+</style>

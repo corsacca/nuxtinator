@@ -78,11 +78,13 @@ export function useInboxNotesTimeline(conversationId: MaybeRefOrGetter<string | 
     notesCursor.value = res.nextCursor
   }
 
-  async function post(body: string, mentions: string[]): Promise<void> {
+  // Mentions ride the body's mention spans; the server extracts recipients
+  // from the sanitized markup.
+  async function post(body: string): Promise<void> {
     const id = toValue(conversationId)
     if (!id) return
     const note = await $fetch<InboxNote>(`/api/inbox/conversations/${id}/comments`, {
-      method: 'POST', body: { body, mentions }
+      method: 'POST', body: { body }
     })
     notes.value = [note, ...notes.value]
   }

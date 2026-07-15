@@ -79,9 +79,11 @@ describe('conversation notes', () => {
     const outsider = await createInboxOrgWith(sql)
     const ghost = randomUUID()
 
+    const mention = (id: string, label: string) =>
+      `<span data-type="mention" data-id="${id}" data-label="${label}">@${label}</span>`
     const note = await $fetch<{ id: string }>(`/api/inbox/conversations/${convId}/comments`, {
       method: 'POST',
-      body: { body: 'ping the team', mentions: [teammate.id, outsider.user.id, ghost] },
+      body: { body: `<p>ping ${mention(teammate.id, 'Mate')} ${mention(outsider.user.id, 'Out')} ${mention(ghost, 'Ghost')}</p>` },
       ...opts
     })
     // The note saves despite the bad ids (a nonexistent uuid used to FK-fail
@@ -93,5 +95,25 @@ describe('conversation notes', () => {
       WHERE title LIKE '%mentioned you in a note%' AND link = ${`/inbox/${convId}`}
     `
     expect(mentionRows.map(r => r.user_id as string)).toEqual([teammate.id])
+  })
+
+  it('sanitizes rich note bodies, keeps mention spans, and rejects an empty editor doc', async () => {
+    const { opts, domain } = await createInboxOrgWith(sql)
+    const convId = await makeConversation(domain)
+
+    const note = await $fetch<{ id: string, body: string }>(`/api/inbox/conversations/${convId}/comments`, {
+      method: 'POST',
+      body: { body: `<p><strong>bold</strong> plan<script>alert(1)</script><img src="x" onerror="alert(2)"></p>` },
+      ...opts
+    })
+    expect(note.body).toContain('<strong>bold</strong>')
+    expect(note.body).not.toContain('<script')
+    expect(note.body).not.toContain('<img')
+    expect(note.body).not.toContain('onerror')
+
+    // An editor's empty document is not a note.
+    await expect(
+      $fetch(`/api/inbox/conversations/${convId}/comments`, { method: 'POST', body: { body: '<p></p>' }, ...opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
   })
 })

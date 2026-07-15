@@ -1,12 +1,12 @@
 import { type Kysely, sql } from 'kysely'
 
 // Internal notes on a conversation — private staff commentary, never emailed to
-// the contact. Plain text (same shape as crm_record_comments), rendered
-// whitespace-preserving on the client; teammate notifications ride an explicit
-// mention id list from the composer, not parsed out of the body. `author_id` is
-// SET NULL with `author_label` carrying a display name for system notes (null
-// author, never editable). `edited_at` is NULL until the first edit (the
-// "(edited)" marker). Notes CASCADE with the conversation.
+// the contact. `body` holds sanitized rich HTML (note allowlist: formatting +
+// inline @mention spans); teammate notifications are extracted server-side
+// from those mention spans. `author_id` is SET NULL with `author_label`
+// carrying a display name for system notes (null author, never editable).
+// `edited_at` is NULL until the first edit (the "(edited)" marker). Notes
+// CASCADE with the conversation.
 export async function up(db: Kysely<unknown>): Promise<void> {
   await db.schema
     .createTable('inbox_comments')
