@@ -89,18 +89,6 @@ export default defineEventHandler(async (event) => {
     })
 
     const settings = await getInboxSettings(tx)
-    // Staff notification — best-effort; a failure must not fail the submission.
-    await inboxNotifyNewMessage(tx, {
-      orgId: scope,
-      conversationId: conversation.id,
-      assignedUserId: null,
-      counterparty: name || email,
-      subject,
-      held: false,
-      excerpt: message,
-      senderAddress: email
-    }).catch(err => console.warn('[inbox] contact-form notify failed:', err))
-
     return {
       conversationId: conversation.id,
       replyToken: conversation.reply_token,
@@ -109,6 +97,28 @@ export default defineEventHandler(async (event) => {
       autoAck: settings.autoAckEnabled
     }
   })
+
+  // Post-commit staff notification — best-effort, in its OWN transaction. It
+  // must not share the persistence transaction: a notify failure there would
+  // abort the tx, turning COMMIT into a silent ROLLBACK and losing the
+  // submission while the visitor still sees success.
+  await inboxWithScopeTx(scope, async (tx) => {
+    // Test seam (VITEST only): fail the notify so the suite can pin that the
+    // stored submission survives a notification failure.
+    if (process.env.VITEST && getHeader(event, 'x-test-fail') === 'notify') {
+      throw new Error('Injected notify failure')
+    }
+    await inboxNotifyNewMessage(tx, {
+      orgId: scope,
+      conversationId: created.conversationId,
+      assignedUserId: null,
+      counterparty: name || email,
+      subject,
+      held: false,
+      excerpt: message,
+      senderAddress: email
+    })
+  }).catch(err => console.warn('[inbox] contact-form notify failed:', err))
 
   // Post-commit auto-ack (fire-and-forget — never blocks or fails the POST).
   if (created.autoAck && created.contactAddress) {

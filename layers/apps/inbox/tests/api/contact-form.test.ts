@@ -31,6 +31,24 @@ describe('contact form', () => {
     expect(detail.messages.some(m => m.direction === 'inbound')).toBe(true)
   })
 
+  it('survives a staff-notify failure — the submission is stored and the POST still succeeds', async () => {
+    const { org } = await createInboxOrgWith(sql)
+    const apiKey = `test-inbox-key-${randomUUID()}`
+    await setInboxOrgSetting(sql, org.id, 'contact_form_api_key', apiKey)
+
+    const res = await $fetch<{ status: string, conversationId: string }>('/api/inbox/contact', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'x-test-fail': 'notify' },
+      body: { email: 'visitor@example.com', name: 'Visitor', message: 'This submission must survive' }
+    })
+    expect(res.status).toBe('received')
+
+    const conversations = await sql`SELECT id FROM inbox_conversations WHERE id = ${res.conversationId}`
+    expect(conversations.length).toBe(1)
+    const messages = await sql`SELECT id FROM inbox_messages WHERE conversation_id = ${res.conversationId}`
+    expect(messages.length).toBe(1)
+  })
+
   it('rejects a missing or wrong API key with 401', async () => {
     const { org } = await createInboxOrgWith(sql)
     await setInboxOrgSetting(sql, org.id, 'contact_form_api_key', `test-inbox-key-${randomUUID()}`)
