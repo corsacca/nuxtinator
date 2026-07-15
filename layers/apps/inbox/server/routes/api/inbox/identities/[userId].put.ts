@@ -14,6 +14,9 @@ const Body = z.object({
 
 export default defineEventHandler(async (event) => {
   const userId = getRouterParam(event, 'userId')!
+  if (!z.string().uuid().safeParse(userId).success) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid user id' })
+  }
   return await withOrgPermission(event, { appId: 'inbox' }, 'inbox.send', async (tx, ctx) => {
     const raw = await readBody(event)
     const parsed = Body.safeParse(raw)
@@ -34,6 +37,23 @@ export default defineEventHandler(async (event) => {
       patch.alias = parsed.data.alias == null ? null : inboxNormalizeAlias(parsed.data.alias)
     }
     if (parsed.data.signature !== undefined) patch.signature = parsed.data.signature
+
+    // The target must exist, and GRANTING an alias additionally requires the
+    // target to be assignable — an org member who can open the inbox (the
+    // assignees rule). An alias is routable: inbound mail to it auto-assigns
+    // the conversation, so handing one to a user without inbox access would
+    // silently blackhole threads. Clearing an alias or editing a signature
+    // carries no such risk and stays allowed for any existing user.
+    const target = await tx.selectFrom('users').select('id').where('id', '=', userId).executeTakeFirst()
+    if (!target) {
+      throw createError({ statusCode: 404, statusMessage: 'User not found' })
+    }
+    if (changingAlias && patch.alias != null) {
+      const assignable = await inboxUsersWithAccess(tx, ctx.orgId)
+      if (!assignable.includes(userId)) {
+        throw createError({ statusCode: 400, statusMessage: 'Only an org member with inbox access can hold a sending alias' })
+      }
+    }
 
     try {
       const before = await inboxGetIdentity(tx, userId)
@@ -60,6 +80,11 @@ export default defineEventHandler(async (event) => {
       // friendly 400 rather than a 500.
       if ((err as { code?: string })?.code === '23505') {
         throw createError({ statusCode: 400, statusMessage: 'That alias is already taken' })
+      }
+      // The users FK can still trip if the target is deleted between the
+      // existence check and the upsert.
+      if ((err as { code?: string })?.code === '23503') {
+        throw createError({ statusCode: 404, statusMessage: 'User not found' })
       }
       throw err
     }

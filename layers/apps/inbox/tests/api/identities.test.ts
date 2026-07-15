@@ -84,6 +84,33 @@ describe('sending identities', () => {
     await expect($fetch('/api/inbox/identities', agent.opts)).rejects.toMatchObject({ statusCode: 403 })
   })
 
+  it('validates the alias target: non-UUID 400, unknown user 404, non-member and no-access members rejected', async () => {
+    const { org, opts } = await createInboxOrgWith(sql)
+
+    // Malformed id → clean 400, not a Postgres cast error surfacing as 500.
+    await expect(
+      $fetch('/api/inbox/identities/not-a-uuid', { method: 'PUT', body: { alias: 'x' }, ...opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
+
+    // Nonexistent user → 404, not a users-FK 500.
+    await expect(
+      $fetch(`/api/inbox/identities/${randomUUID()}`, { method: 'PUT', body: { alias: 'ghost' }, ...opts })
+    ).rejects.toMatchObject({ statusCode: 404 })
+
+    // A user outside the org can't be granted a routable alias.
+    const outsider = await createInboxUser(sql)
+    await expect(
+      $fetch(`/api/inbox/identities/${outsider.id}`, { method: 'PUT', body: { alias: 'outsider' }, ...opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
+
+    // Neither can an org member whose roles carry no inbox access.
+    const noAccess = await createInboxUser(sql)
+    await addTestMembership(sql, { user_id: noAccess.id, org_id: org.id, roles: [] })
+    await expect(
+      $fetch(`/api/inbox/identities/${noAccess.id}`, { method: 'PUT', body: { alias: 'noaccess' }, ...opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
+  })
+
   it('personal send snapshots from_email and appends the signature', async () => {
     const { opts, user, domain } = await createInboxOrgWith(sql)
     await $fetch(`/api/inbox/identities/${user.id}`, {
