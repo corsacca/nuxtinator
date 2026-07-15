@@ -20,11 +20,58 @@ const saving = ref(false)
 // Textarea-friendly view of the URL list (one per line).
 const urlsText = ref('')
 
+// Sending identities (admin manager): every inbox user with their alias,
+// joined from the assignees list (names) and the identities list (aliases).
+interface IdentityRow {
+  userId: string
+  displayName: string
+  alias: string
+  hasSignature: boolean
+  saving: boolean
+}
+const identities = ref<IdentityRow[]>([])
+
+async function loadIdentities() {
+  const [assignees, ids] = await Promise.all([
+    $fetch<{ users: Array<{ id: string, displayName: string }> }>('/api/inbox/assignees'),
+    $fetch<{ identities: Array<{ userId: string, alias: string | null, hasSignature: boolean }> }>('/api/inbox/identities')
+  ])
+  const byId = new Map(ids.identities.map(i => [i.userId, i]))
+  identities.value = assignees.users.map(u => ({
+    userId: u.id,
+    displayName: u.displayName,
+    alias: byId.get(u.id)?.alias ?? '',
+    hasSignature: byId.get(u.id)?.hasSignature ?? false,
+    saving: false
+  }))
+}
+
+async function saveAlias(row: IdentityRow) {
+  row.saving = true
+  try {
+    const res = await $fetch<{ alias: string | null }>(`/api/inbox/identities/${row.userId}`, {
+      method: 'PUT',
+      body: { alias: row.alias.trim() || null }
+    })
+    row.alias = res.alias ?? ''
+    toast.add({ title: `Alias saved for ${row.displayName}`, icon: 'i-lucide-save', color: 'success' })
+  } catch (err) {
+    const status = (err as { statusCode?: number })?.statusCode
+    toast.add({
+      title: status === 400 ? 'That alias is invalid or already taken' : 'Could not save alias',
+      color: 'error'
+    })
+  } finally {
+    row.saving = false
+  }
+}
+
 async function load() {
   try {
     const s = await $fetch<InboxAdminSettings>('/api/inbox/settings')
     form.value = s
     urlsText.value = s.groundingSourceUrls.join('\n')
+    await loadIdentities()
   } catch (err) {
     if ((err as { statusCode?: number })?.statusCode === 403) {
       forbidden.value = true
@@ -147,6 +194,51 @@ function generateApiKey() {
           @click="save"
         />
       </div>
+
+      <section class="space-y-3 pt-4 border-t border-(--ui-border)">
+        <div>
+          <h2 class="text-lg font-semibold">
+            Sending identities
+          </h2>
+          <p class="text-sm text-(--ui-text-muted)">
+            Each teammate's alias routes mail to &lt;alias&gt;@ the inbound domain to them and
+            enables a personal From address. Signatures are self-service (each user edits their own).
+          </p>
+        </div>
+        <ul class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-md">
+          <li
+            v-for="row in identities"
+            :key="row.userId"
+            class="flex items-center gap-3 p-3"
+          >
+            <div class="min-w-0 flex-1">
+              <div class="font-medium truncate">
+                {{ row.displayName }}
+              </div>
+              <UBadge
+                v-if="row.hasSignature"
+                label="Has signature"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+              />
+            </div>
+            <UInput
+              v-model="row.alias"
+              placeholder="alias"
+              class="w-40 font-mono"
+            />
+            <UButton
+              label="Save"
+              size="xs"
+              color="neutral"
+              variant="subtle"
+              :loading="row.saving"
+              @click="saveAlias(row)"
+            />
+          </li>
+        </ul>
+      </section>
     </template>
   </div>
 </template>

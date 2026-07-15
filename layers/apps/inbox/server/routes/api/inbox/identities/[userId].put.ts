@@ -5,6 +5,7 @@
 // field untouched; explicit `null` clears it.
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
+import { logEvent } from '#core/server/utils/activity-logger'
 
 const Body = z.object({
   alias: z.string().max(64).nullable().optional(),
@@ -35,7 +36,24 @@ export default defineEventHandler(async (event) => {
     if (parsed.data.signature !== undefined) patch.signature = parsed.data.signature
 
     try {
-      const { row } = await inboxUpsertIdentity(tx, userId, patch)
+      const before = await inboxGetIdentity(tx, userId)
+      const { row, changed } = await inboxUpsertIdentity(tx, userId, patch)
+      // Audit each field that actually moved, in the same transaction so the
+      // trail commits with the change. Aliases are routable (they redirect
+      // inbound assignment), so the alias entry carries from/to; signature
+      // bodies are large HTML and are logged as a change only.
+      for (const field of changed) {
+        await logEvent({
+          eventType: 'inbox_identity_updated',
+          userId: ctx.userId,
+          metadata: {
+            message: field === 'alias' ? 'Sending alias changed' : 'Signature updated',
+            targetUserId: userId,
+            field,
+            ...(field === 'alias' ? { from: before?.alias ?? null, to: row.alias } : {})
+          }
+        }, tx)
+      }
       return { userId: row.user_id, alias: row.alias, signature: row.signature }
     } catch (err) {
       // A taken alias surfaces as a Postgres unique violation — return a
