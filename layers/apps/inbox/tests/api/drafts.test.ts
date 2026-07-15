@@ -19,6 +19,44 @@ interface Detail {
 }
 
 describe('shared drafts', () => {
+  it('persists the From choice on save, restores it in the payload, and honors a send-time override', async () => {
+    const { opts, user, domain } = await createInboxOrgWith(sql)
+    await $fetch(`/api/inbox/identities/${user.id}`, { method: 'PUT', body: { alias: 'jane' }, ...opts })
+    const res = await postInbound({ recipient: `hello@${domain}`, from: `F <${sender('from')}>` })
+    const id = res.body.conversation_id as string
+
+    // Saved as personal -> the alias snapshot travels with the shared draft.
+    const draft = await $fetch<{ id: string }>(`/api/inbox/conversations/${id}/messages`, {
+      method: 'POST', body: { saveDraft: true, body: '<p>mine</p>', fromIdentity: 'personal' }, ...opts
+    })
+    let detail = await $fetch<{ drafts: Array<{ id: string, fromEmail: string | null }> }>(
+      `/api/inbox/conversations/${id}`, opts
+    )
+    expect(detail.drafts.find(d => d.id === draft.id)!.fromEmail).toBe(`jane@${domain}`)
+
+    // Re-saved as contact -> the choice clears back to the shared address.
+    await $fetch(`/api/inbox/conversations/${id}/messages`, {
+      method: 'POST', body: { saveDraft: true, draftId: draft.id, body: '<p>mine</p>', fromIdentity: 'contact' }, ...opts
+    })
+    detail = await $fetch<{ drafts: Array<{ id: string, fromEmail: string | null }> }>(
+      `/api/inbox/conversations/${id}`, opts
+    )
+    expect(detail.drafts.find(d => d.id === draft.id)!.fromEmail).toBeNull()
+
+    // Saved personal again, then promoted with an explicit contact override:
+    // the send must NOT ride the stale alias.
+    await $fetch(`/api/inbox/conversations/${id}/messages`, {
+      method: 'POST', body: { saveDraft: true, draftId: draft.id, body: '<p>mine</p>', fromIdentity: 'personal' }, ...opts
+    })
+    await $fetch(`/api/inbox/conversations/${id}/messages`, {
+      method: 'POST', body: { draftId: draft.id, fromIdentity: 'contact' }, ...opts
+    })
+    const [row] = await sql`SELECT status, from_email FROM inbox_messages WHERE id = ${draft.id}`
+    // The 2s sweep may already have claimed it — either way it left 'draft'.
+    expect(['queued', 'sent']).toContain(row!.status)
+    expect(row!.from_email).toBeNull()
+  })
+
   it('creates, updates, and promotes a draft (kept out of the thread until sent)', async () => {
     const { opts, domain } = await createInboxOrgWith(sql)
     const res = await postInbound({ recipient: `hello@${domain}`, from: `J <${sender()}>` })

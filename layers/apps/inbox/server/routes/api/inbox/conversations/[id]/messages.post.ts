@@ -47,8 +47,21 @@ export default defineEventHandler(async (event) => {
 
     // --- Save / update a shared draft: store text, no send side effects. ---
     if (saveDraft) {
+      // The From choice travels WITH the shared draft (a teammate picking it
+      // up sees the saved identity): personal resolves to the caller's alias
+      // snapshot, contact clears to the shared address, absent keeps the
+      // stored choice. The signature is NOT baked here — that happens once,
+      // at queue time.
+      let fromEmail: string | null | undefined
+      if (parsed.data.fromIdentity === 'personal') {
+        const settings = await getInboxSettings(tx)
+        const { personalFrom } = await inboxResolvePersonalIdentity(tx, ctx.userId, settings)
+        fromEmail = personalFrom
+      } else if (parsed.data.fromIdentity === 'contact') {
+        fromEmail = null
+      }
       if (draftId) {
-        const updated = await inboxUpdateDraft(tx, { id: draftId, conversationId: id, bodyHtml: html, bodyText: text })
+        const updated = await inboxUpdateDraft(tx, { id: draftId, conversationId: id, bodyHtml: html, bodyText: text, fromEmail })
         if (!updated) throw createError({ statusCode: 404, statusMessage: 'Draft not found' })
         return { id: updated.id, status: 'draft' as const }
       }
@@ -57,7 +70,8 @@ export default defineEventHandler(async (event) => {
         senderUserId: ctx.userId,
         bodyHtml: html,
         bodyText: text,
-        subject: replySubject
+        subject: replySubject,
+        fromEmail: fromEmail ?? null
       })
       return { id: draft.id, status: 'draft' as const }
     }
@@ -108,6 +122,14 @@ export default defineEventHandler(async (event) => {
           .where('id', '=', message.id)
           .execute()
       }
+    } else if (parsed.data.fromIdentity === 'contact') {
+      // An explicit shared-address choice must override a personal From that
+      // was saved onto the draft — otherwise the send rides the stale alias.
+      await tx
+        .updateTable('inbox_messages')
+        .set({ from_email: null, updated_at: new Date() })
+        .where('id', '=', message.id)
+        .execute()
     }
 
     await inboxAssignIfUnassigned(tx, conversation.id, ctx.userId)

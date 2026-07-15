@@ -27,7 +27,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   patch: [body: { status?: string, assignedUserId?: string | null, needsReview?: boolean }]
   reply: [body: string, draftId?: string, fromIdentity?: 'personal' | 'contact']
-  saveDraft: [body: string]
+  saveDraft: [body: string, fromIdentity?: 'personal' | 'contact']
   deleteDraft: [draftId: string]
   attachFiles: [files: File[], body: string]
   removeAttachment: [attachmentId: string]
@@ -105,13 +105,16 @@ function draftPreview(d: InboxThreadDraft): string {
 function loadDraft(d: InboxThreadDraft) {
   replyBody.value = d.bodyHtml || ''
   currentDraftId.value = d.id
+  // Restore the draft's saved From choice ('personal' resolves to the sending
+  // agent's own alias at queue time; without one it falls back to shared).
+  fromIdentity.value = d.fromEmail && props.me?.personalFrom ? 'personal' : 'contact'
   // Re-surface the AI review panel when reopening an AI draft (null clears it).
   emit('loadDraftMeta', d.aiMetadata)
 }
 
 function onSaveDraft() {
   if (props.sending) return
-  emit('saveDraft', replyBody.value)
+  emit('saveDraft', replyBody.value, props.me?.personalFrom ? fromIdentity.value : undefined)
 }
 
 function onDeleteDraft(d: InboxThreadDraft) {

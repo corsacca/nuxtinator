@@ -50,8 +50,10 @@ export async function inboxCreateDraft(tx: Tx, data: {
   })
 }
 
-// Update a draft's body (from_email kept when not provided). Returns null when
-// no matching draft row exists (already sent, deleted, or wrong conversation).
+// Update a draft's body and From choice. `fromEmail` is three-state: absent
+// keeps the stored choice, an explicit null clears it back to the shared
+// address, a string sets the personal snapshot. Returns null when no matching
+// draft row exists (already sent, deleted, or wrong conversation).
 export async function inboxUpdateDraft(tx: Tx, params: {
   id: string
   conversationId: string
@@ -64,7 +66,7 @@ export async function inboxUpdateDraft(tx: Tx, params: {
     .set({
       body_html: params.bodyHtml,
       body_text: params.bodyText,
-      from_email: sql`COALESCE(${params.fromEmail ?? null}, from_email)`,
+      ...(params.fromEmail !== undefined ? { from_email: params.fromEmail } : {}),
       updated_at: new Date()
     })
     .where('id', '=', params.id)

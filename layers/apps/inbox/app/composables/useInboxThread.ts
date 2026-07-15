@@ -190,13 +190,14 @@ export function useInboxThread(conversationId: MaybeRefOrGetter<string | null>) 
   }
 
   // Create (no draftId) or update a shared draft; returns its id so the caller
-  // can keep editing the same draft.
-  async function saveDraft(body: string, draftId?: string): Promise<string | undefined> {
+  // can keep editing the same draft. `fromIdentity` travels with the draft
+  // (absent = keep the stored choice).
+  async function saveDraft(body: string, draftId?: string, fromIdentity?: 'personal' | 'contact'): Promise<string | undefined> {
     const id = toValue(conversationId)
     if (!id) return
     const res = await $fetch<{ id: string }>(`/api/inbox/conversations/${id}/messages`, {
       method: 'POST',
-      body: { saveDraft: true, body, ...(draftId ? { draftId } : {}) }
+      body: { saveDraft: true, body, ...(draftId ? { draftId } : {}), ...(fromIdentity ? { fromIdentity } : {}) }
     })
     await refresh()
     return res.id

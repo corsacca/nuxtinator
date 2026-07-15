@@ -93,9 +93,9 @@ async function onReply(body: string, draftId?: string, fromIdentity?: 'personal'
   }
 }
 
-async function onSaveDraft(body: string) {
+async function onSaveDraft(body: string, fromIdentity?: 'personal' | 'contact') {
   try {
-    const newId = await saveDraft(body, currentDraftId.value ?? undefined)
+    const newId = await saveDraft(body, currentDraftId.value ?? undefined, fromIdentity)
     if (newId) currentDraftId.value = newId
     toast.add({ title: 'Draft saved', icon: 'i-lucide-save', color: 'success' })
   } catch (err) {
