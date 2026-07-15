@@ -326,11 +326,11 @@ const gridStyle = computed(() => ({
                   @click.stop="emit('addSwimlane', project.id)"
                 />
                 <UButton
-                  icon="i-lucide-pencil"
+                  icon="i-lucide-settings"
                   variant="ghost"
                   color="neutral"
                   size="xs"
-                  aria-label="Rename project"
+                  aria-label="Project settings"
                   @click.stop="emit('renameProject', project)"
                 />
               </div>
@@ -432,11 +432,11 @@ const gridStyle = computed(() => ({
                     @click.stop="emit('addSwimlane', project.id)"
                   />
                   <UButton
-                    icon="i-lucide-pencil"
+                    icon="i-lucide-settings"
                     variant="ghost"
                     color="neutral"
                     size="xs"
-                    aria-label="Rename project"
+                    aria-label="Project settings"
                     @click.stop="emit('renameProject', project)"
                   />
                 </div>

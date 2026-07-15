@@ -4,7 +4,10 @@
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 function isLoopbackHost(hostname: string): boolean {
-  return LOOPBACK_HOSTS.has(hostname.toLowerCase())
+  const h = hostname.toLowerCase()
+  // RFC 6761 reserves the entire .localhost TLD for loopback, so named dev
+  // hosts (e.g. myapp.localhost) qualify alongside plain localhost.
+  return LOOPBACK_HOSTS.has(h) || h.endsWith('.localhost')
 }
 
 export interface OauthConfig {

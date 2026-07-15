@@ -491,6 +491,35 @@ async function onArchiveCard(patch: Partial<Card>) {
   }
 }
 
+// Header gear dropdown for the focused project — same actions as the
+// project right-click menu.
+const projectMenuItems = computed(() => {
+  const p = selectedProject.value
+  if (!p) return []
+  return [
+    [
+      {
+        label: 'Settings',
+        icon: 'i-lucide-settings',
+        onSelect: () => openRenameProject(p)
+      },
+      {
+        label: 'Add swimlane',
+        icon: 'i-lucide-plus',
+        onSelect: () => openAddSwimlane(p.id)
+      }
+    ],
+    [
+      {
+        label: 'Delete project',
+        icon: 'i-lucide-trash-2',
+        color: 'error' as const,
+        onSelect: () => deleteProject(p)
+      }
+    ]
+  ]
+})
+
 // --- Context menu ---
 const ctxMenu = ref<{
   open: boolean
@@ -526,7 +555,7 @@ function openProjectCtx(e: { x: number; y: number; project: Project }) {
     y: e.y,
     target: { kind: 'project', project: e.project },
     items: [
-      { label: 'Rename', icon: 'i-lucide-pencil', action: 'rename' },
+      { label: 'Settings', icon: 'i-lucide-settings', action: 'rename' },
       { label: 'Add swimlane', icon: 'i-lucide-plus', action: 'add-swimlane' },
       { label: 'Delete', icon: 'i-lucide-trash-2', danger: true, action: 'delete' }
     ]
@@ -635,6 +664,7 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
       :selected-id="selectedProject?.id ?? null"
       @select="selectProject"
       @add-project="openCreateProject"
+      @settings="openSettings"
     />
 
     <section class="flex-1 flex flex-col min-w-0 overflow-hidden border-l-0 lg:border-l border-(--ui-border)">
@@ -671,13 +701,17 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
           aria-label="Reload"
           @click="loadAll"
         />
-        <UButton
-          variant="ghost"
-          size="sm"
-          icon="i-lucide-settings"
-          aria-label="Feedback settings"
-          @click="openSettings"
-        />
+        <UDropdownMenu
+          v-if="selectedProject"
+          :items="projectMenuItems"
+        >
+          <UButton
+            variant="ghost"
+            size="sm"
+            icon="i-lucide-settings"
+            :aria-label="`${selectedProject.name} actions`"
+          />
+        </UDropdownMenu>
         <UButton
           variant="soft"
           size="sm"
@@ -748,7 +782,7 @@ async function onReorderProjects(payload: { orderedIds: string[] }) {
       @archive="onArchiveCard"
     />
 
-    <UModal v-model:open="projectModalOpen" :title="projectForm.mode === 'create' ? 'New project' : 'Rename project'">
+    <UModal v-model:open="projectModalOpen" :title="projectForm.mode === 'create' ? 'New project' : 'Project settings'">
       <template #body>
         <div class="space-y-4">
           <UFormField label="Name" required>
