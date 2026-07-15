@@ -9,6 +9,7 @@
 // relies on the org cascade wiping org-scoped channels.
 import type postgres from 'postgres'
 import { createHmac, randomUUID } from 'node:crypto'
+import { S3Client } from '@bradenmacdonald/s3-lite-client'
 import { $fetch } from '@nuxt/test-utils/e2e'
 import {
   createTestUser,
@@ -104,6 +105,9 @@ export interface InboundFixtureOpts {
   authenticated?: boolean
   headers?: [string, string][]
   signatureOverride?: string
+  // Raw MIME source. When present the webhook archives it to S3 and sets
+  // `inbox_messages.raw_s3_key`.
+  bodyMime?: string
 }
 
 // POST a Mailgun-shaped inbound payload. The signature is computed with the
@@ -132,6 +136,7 @@ export async function postInbound(fixture: InboundFixtureOpts): Promise<{ status
   form.append('body-html', fixture.html ?? `<p>${fixture.text ?? 'Test body'}</p>`)
   form.append('stripped-html', fixture.html ?? `<p>${fixture.text ?? 'Test body'}</p>`)
   form.append('message-headers', JSON.stringify(headers))
+  if (fixture.bodyMime) form.append('body-mime', fixture.bodyMime)
 
   try {
     const body = await $fetch<Record<string, unknown>>('/api/inbox/webhooks/mailgun/inbound', {
@@ -150,6 +155,35 @@ export async function postDeliveryEvent(eventData: Record<string, unknown>): Pro
     method: 'POST',
     body: { signature: signedFields(), 'event-data': eventData }
   })
+}
+
+// --- Direct S3 assertions ---------------------------------------------------
+
+// The Nuxt server does the uploads/deletes; tests verify the bucket directly
+// with their own client. Credentials are forwarded from dev/.env by
+// dev/vitest.config.ts. Private objects live in S3_BUCKET_NAME under the keys
+// stored in inbox_attachments.s3_key / inbox_messages.raw_s3_key.
+let _s3: S3Client | null = null
+
+function getTestS3(): S3Client {
+  if (_s3) return _s3
+  const { S3_ENDPOINT, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_BUCKET_NAME } = process.env
+  if (!S3_ENDPOINT || !S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY || !S3_BUCKET_NAME) {
+    throw new Error('S3_* env not set in the test process — dev/vitest.config.ts forwards it from dev/.env')
+  }
+  _s3 = new S3Client({
+    endPoint: S3_ENDPOINT,
+    region: S3_REGION || 'auto',
+    bucket: S3_BUCKET_NAME,
+    accessKey: S3_ACCESS_KEY_ID,
+    secretKey: S3_SECRET_ACCESS_KEY,
+    pathStyle: true
+  })
+  return _s3
+}
+
+export async function s3ObjectExists(key: string): Promise<boolean> {
+  return await getTestS3().exists(key)
 }
 
 // --- Cleanup ---------------------------------------------------------------

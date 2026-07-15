@@ -166,7 +166,10 @@ path). Tests: `bun run test -- --project inbox`. The app seeds into the catalog 
   `#inbox/server` barrel exposing the conversation-creation + channel-claim primitives.
 - **S3 lifecycle cleanup** (Phase 2d): GDPR conversation purge
   (`/conversations/:id/purge`, admin) deleting attachments + raw `.eml`, and
-  org-offboarding key collectors exported for a tenancy org-delete hook.
+  org-offboarding S3 cleanup wired end-to-end: tenancy's
+  `DELETE /api/admin/orgs/:orgId` (slug-confirmed, host-admin) emits
+  `org.deleted` before the row cascade, and `inbox-org-offboard.ts` subscribes
+  to collect + delete the org's attachment and raw-MIME keys.
 - **AI drafting + knowledge base + grounding** (Phase 10): consumes the new shared
   `@nuxtinator/ai` layer (Phase 10a — `#ai/server`, OpenRouter, admin model enablement;
   see [../../ai/dev.md](../../ai/dev.md)). Inbox side (10b): `inbox_grounding_documents`
