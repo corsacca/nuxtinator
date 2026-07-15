@@ -4,6 +4,7 @@
 // id 404s regardless of payload.
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
+import { logEvent } from '#core/server/utils/activity-logger'
 
 const Body = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -12,7 +13,7 @@ const Body = z.object({
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
-  return await withOrgPermission(event, { appId: 'inbox' }, 'inbox.send', async (tx) => {
+  return await withOrgPermission(event, { appId: 'inbox' }, 'inbox.send', async (tx, ctx) => {
     const existing = await inboxGetCanned(tx, id)
     if (!existing) {
       throw createError({ statusCode: 404, statusMessage: 'Canned response not found' })
@@ -25,6 +26,19 @@ export default defineEventHandler(async (event) => {
       title: parsed.data.title?.trim(),
       bodyHtml: parsed.data.bodyHtml
     })
+    // Audit the edit of a shared asset. Title transitions carry from/to;
+    // bodies are large HTML, logged as a change flag only.
+    await logEvent({
+      eventType: 'inbox_canned_updated',
+      userId: ctx.userId,
+      metadata: {
+        message: 'Canned response updated',
+        cannedId: id,
+        title: row!.title,
+        ...(row!.title !== existing.title ? { titleFrom: existing.title } : {}),
+        bodyChanged: parsed.data.bodyHtml !== undefined && parsed.data.bodyHtml !== existing.body_html
+      }
+    }, tx)
     return {
       id: row!.id,
       title: row!.title,

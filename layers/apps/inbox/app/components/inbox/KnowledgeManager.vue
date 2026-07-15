@@ -83,6 +83,8 @@ async function doRefreshGrounding() {
       title: r.failed.length
         ? `Grounding refreshed — ${r.synced.length} ok, ${r.failed.length} failed`
         : `Grounding refreshed — ${r.synced.length} page(s)`,
+      // Name the pages that failed so the admin knows which URLs to fix.
+      description: r.failed.length ? r.failed.map(f => f.url).join('\n') : undefined,
       color: r.failed.length ? 'warning' : 'success'
     })
   } catch {

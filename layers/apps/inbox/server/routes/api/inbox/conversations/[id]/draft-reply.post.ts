@@ -87,7 +87,13 @@ export default defineEventHandler(async (event) => {
         fromEmail,
         aiMetadata: meta
       })
-      if (updated) return { id: updated.id, status: 'draft' as const, ai: true as const }
+      if (updated) {
+        await inboxLogConversationEvent(tx, id, 'inbox_ai_draft_saved', 'AI draft generated', {
+          userId: ctx.userId,
+          extra: { messageId: updated.id, regenerated: true, model: meta.model }
+        })
+        return { id: updated.id, status: 'draft' as const, ai: true as const }
+      }
       // Not an AI draft (human-authored / missing) — fall through and create new.
     }
 
@@ -100,6 +106,10 @@ export default defineEventHandler(async (event) => {
       subject: replySubject,
       fromEmail,
       aiMetadata: meta
+    })
+    await inboxLogConversationEvent(tx, id, 'inbox_ai_draft_saved', 'AI draft generated', {
+      userId: ctx.userId,
+      extra: { messageId: created.id, model: meta.model }
     })
     return { id: created.id, status: 'draft' as const, ai: true as const }
   })

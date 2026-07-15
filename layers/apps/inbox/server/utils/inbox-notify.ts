@@ -116,17 +116,23 @@ export async function inboxNotifyNewMessage(
 }
 
 // @mention on an internal note: each mentioned teammate gets a bell + immediate
-// email. The caller has already dropped the author (no self-notify).
+// email. The caller has already dropped the author (no self-notify). The body
+// carries the note text (excerpted) alongside the subject — the recipient
+// should see what they were tagged about, not just which thread.
 export async function inboxNotifyMention(
   tx: Tx,
-  opts: { conversationId: string, mentionedUserIds: string[], actorName: string, subject: string | null }
+  opts: { conversationId: string, mentionedUserIds: string[], actorName: string, subject: string | null, noteExcerpt?: string | null }
 ): Promise<void> {
   if (!opts.mentionedUserIds.length) return
+  const lines: string[] = []
+  if (opts.subject) lines.push(opts.subject)
+  const excerpt = (opts.noteExcerpt || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+  if (excerpt) lines.push(excerpt)
   await createNotification(tx, opts.mentionedUserIds.map(userId => ({
     userId,
     appId: 'inbox',
     title: `${opts.actorName} mentioned you in a note`,
-    body: opts.subject || null,
+    body: lines.length ? lines.join('\n') : null,
     link: `/inbox/${opts.conversationId}`,
     email: 'immediate' as const
   })))

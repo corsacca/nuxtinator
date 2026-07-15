@@ -70,7 +70,12 @@ const ACTIVITY_ICON: Record<string, string> = {
   inbox_reply_queued: 'i-lucide-send',
   inbox_status_changed: 'i-lucide-circle-dot',
   inbox_assigned: 'i-lucide-user-check',
-  inbox_spam: 'i-lucide-shield-ban',
+  inbox_unassigned: 'i-lucide-user-x',
+  inbox_spam_marked: 'i-lucide-shield-ban',
+  inbox_spam_unmarked: 'i-lucide-shield-check',
+  inbox_delivery_delivered: 'i-lucide-check-check',
+  inbox_delivery_failed: 'i-lucide-x-circle',
+  inbox_ai_draft_saved: 'i-lucide-sparkles',
   inbox_tags_updated: 'i-lucide-tag'
 }
 function activityIcon(eventType: string): string {

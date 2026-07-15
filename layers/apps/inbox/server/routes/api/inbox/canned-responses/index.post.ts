@@ -2,6 +2,7 @@
 // inbox.send-gated (composing/replying authority owns snippet management).
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
+import { logEvent } from '#core/server/utils/activity-logger'
 
 const Body = z.object({
   title: z.string().min(1).max(200),
@@ -19,6 +20,12 @@ export default defineEventHandler(async (event) => {
       bodyHtml: parsed.data.bodyHtml ?? '',
       createdBy: ctx.userId
     })
+    // Snippets are shared assets — management actions leave an audit trail.
+    await logEvent({
+      eventType: 'inbox_canned_created',
+      userId: ctx.userId,
+      metadata: { message: 'Canned response created', cannedId: row.id, title: row.title }
+    }, tx)
     return {
       id: row.id,
       title: row.title,

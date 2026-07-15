@@ -42,7 +42,8 @@ export default defineEventHandler(async (event) => {
           conversationId: id,
           mentionedUserIds: mentions,
           actorName: comment.authorName,
-          subject: conversation.subject
+          subject: conversation.subject,
+          noteExcerpt: inboxHtmlToText(html)
         })
       }
     }

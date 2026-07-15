@@ -52,9 +52,11 @@ const crmPath = useCrmPath()
 const replyBody = defineModel<string>('replyBody', { default: '' })
 const confirmSpam = ref(false)
 
-// Whether the conversation is resolved enough to capture a knowledge entry from.
+// Whether the conversation is resolved enough to capture a knowledge entry
+// from — and whether this user may (KB writes are inbox.send-tier, same as
+// the server gate on POST /knowledge-entries).
 const canAddKnowledge = computed(() =>
-  props.aiAvailable && ['pending', 'closed'].includes(props.thread.conversation.status)
+  props.aiAvailable && props.thread.capabilities.canSend && ['pending', 'closed'].includes(props.thread.conversation.status)
 )
 // Gloss is shown only when the draft isn't English (an English reviewer aid).
 const showAiGloss = computed(() =>
