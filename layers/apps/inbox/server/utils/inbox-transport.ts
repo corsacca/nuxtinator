@@ -6,6 +6,7 @@
 // convention the email-mailgun layer uses (and which dev/vitest.config.ts
 // pins through the test build).
 import nodemailer from 'nodemailer'
+import { inboxHtmlToText } from './inbox-sanitize'
 
 export interface InboxEmailAttachment {
   filename: string
@@ -70,7 +71,7 @@ async function sendViaSmtp(options: InboxEmailOptions): Promise<InboxSendResult>
     to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
     subject: options.subject,
     html: options.html,
-    text: options.text || options.html.replace(/<[^>]*>/g, ''),
+    text: options.text || inboxHtmlToText(options.html),
     replyTo: options.replyTo,
     inReplyTo: options.inReplyTo,
     references: options.references,
@@ -100,7 +101,7 @@ async function sendViaMailgun(options: InboxEmailOptions): Promise<InboxSendResu
   for (const r of recipients) form.append('to', r)
   form.append('subject', options.subject)
   form.append('html', options.html)
-  form.append('text', options.text || options.html.replace(/<[^>]*>/g, ''))
+  form.append('text', options.text || inboxHtmlToText(options.html))
 
   if (options.replyTo) form.append('h:Reply-To', options.replyTo)
   if (options.inReplyTo) form.append('h:In-Reply-To', options.inReplyTo)

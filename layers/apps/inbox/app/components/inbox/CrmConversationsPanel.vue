@@ -16,7 +16,7 @@ const canSend = computed(() => hasPermission('inbox.send'))
 const inboxPath = useInboxPath()
 const toast = useToast()
 
-const { items, channels, pending, denied, refresh } = useInboxRecordConversations(() => props.recordId)
+const { items, channels, total, pending, denied, refresh } = useInboxRecordConversations(() => props.recordId)
 const { me } = useInboxMe()
 
 const showCompose = ref(false)
@@ -171,6 +171,10 @@ function statusMeta(row: InboxRecordConversationRow) {
           </div>
         </div>
       </div>
+
+      <p v-if="total > items.length" class="px-4 py-2 text-xs text-(--ui-text-dimmed)">
+        Showing the latest {{ items.length }} of {{ total }} conversations
+      </p>
     </div>
 
     <InboxComposeModal

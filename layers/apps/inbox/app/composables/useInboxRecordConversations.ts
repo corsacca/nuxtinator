@@ -31,6 +31,9 @@ export function useInboxRecordConversations(recordId: MaybeRefOrGetter<string>) 
   const orgKey = useCrmOrgKey()
   const items = ref<InboxRecordConversationRow[]>([])
   const channels = ref<InboxRecordChannel[]>([])
+  // Total matching conversations — can exceed items.length (the list itself
+  // is capped server-side), which the panel surfaces as "showing latest N".
+  const total = ref(0)
   const pending = ref(false)
   const denied = ref(false)
 
@@ -42,15 +45,17 @@ export function useInboxRecordConversations(recordId: MaybeRefOrGetter<string>) 
       // The second generic pins the request type to `string` so $fetch resolves
       // its return against the fallback branch instead of deep-instantiating over
       // the full typed-route union (which trips TS2589 as the app grows).
-      const res = await $fetch<{ items: InboxRecordConversationRow[], channels: InboxRecordChannel[] }, string>(
+      const res = await $fetch<{ items: InboxRecordConversationRow[], channels: InboxRecordChannel[], total: number }, string>(
         `/api/inbox/records/${id}/conversations`
       )
       items.value = res.items
       channels.value = res.channels
+      total.value = res.total
       denied.value = false
     } catch (err) {
       items.value = []
       channels.value = []
+      total.value = 0
       denied.value = (err as { statusCode?: number })?.statusCode === 403
     } finally {
       pending.value = false
@@ -59,5 +64,5 @@ export function useInboxRecordConversations(recordId: MaybeRefOrGetter<string>) 
 
   watch([() => toValue(recordId), orgKey], () => refresh(), { immediate: true })
 
-  return { items, channels, pending, denied, refresh }
+  return { items, channels, total, pending, denied, refresh }
 }

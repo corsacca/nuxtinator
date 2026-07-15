@@ -25,11 +25,18 @@ export default defineEventHandler(async (event) => {
       .execute()
 
     const channelIds = [...new Set(channels.map(c => c.channel_id))]
+    // The list is capped at the query layer's 100-row max; `total` lets the
+    // panel say "showing the latest 100 of N" instead of silently truncating
+    // a very long history.
     const items = channelIds.length
       ? await inboxListConversations(tx, { channelId: channelIds, limit: 100 })
       : []
+    const total = channelIds.length
+      ? await inboxCountConversations(tx, { channelId: channelIds })
+      : 0
 
     return {
+      total,
       channels: channels.map(c => ({ channelId: c.channel_id, value: c.value, isPrimary: c.is_primary })),
       items: items.map(c => ({
         id: c.id,

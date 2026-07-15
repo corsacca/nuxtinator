@@ -3,7 +3,7 @@
 // context for what's being answered (matters when they sent several messages
 // or their client doesn't thread). Inbound HTML is sanitized before being
 // quoted into the outbound email since it can include untrusted markup.
-import { inboxSanitizeEmailHtml } from './inbox-sanitize'
+import { inboxSanitizeEmailHtml, inboxHtmlToText } from './inbox-sanitize'
 
 export interface InboxQuoteCandidate {
   direction: string
@@ -43,7 +43,7 @@ export function inboxBuildQuotedText(messages: InboxQuoteCandidate[], fallbackNa
   let out = '\n\n'
   for (const m of [...messages].reverse()) {
     const when = new Date(m.created_at).toUTCString()
-    const body = m.body_text || (m.body_stripped_html || m.body_html || '').replace(/<[^>]*>/g, '')
+    const body = m.body_text || inboxHtmlToText(m.body_stripped_html || m.body_html)
     const quoted = body.split('\n').map((l: string) => '> ' + l).join('\n')
     out += `On ${when}, ${quoteAuthor(m, fallbackName)} wrote:\n${quoted}\n\n`
   }

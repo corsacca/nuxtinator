@@ -198,7 +198,9 @@ export async function inboxListConversations(
         WHERE m.conversation_id = inbox_conversations.id AND m.status <> 'draft'
       )`.as('message_count'),
       sql<string | null>`(
-        SELECT LEFT(COALESCE(m.body_text, regexp_replace(COALESCE(m.body_stripped_html, m.body_html, ''), '<[^>]*>', '', 'g')), 160)
+        -- Tags become spaces (not ''), then whitespace collapses — adjacent
+        -- blocks must not jam into one word in the snippet.
+        SELECT LEFT(COALESCE(m.body_text, btrim(regexp_replace(regexp_replace(COALESCE(m.body_stripped_html, m.body_html, ''), '<[^>]*>', ' ', 'g'), '\\s+', ' ', 'g'))), 160)
         FROM inbox_messages m
         WHERE m.conversation_id = inbox_conversations.id AND m.status <> 'draft'
         ORDER BY m.created_at DESC LIMIT 1

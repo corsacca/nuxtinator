@@ -45,6 +45,17 @@ export function inboxSanitizeNoteHtml(html: string | null | undefined): string {
   })
 }
 
+// text/plain rendering of an HTML body (outbound text parts, quoted history,
+// transport fallbacks). Block-close tags become newlines BEFORE the strip so
+// adjacent blocks don't jam into one word — `<p>a</p><p>b</p>` must read
+// "a\nb", never "ab".
+export function inboxHtmlToText(html: string | null | undefined): string {
+  if (!html) return ''
+  return html
+    .replace(/<\s*(?:br\s*\/?|\/(?:p|h[1-6]|li|div|tr|blockquote))\s*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+}
+
 const MENTION_SPAN_RE = /<span\b[^>]*\bdata-type="mention"[^>]*>/gi
 const MENTION_ID_RE = /\bdata-id="([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i
 

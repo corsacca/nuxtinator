@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
     const { saveDraft, draftId } = parsed.data
     const rawBody = parsed.data.body ?? ''
     const html = inboxSanitizeEmailHtml(rawBody)
-    const text = html.replace(/<[^>]*>/g, '')
+    const text = inboxHtmlToText(html)
     const replySubject = conversation.subject ? `Re: ${conversation.subject.replace(/^Re:\s*/i, '')}` : null
 
     // --- Save / update a shared draft: store text, no send side effects. ---

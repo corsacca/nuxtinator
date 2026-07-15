@@ -57,7 +57,7 @@ export default defineEventHandler(async (event) => {
 
     // --- save: persist the reviewer's chosen draft verbatim. ---
     const html = inboxSanitizeEmailHtml(save.html)
-    const text = (save.text ?? html.replace(/<[^>]*>/g, '')).trim()
+    const text = (save.text ?? inboxHtmlToText(html)).trim()
 
     // From identity: snapshot the personal alias onto the draft row; contact
     // resolves at send.

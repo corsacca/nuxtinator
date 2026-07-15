@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
       toEmail,
       subject: parsed.data.subject,
       bodyHtml,
-      bodyText: html.replace(/<[^>]*>/g, '')
+      bodyText: inboxHtmlToText(html)
     })
     await inboxTouchLastMessage(tx, conversation.id, message.created_at, 'outbound')
     await inboxLogConversationEvent(tx, conversation.id, 'inbox_conversation_created', 'Conversation created', {
