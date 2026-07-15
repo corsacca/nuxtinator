@@ -6,13 +6,19 @@
 // submission is never lost to a notification/courtesy failure — those are
 // best-effort and swallowed.
 import { z } from 'zod'
-import { claimChannel } from '#crm/server'
+import { claimChannel, grantConsent } from '#crm/server'
 
 const Body = z.object({
   email: z.string().email(),
   name: z.string().max(300).optional(),
   subject: z.string().max(500).optional(),
-  message: z.string().min(1).max(500_000)
+  message: z.string().min(1).max(500_000),
+  // An explicit marketing-consent checkbox on the form. Only `true` grants;
+  // absent/false records nothing (consent is never inferred from submitting).
+  consent: z.boolean().optional(),
+  // ISO 3166-1 alpha-2 or alpha-3; normalized to alpha-2. Anything unknown or
+  // malformed becomes null — a bad country never rejects the submission.
+  country: z.string().max(64).optional()
 })
 
 function escapeHtml(s: string): string {
@@ -35,9 +41,25 @@ export default defineEventHandler(async (event) => {
   const firstLine = message.split('\n').map(l => l.trim()).find(Boolean) ?? ''
   const subject = parsed.data.subject?.trim() || firstLine.slice(0, 120) || 'Contact form message'
   const html = inboxSanitizeEmailHtml(`<p>${message.split('\n').map(escapeHtml).join('<br>')}</p>`)
+  const country = inboxNormalizeCountry(parsed.data.country)
+  const ip = getRequestIP(event, { xForwardedFor: true }) ?? null
+  const userAgent = getHeader(event, 'user-agent') ?? null
 
   const created = await inboxWithScopeTx(scope, async (tx) => {
     const channel = await claimChannel(tx, { channelType: 'email', value: email })
+    // Explicit consent checkbox → a marketing opt-in on the channel, through
+    // the CRM consent kernel (compliance log with the submission's origin as
+    // evidence; no session, so the actor is null).
+    if (parsed.data.consent === true) {
+      await grantConsent(tx, { userId: null }, {
+        channelId: channel.id,
+        purpose: 'marketing',
+        source: 'contact_form',
+        captureMeta: country ? { country } : {},
+        ip,
+        userAgent
+      })
+    }
     const conversation = await inboxCreateConversation(tx, {
       channelId: channel.id,
       subject,
@@ -46,9 +68,10 @@ export default defineEventHandler(async (event) => {
       counterpartyName: name ?? null
     })
     // Log the origin BEFORE the first message insert, so a failed message write
-    // still leaves an explainable shell.
+    // still leaves an explainable shell. The normalized country rides the
+    // origin log (channels have no country column).
     await inboxLogConversationEvent(tx, conversation.id, 'inbox_conversation_created', 'Conversation opened', {
-      extra: { source: 'contact_form', recipient: email }
+      extra: { source: 'contact_form', recipient: email, ...(country ? { country } : {}) }
     })
     const msg = await inboxCreateMessage(tx, {
       conversationId: conversation.id,

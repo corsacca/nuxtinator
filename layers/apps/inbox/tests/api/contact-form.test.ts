@@ -50,4 +50,55 @@ describe('contact form', () => {
       $fetch('/api/inbox/contact', { method: 'POST', headers: { 'x-api-key': apiKey }, body: { email: 'nope', message: 'hi' } })
     ).rejects.toMatchObject({ statusCode: 400 })
   })
+
+  it('grants marketing consent through the CRM kernel when the checkbox is set, with the normalized country as evidence', async () => {
+    const { org } = await createInboxOrgWith(sql)
+    const apiKey = `test-inbox-key-${randomUUID()}`
+    await setInboxOrgSetting(sql, org.id, 'contact_form_api_key', apiKey)
+    const email = `test-inbox-consent-${randomUUID().slice(0, 8)}@example.com`
+
+    const res = await $fetch<{ status: string }>('/api/inbox/contact', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey },
+      body: { email, message: 'Sign me up', consent: true, country: 'DEU' }
+    })
+    expect(res.status).toBe('received')
+
+    const [consent] = await sql`
+      SELECT cc.purpose, cc.status, cc.source, cc.capture_meta FROM crm_channel_consents cc
+      JOIN crm_channels ch ON ch.id = cc.channel_id WHERE ch.value = ${email}
+    `
+    expect(consent!.purpose).toBe('marketing')
+    expect(consent!.status).toBe('opt_in')
+    expect(consent!.source).toBe('contact_form')
+    expect((consent!.capture_meta as { country?: string }).country).toBe('DE')
+
+    const [event] = await sql`
+      SELECT e.event, e.actor_user_id, e.source FROM crm_consent_events e
+      JOIN crm_channels ch ON ch.id = e.channel_id WHERE ch.value = ${email}
+    `
+    expect(event!.event).toBe('grant')
+    expect(event!.actor_user_id).toBeNull()
+    expect(event!.source).toBe('contact_form')
+  })
+
+  it('records no consent without the checkbox, and an unknown country never rejects the submission', async () => {
+    const { org } = await createInboxOrgWith(sql)
+    const apiKey = `test-inbox-key-${randomUUID()}`
+    await setInboxOrgSetting(sql, org.id, 'contact_form_api_key', apiKey)
+    const email = `test-inbox-noconsent-${randomUUID().slice(0, 8)}@example.com`
+
+    const res = await $fetch<{ status: string }>('/api/inbox/contact', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey },
+      body: { email, message: 'Just a question', country: 'NOT_A_COUNTRY' }
+    })
+    expect(res.status).toBe('received')
+
+    const rows = await sql`
+      SELECT cc.id FROM crm_channel_consents cc
+      JOIN crm_channels ch ON ch.id = cc.channel_id WHERE ch.value = ${email}
+    `
+    expect(rows.length).toBe(0)
+  })
 })
