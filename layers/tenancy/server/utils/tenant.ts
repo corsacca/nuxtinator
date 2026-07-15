@@ -10,7 +10,9 @@
 //      INSIDE that transaction. This is the only place the GUC gets set —
 //      middleware doesn't because `SET LOCAL` is transaction-scoped and
 //      pooled connections (PgBouncer txn-pool) wouldn't carry it forward.
-//   4. Compute the user's effective permission set for this org.
+//   4. Compute the user's effective permission set for this org —
+//      union(membership role perms) ∪ direct grants (`user_permission_grants`,
+//      org-scoped by RLS since the read runs after the GUC is set).
 //   5. If `opts.appId` was passed, 410 if that app is disabled for the org.
 //   6. Refresh the `active-org-slug` cookie (30d) so bare-URL hits redirect.
 //   7. Run the handler with `(tx, ctx)` where ctx has full org context.
@@ -21,6 +23,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { db } from '#core/server/utils/database'
 import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions } from '#core/server/utils/rbac'
+import { getUserGrantedPermissions } from '#core/server/utils/permission-grants'
 import type { Database } from '#core/server/database/schema'
 import type { Permission } from '#core/app/utils/permissions'
 
@@ -36,7 +39,12 @@ export interface TenantContext {
   orgId: string
   orgSlug: string
   orgName: string
+  // `role` is the first membership role (display shorthand); `roles` is the
+  // user's full membership role list for this org.
   role: string | null
+  roles: string[]
+  // Effective permissions for this org: union(role perms) ∪ direct user
+  // grants (org-scoped via RLS).
   perms: Set<Permission>
 }
 
@@ -75,6 +83,12 @@ async function runWithOrgContext<T>(
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
 
     const perms = await getRolePermissions(tx, memberRoles, orgId)
+    // Additive per-user grants ride on top of role-derived perms. The read
+    // runs inside this transaction — after the GUC is set — so RLS scopes
+    // the grants to the active org without an explicit org_id filter.
+    for (const perm of await getUserGrantedPermissions(tx, authUser.userId)) {
+      perms.add(perm)
+    }
 
     if (opts.appId) {
       const ok = await isAppEnabledForOrg(tx, orgId, opts.appId)
@@ -100,6 +114,7 @@ async function runWithOrgContext<T>(
       orgSlug,
       orgName,
       role,
+      roles: memberRoles,
       perms
     })
   })

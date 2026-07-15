@@ -16,6 +16,8 @@
     "semver": "^7.6.0"
   },
   "peerDependencies": {
+    "@iconify-json/lucide": "^1.0.0",
+    "@iconify-json/simple-icons": "^1.0.0",
     "@nuxt/kit": "^4.0.0",
     "@nuxt/ui": "^4.0.0",
     "h3": "^1.0.0",

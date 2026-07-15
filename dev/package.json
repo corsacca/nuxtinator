@@ -25,6 +25,7 @@
     "@nuxt/ui": "^4.7.0",
     "@nuxtinator/context": "workspace:*",
     "@nuxtinator/core": "workspace:*",
+    "@nuxtinator/crm": "workspace:*",
     "@nuxtinator/dev": "workspace:*",
     "@nuxtinator/email-mailgun": "workspace:*",
     "@nuxtinator/feedback": "workspace:*",

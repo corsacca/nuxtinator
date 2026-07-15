@@ -110,6 +110,23 @@ export interface CoreSettingsTable {
   updated_at: ColumnType<Date, string | undefined, string>
 }
 
+// Per-user additive permission grants — effective perms = role perms ∪ these
+// rows (see rbac + the tenant kernels). `permission` is a slug; the runtime
+// permissions registry decides whether a stored slug still grants anything.
+//
+// In multi-tenant mode the tenancy layer's `tenancy_014` retrofit adds
+// `org_id` + RLS, scoping every grant to one org; in single-tenant mode there
+// is no org_id and a grant is user-global. `org_id` is intentionally absent
+// from this type — RLS and the column default keep it invisible to queries,
+// the same way `core_settings` and app-layer tenant tables omit it.
+export interface UserPermissionGrantsTable {
+  id: Generated<string>
+  user_id: string
+  permission: string
+  granted_by: string | null
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
 export type NotificationEmailMode = 'immediate' | 'digest' | 'none'
 
 export interface NotificationsTable {
@@ -127,7 +144,7 @@ export interface NotificationsTable {
   emailed_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
 }
 
-// The seven always-on core tables. Optional-layer tables live in the global
+// The eight always-on core tables. Optional-layer tables live in the global
 // `NuxtinatorDatabaseTables` registry and are joined in by `Database` below.
 export interface CoreDatabase {
   users: UsersTable
@@ -137,6 +154,7 @@ export interface CoreDatabase {
   apps: AppsTable
   notifications: NotificationsTable
   core_settings: CoreSettingsTable
+  user_permission_grants: UserPermissionGrantsTable
 }
 
 // The full schema Kysely sees: core tables plus whatever optional layers
