@@ -16,8 +16,12 @@ const direction = ref('')
 const directions = ref<string[]>([])
 const generating = ref(false)
 const result = ref<InboxAiDraftPreview | null>(null)
+// The reviewer's working copy of the draft — editable in place. Refine and
+// "Use response" both read from here, so hand edits are never lost to either.
+const editedHtml = ref('')
 
-// Show the English gloss column only when the draft isn't English.
+// Show the English gloss column only when the draft isn't English. The gloss
+// describes the AI's version; hand edits aren't re-translated.
 const needsTranslation = computed(() =>
   !!result.value?.english_gloss && !result.value.draft_language.toLowerCase().startsWith('en')
 )
@@ -28,6 +32,7 @@ watch(open, (v) => {
     directions.value = []
     generating.value = false
     result.value = null
+    editedHtml.value = ''
   }
 })
 
@@ -52,9 +57,11 @@ async function run() {
   try {
     result.value = await generateAiDraft({
       direction: buildDirection(),
-      // Refine revises the current draft rather than starting over.
-      baseDraft: result.value ? result.value.draft_html : undefined
+      // Refine revises the reviewer's CURRENT text — including their hand
+      // edits — rather than the AI's last output.
+      baseDraft: result.value ? editedHtml.value : undefined
     })
+    editedHtml.value = result.value.draft_html
   } catch (err: unknown) {
     const status = (err as { statusCode?: number } | null)?.statusCode
     toast.add({
@@ -70,11 +77,24 @@ async function run() {
   }
 }
 
+// Light HTML→text for hand-edited drafts (same shape as the server's
+// inboxMessageText). The AI's own draft_text is kept when nothing changed.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<\s*(?:br\s*\/?|\/(?:p|h[1-6]|li|div|tr))\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function use() {
   if (!result.value) return
+  const edited = editedHtml.value !== result.value.draft_html
   emit('use', {
-    html: result.value.draft_html,
-    text: result.value.draft_text,
+    html: editedHtml.value,
+    text: edited ? htmlToText(editedHtml.value) : result.value.draft_text,
     meta: {
       gloss: result.value.english_gloss,
       language: result.value.draft_language,
@@ -162,15 +182,18 @@ function use() {
             </template>
           </UAlert>
 
-          <!-- Draft (+ English gloss when not English) -->
+          <!-- Editable draft (+ read-only English gloss when not English) -->
           <div :class="needsTranslation ? 'grid grid-cols-2 gap-3' : ''">
             <div>
               <div class="text-xs font-medium text-(--ui-text-muted) mb-1">
-                Draft ({{ result.draft_language }})
+                Draft ({{ result.draft_language }}) — edit freely; Refine works from your edits
               </div>
-              <div class="text-sm whitespace-pre-wrap rounded-md border border-(--ui-border) p-3 max-h-64 overflow-y-auto">
-                {{ result.draft_text }}
-              </div>
+              <UEditor
+                v-model="editedHtml"
+                content-type="html"
+                :mention="false"
+                class="text-sm rounded-md border border-(--ui-border) max-h-64 overflow-y-auto"
+              />
             </div>
             <div v-if="needsTranslation">
               <div class="text-xs font-medium text-(--ui-text-muted) mb-1">
