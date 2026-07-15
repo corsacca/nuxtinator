@@ -11,6 +11,16 @@ export function inboxSanitizeDisplayHtml(html: string | null | undefined): strin
   })
 }
 
+// Human-readable message for a failed $fetch call. The server's declared
+// statusMessage (intentional wording — e.g. "File exceeds 25 MB", "File type
+// not allowed") beats ofetch's composed message; both beat a blank toast.
+export function inboxErrorMessage(err: unknown): string | undefined {
+  const e = err as { data?: { statusMessage?: string }, statusMessage?: string } | null
+  return e?.data?.statusMessage
+    || e?.statusMessage
+    || (err instanceof Error ? err.message : undefined)
+}
+
 export function inboxRelativeTime(value: string | Date | null | undefined): string {
   if (!value) return ''
   const then = new Date(value).getTime()

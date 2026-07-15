@@ -166,7 +166,7 @@ async function onImagePicked(e: Event) {
     const url = await props.uploadInlineImage(file)
     replyEditor.value?.editor?.chain().focus().setImage({ src: url }).run()
   } catch (err) {
-    useToast().add({ title: 'Image upload failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+    useToast().add({ title: 'Image upload failed', description: inboxErrorMessage(err), color: 'error' })
   } finally {
     insertingImage.value = false
   }

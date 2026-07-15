@@ -123,7 +123,7 @@ async function onAttachFiles(files: File[], body: string) {
     if (!draftId) return
     for (const f of files) await uploadAttachment(draftId, f)
   } catch (err) {
-    toast.add({ title: 'Attachment failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+    toast.add({ title: 'Attachment failed', description: inboxErrorMessage(err), color: 'error' })
   }
 }
 

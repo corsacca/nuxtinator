@@ -54,6 +54,20 @@ describe('outbound attachments', () => {
     expect(after.drafts.find(d => d.id === draftId)?.attachments ?? []).toHaveLength(0)
   })
 
+  it('rejects malformed ids with a clean 400 (never a Postgres cast 500)', async () => {
+    const { opts, domain } = await createInboxOrgWith(sql)
+    const res = await postInbound({ recipient: `hello@${domain}`, from: `M <${sender('malformed')}>` })
+    const id = res.body.conversation_id as string
+
+    await expect(
+      $fetch(`/api/inbox/conversations/${id}/attachments`, { method: 'POST', body: fileForm('not-a-uuid', 'notes.pdf'), ...opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
+
+    await expect(
+      $fetch(`/api/inbox/conversations/${id}/attachments/not-a-uuid`, { method: 'DELETE', ...opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
+  })
+
   it('rejects blocked types and a draft on another conversation', async () => {
     const { opts, domain } = await createInboxOrgWith(sql)
     const a = await postInbound({ recipient: `hello@${domain}`, from: `A <${sender('a')}>` })

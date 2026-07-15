@@ -61,7 +61,7 @@ async function onImagePicked(e: Event) {
     const res = await $fetch<{ url: string }>('/api/inbox/inline-images', { method: 'POST', body: form })
     editorRef.value?.editor?.chain().focus().setImage({ src: res.url }).run()
   } catch (err) {
-    useToast().add({ title: 'Image upload failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
+    useToast().add({ title: 'Image upload failed', description: inboxErrorMessage(err), color: 'error' })
   } finally {
     insertingImage.value = false
   }

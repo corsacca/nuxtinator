@@ -6,6 +6,7 @@
 // conversation's outgoing mail. The stored object is served download-only
 // through the auth proxy; content-type is browser-declared and untrusted.
 
+import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
 import { uploadToS3 } from '#core/server/utils/storage'
 
@@ -17,8 +18,10 @@ export default defineEventHandler(async (event) => {
   }
   const draftId = form.get('draftId')
   const file = form.get('file')
-  if (typeof draftId !== 'string' || !draftId) {
-    throw createError({ statusCode: 400, statusMessage: 'draftId is required' })
+  // Shape-checked before it reaches a query — a malformed id must be a clean
+  // 400, not a Postgres uuid-cast error surfacing as 500.
+  if (typeof draftId !== 'string' || !z.string().uuid().safeParse(draftId).success) {
+    throw createError({ statusCode: 400, statusMessage: 'draftId must be a valid draft id' })
   }
   if (!(file instanceof File) || !file.name) {
     throw createError({ statusCode: 400, statusMessage: 'file is required' })

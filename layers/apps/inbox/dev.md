@@ -141,6 +141,12 @@ path). Tests: `bun run test -- --project inbox`. The app seeds into the catalog 
 ## Built since the initial port (see PLAN.md phases)
 
 - **Shared drafts + outbound attachments + inline-image CID pipeline** (Phase 2).
+  Deliberate deltas vs the PLAN's composer spec: files **upload eagerly** on pick
+  (each binds to the draft immediately; no `pendingFiles` buffer — re-picking adds
+  rather than replaces, and a failed pick toasts per file), and inline images use
+  **one conversation-less endpoint** (`POST /api/inbox/inline-images`) for both the
+  reply composer and the new-email modal instead of a per-conversation route — the
+  object key alone identifies the image and access rides the auth proxy.
 - **Conversation tags** (Phase 3): per-org palette in core_settings, `tags jsonb` on
   the conversation, rail folders / list chips / picker, cross-status counts + filter.
 - **Canned responses** (Phase 4): `inbox_canned_responses` (single-body), CRUD API,
