@@ -1,6 +1,7 @@
 // The delivery-events webhook: bounce → crm suppression, complaint → crm
 // suppression, unsubscribe → marketing consent opt-out with a null actor,
-// delivered → message state. Suppression then blocks the send sweep.
+// delivered → message state. The sweep-side effect of suppression (a queued
+// reply failing instead of sending) is pinned in tests/api/send-sweep.test.ts.
 import { describe, it, expect, afterEach } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import {
