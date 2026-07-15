@@ -87,12 +87,16 @@ const signatureNotice = computed(() => {
   if (fromIdentity.value !== 'personal') return 'no signature'
   return props.me?.signature ? 'your signature is added' : 'no signature set'
 })
+// The signature is appended server-side at queue time, so it never appears in
+// the editor — the preview is the only way to see what will actually go out.
+const showSignaturePreview = ref(false)
 
 watch(() => props.thread.conversation.id, () => {
   replyBody.value = ''
   currentDraftId.value = null
   showCreateContact.value = false
   fromIdentity.value = defaultFromIdentity.value
+  showSignaturePreview.value = false
   view.value = 'conversation'
   emit('dismissAiMeta')
 }, { immediate: true })
@@ -339,7 +343,22 @@ function submitContact() {
         <span class="text-(--ui-text-muted) shrink-0">From:</span>
         <USelect v-model="fromIdentity" :items="fromOptions" size="xs" class="w-64" />
         <span class="text-(--ui-text-dimmed) truncate">· {{ signatureNotice }}</span>
+        <UButton
+          v-if="fromIdentity === 'personal' && me?.signature"
+          :label="showSignaturePreview ? 'hide signature' : 'preview signature'"
+          size="xs"
+          color="neutral"
+          variant="link"
+          class="shrink-0"
+          @click="showSignaturePreview = !showSignaturePreview"
+        />
       </div>
+      <!-- eslint-disable-next-line vue/no-v-html -- sanitized, and it is the agent's own signature (self-XSS only) -->
+      <div
+        v-if="showSignaturePreview && fromIdentity === 'personal' && me?.signature"
+        class="border border-(--ui-border) rounded-md p-2 prose prose-sm dark:prose-invert max-w-none text-xs"
+        v-html="inboxSanitizeDisplayHtml(me?.signature)"
+      />
       <!-- AI review panel — reviewer-only (uncertainty, English gloss, sources);
            never part of the outbound email. -->
       <div
