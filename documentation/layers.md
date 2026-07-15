@@ -433,7 +433,7 @@ The tenancy layer emits Nitro hooks layers can subscribe to. In single mode thes
 | Event | Payload | When |
 |---|---|---|
 | `org.created` | `{ orgId, slug, createdByUserId }` | New org row inserted. |
-| `org.deleted` | `{ orgId, slug }` | Org row deleted. |
+| `org.deleted` | `{ orgId, slug }` | Org is being deleted. Fires before the row cascade so subscribers can still read the org's rows (e.g. to collect S3 keys the cascade would strand). |
 | `user.created` | `{ userId, email, viaInvite }` | New user row inserted. (Fires in both modes.) |
 | `user.verified` | `{ userId, email }` | User accepts invite or verifies email. (Both modes.) |
 | `membership.created` | `{ membershipId, userId, orgId, roles, createdByUserId }` | Membership row inserted. |

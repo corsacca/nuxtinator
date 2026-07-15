@@ -69,6 +69,21 @@ export async function findChannel(
   return row ?? null
 }
 
+// Mark a channel's address ownership as proven. The only legitimate proof is
+// an authenticated signal from the address itself — e.g. a DKIM/DMARC-aligned
+// inbound email (sender layers call this from their inbound pipeline) or a
+// consumed verification token. Delivery/bounce events must never call this:
+// deliverability says nothing about ownership. Forward-only and idempotent —
+// re-verifying keeps the original verified_at.
+export async function markChannelVerified(tx: Tx, channelId: string): Promise<void> {
+  await tx
+    .updateTable('crm_channels')
+    .set({ verified: true, verified_at: new Date() })
+    .where('id', '=', channelId)
+    .where('verified', '=', false)
+    .execute()
+}
+
 export interface LinkChannelOpts {
   label?: string | null
   primary?: boolean

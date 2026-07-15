@@ -52,7 +52,10 @@ function currentVersion(ref: string, tagPrefix: string): string | null {
 async function listTags(repo: string, token: string): Promise<string[]> {
   const tags: string[] = []
   for (let page = 1; page <= 3; page++) {
-    const batch = await $fetch<{ name: string }[]>(
+    // Pin the request type to `string` (second generic) so $fetch skips deep
+    // typed-route instantiation over the full route union — an external URL that
+    // never matches a route, and the deep walk trips TS2589 as the app grows.
+    const batch = await $fetch<{ name: string }[], string>(
       `https://api.github.com/repos/${repo}/tags`,
       {
         query: { per_page: 100, page },

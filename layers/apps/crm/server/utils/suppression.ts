@@ -79,6 +79,47 @@ export async function clearSuppression(
   return Number(result.numUpdatedRows) > 0
 }
 
+// Deliverability severity ordering — a complaint (recipient marked spam)
+// outranks a hard bounce (dead address), which outranks a manual block.
+const SUPPRESSION_SEVERITY: Record<string, number> = { manual: 0, hard_bounce: 1, complaint: 2 }
+
+// Insert-or-refresh for repeat delivery events: the first bounce/complaint
+// creates the active row; a repeat refreshes its `detail` and UPGRADES the
+// reason when the new event is more severe (a complaint following a bounce
+// wins), so an operator sees the current reason/detail instead of a stale first
+// message. Additive to suppress()'s first-write-wins — producers that want a
+// standing suppression to be immutable keep calling suppress().
+export async function recordDeliverySuppression(tx: Tx, input: SuppressInput): Promise<CrmSuppressionRow> {
+  const existing = await activeSuppression(tx, input.channelId)
+  if (!existing) return await suppress(tx, input)
+  const upgrade = (SUPPRESSION_SEVERITY[input.reason] ?? 0) > (SUPPRESSION_SEVERITY[existing.reason] ?? 0)
+  if (!upgrade && (input.detail === undefined || input.detail === null)) return existing
+  return await tx
+    .updateTable('crm_channel_suppressions')
+    .set({
+      ...(upgrade ? { reason: input.reason } : {}),
+      ...(input.detail !== undefined && input.detail !== null ? { detail: input.detail } : {})
+    })
+    .where('id', '=', existing.id)
+    .returningAll()
+    .executeTakeFirstOrThrow()
+}
+
+// Producer-authorized clear of ANY active suppression (bounce/complaint as well
+// as manual) — the recovery path for a false-positive bounce that
+// clearSuppression()'s manual-only policy blocks. Records `cleared_at`; the
+// cleared row stays as history (the partial unique only covers active rows).
+// Returns true when an active row was cleared.
+export async function forceClearSuppression(tx: Tx, channelId: string): Promise<boolean> {
+  const result = await tx
+    .updateTable('crm_channel_suppressions')
+    .set({ cleared_at: sql`now()` })
+    .where('channel_id', '=', channelId)
+    .where('cleared_at', 'is', null)
+    .executeTakeFirst()
+  return Number(result.numUpdatedRows) > 0
+}
+
 export async function isSuppressed(tx: Tx, channelId: string): Promise<boolean> {
   return (await activeSuppression(tx, channelId)) !== undefined
 }

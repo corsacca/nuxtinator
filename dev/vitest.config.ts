@@ -20,7 +20,9 @@ const env = loadEnv('test', process.cwd(), '')
 
 // Forward test DB URLs into the test process. The per-layer global-setup
 // then promotes them to DATABASE_URL / APP_DATABASE_URL for the spawned Nuxt.
-for (const k of ['TEST_DATABASE_URL', 'TEST_APP_DATABASE_URL', 'JWT_SECRET', 'TEST_MAILHOG_URL']) {
+// S3 credentials come along too so tests can assert directly against the
+// bucket (e.g. that org offboarding actually removed the objects).
+for (const k of ['TEST_DATABASE_URL', 'TEST_APP_DATABASE_URL', 'JWT_SECRET', 'TEST_MAILHOG_URL', 'S3_ENDPOINT', 'S3_REGION', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_BUCKET_NAME']) {
   if (env[k]) process.env[k] = env[k]
 }
 
@@ -65,7 +67,9 @@ export default defineConfig({
       layerProject('list-of-100', '../layers/apps/list-of-100/tests'),
       layerProject('files', '../layers/apps/files/tests'),
       layerProject('context', '../layers/apps/context/tests'),
-      layerProject('crm', '../layers/apps/crm/tests')
+      layerProject('crm', '../layers/apps/crm/tests'),
+      layerProject('inbox', '../layers/apps/inbox/tests'),
+      layerProject('ai', '../layers/ai/tests')
     ]
   }
 })

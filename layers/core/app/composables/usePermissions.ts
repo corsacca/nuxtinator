@@ -32,18 +32,25 @@ export const usePermissions = () => {
   // Both feeds require auth. Single-tenant: host-level feed (no org).
   // Multi-tenant: per-org feed, which also needs an active slug — empty URL
   // until both are present so we don't 401/404.
-  const url = computed(() => {
+  const url = computed<string>(() => {
     if (!user.value) return ''
     if (!tenancyOn) return '/api/_perms'
     return slug.value ? `/api/o/${slug.value}/_perms` : ''
   })
 
-  const { data, refresh, pending, error } = useFetch<PermsResponse>(url, {
-    key: 'user-perms',
-    watch: [slug, user],
-    immediate: !!user.value && (!tenancyOn || !!slug.value),
-    default: () => ({ perms: [] as string[], roles: [] as string[] })
-  })
+  // useAsyncData + $fetch<T, string> rather than useFetch: pinning the request
+  // type to `string` keeps $fetch off the deep typed-route instantiation that
+  // trips TS2589 as the app's route union grows. The empty-url guard returns the
+  // default without hitting the network.
+  const { data, refresh, pending, error } = useAsyncData<PermsResponse>(
+    'user-perms',
+    () => (url.value ? $fetch<PermsResponse, string>(url.value) : Promise.resolve({ perms: [], roles: [] })),
+    {
+      watch: [slug, user],
+      immediate: !!user.value && (!tenancyOn || !!slug.value),
+      default: () => ({ perms: [] as string[], roles: [] as string[] })
+    }
+  )
 
   const permissions = computed<string[]>(() => data.value?.perms ?? [])
   const roles = computed<string[]>(() => data.value?.roles ?? [])

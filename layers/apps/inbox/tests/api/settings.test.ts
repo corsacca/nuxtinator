@@ -1,0 +1,76 @@
+// Per-org inbox settings surface: an org admin reads and writes the
+// configuration through /api/inbox/settings, values persist as org-scoped
+// overrides, and a freshly set contact-form API key immediately routes
+// public submissions to the org. Non-admins are refused.
+import { describe, it, expect, afterEach } from 'vitest'
+import { $fetch } from '@nuxt/test-utils/e2e'
+import { randomUUID } from 'node:crypto'
+import { getHostAdminDb, cleanupInboxTestData, createInboxOrgWith } from '../helpers'
+
+const sql = getHostAdminDb()
+afterEach(async () => { await cleanupInboxTestData(sql) })
+
+interface Settings {
+  inboundDomain: string
+  contactAddress: string
+  autoAckEnabled: boolean
+  contactFormApiKey: string
+  groundingSourceUrls: string[]
+}
+
+describe('inbox settings admin', () => {
+  it('org admin reads + writes settings; a new API key routes the contact form to the org', async () => {
+    const { org, opts, domain } = await createInboxOrgWith(sql)
+
+    const current = await $fetch<Settings>('/api/inbox/settings', opts)
+    expect(current.inboundDomain).toBe(domain)
+    expect(current.autoAckEnabled).toBe(true)
+
+    const newDomain = `mail.${org.slug}.test`
+    const apiKey = `test-inbox-key-${randomUUID()}`
+    const updated = await $fetch<Settings>('/api/inbox/settings', {
+      method: 'PUT',
+      body: {
+        inboundDomain: newDomain,
+        contactAddress: `contact@${newDomain}`,
+        autoAckEnabled: false,
+        contactFormApiKey: apiKey,
+        groundingSourceUrls: ['https://example.com/help', 'not-a-url']
+      },
+      ...opts
+    })
+    expect(updated.inboundDomain).toBe(newDomain)
+    expect(updated.contactAddress).toBe(`contact@${newDomain}`)
+    expect(updated.autoAckEnabled).toBe(false)
+    expect(updated.contactFormApiKey).toBe(apiKey)
+    // The registered parse sanitizes on write — non-http entries drop.
+    expect(updated.groundingSourceUrls).toEqual(['https://example.com/help'])
+
+    // Onboarding loop closes: the key set through the API gates and routes
+    // the public contact form to this org.
+    const res = await $fetch<{ status: string, conversationId: string }>('/api/inbox/contact', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey },
+      body: { email: 'visitor@example.com', message: 'Hi via the new key' }
+    })
+    expect(res.status).toBe('received')
+    const [row] = await sql`SELECT org_id FROM inbox_conversations WHERE id = ${res.conversationId}`
+    expect(row!.org_id).toBe(org.id)
+  })
+
+  it('refuses non-admins (403) and malformed values (400)', async () => {
+    const agent = await createInboxOrgWith(sql, ['inbox_agent'])
+    await expect($fetch('/api/inbox/settings', agent.opts)).rejects.toMatchObject({ statusCode: 403 })
+    await expect(
+      $fetch('/api/inbox/settings', { method: 'PUT', body: { autoAckEnabled: false }, ...agent.opts })
+    ).rejects.toMatchObject({ statusCode: 403 })
+
+    const admin = await createInboxOrgWith(sql)
+    await expect(
+      $fetch('/api/inbox/settings', { method: 'PUT', body: { inboundDomain: 'not a domain!' }, ...admin.opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
+    await expect(
+      $fetch('/api/inbox/settings', { method: 'PUT', body: { contactAddress: 'not-an-email' }, ...admin.opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
+  })
+})

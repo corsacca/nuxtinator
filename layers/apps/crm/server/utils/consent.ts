@@ -9,13 +9,20 @@
 import { sql } from 'kysely'
 import type { Selectable, Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import type { TenantContext } from '#tenant/server'
 import type { ConsentEvent, ConsentStatus } from '../database/schema.d'
 import { getRegisteredConsentPurposes } from './crm-registry'
 import { channelFingerprint } from './normalize'
 import { isSuppressed } from './suppression'
 
 type Tx = Transaction<Database>
+
+// Who is asserting the consent change. A TenantContext satisfies this
+// structurally (routes pass ctx through); actor-less callers — webhook
+// consumers like a provider's unsubscribe event — pass `{ userId: null }`
+// and carry their evidence in `source`/`captureMeta` instead.
+export interface CrmConsentActor {
+  userId: string | null
+}
 
 type ConsentRow = Selectable<Database['crm_channel_consents']>
 
@@ -72,7 +79,7 @@ function toEntry(row: ConsentRow): ConsentStateEntry {
 // fingerprint so the proof survives channel erasure.
 async function setConsent(
   tx: Tx,
-  ctx: TenantContext,
+  ctx: CrmConsentActor,
   status: ConsentStatus,
   input: ConsentChangeInput
 ): Promise<ConsentChangeResult> {
@@ -169,7 +176,7 @@ async function setConsent(
 
 export async function grantConsent(
   tx: Tx,
-  ctx: TenantContext,
+  ctx: CrmConsentActor,
   input: ConsentChangeInput
 ): Promise<ConsentChangeResult> {
   return await setConsent(tx, ctx, 'opt_in', input)
@@ -177,7 +184,7 @@ export async function grantConsent(
 
 export async function revokeConsent(
   tx: Tx,
-  ctx: TenantContext,
+  ctx: CrmConsentActor,
   input: ConsentChangeInput
 ): Promise<ConsentChangeResult> {
   return await setConsent(tx, ctx, 'opt_out', input)

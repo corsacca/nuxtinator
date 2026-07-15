@@ -13,6 +13,7 @@
 // writes activity rows (field patch, rename, channel/consent change, share
 // change) refreshes the timeline so it stays in step without a full reload.
 import type { CrmChannelEntry } from '#crm'
+import { getCrmDetailPanels } from '#crm'
 import type { CrmTypeFields } from '../../../composables/useCrmTypes'
 import type { CrmFieldSetting } from '../../../utils/field-kinds'
 
@@ -94,6 +95,11 @@ const sectionGroups = computed<SectionGroup[]>(() => {
   if (rest.length > 0) groups.push({ key: '_other', label: 'Other', fields: rest })
   return groups.filter(g => g.fields.length > 0)
 })
+
+// Detail panels other layers inject after the connections panel (e.g. inbox's
+// conversations panel). Each self-gates on its own permission and renders
+// nothing when unauthorized, so the page just lists whatever matches the type.
+const detailPanels = computed(() => getCrmDetailPanels(typeKey.value))
 
 function fieldValue(field: CrmFieldSetting): unknown {
   return record.value?.fields[field.key] ?? null
@@ -226,6 +232,14 @@ async function removeRecord() {
       <CrmConnectionsPanel
         :fields="fieldSettings?.fields ?? []"
         :record="record"
+      />
+
+      <component
+        :is="panel.component"
+        v-for="panel in detailPanels"
+        :key="panel.id"
+        :record-id="record.id"
+        :record-type="typeKey"
       />
 
       <CrmTimeline
