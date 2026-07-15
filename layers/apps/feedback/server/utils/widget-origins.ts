@@ -7,7 +7,8 @@
 // it never allows credentials, so the real gates are this per-project allowlist
 // for sign-in plus bearer tokens for authenticated reads.
 
-const LOOPBACK_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i
+// RFC 6761 reserves the .localhost TLD for loopback, so *.localhost matches too.
+const LOOPBACK_RE = /^https?:\/\/((?:[a-z0-9-]+\.)*localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i
 
 // Parse a URL and return its origin (scheme://host[:port]), or null if it isn't
 // a valid absolute http(s) URL.

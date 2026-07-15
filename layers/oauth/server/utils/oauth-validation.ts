@@ -160,6 +160,9 @@ export function isValidScope(scope: string): boolean {
 
 // Returns only scopes the user currently has the RBAC permission for.
 // offline_access passes through unconditionally (it's not a permission).
+// Membership is checked against the runtime permission registry (see
+// isValidScope above) — the static-array check would drop every
+// layer-contributed scope here, granting consent tokens with no usable scope.
 export function filterScopesByPermissions(scopes: string[], userPermissions: Set<Permission>): string[] {
   const surviving: string[] = []
   for (const scope of scopes) {

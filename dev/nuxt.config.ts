@@ -71,11 +71,23 @@ export default defineNuxtConfig({
   },
 
   devServer: {
-    // NUXT_PORT in dev/.env overrides per-instance without touching this file
+    // NUXT_HOST / NUXT_PORT in dev/.env override per-instance without touching
+    // this file. A named host gives each project its own cookie jar (cookies
+    // ignore ports, so two apps on localhost share logged-in sessions). The
+    // hostname must resolve locally — add `127.0.0.1 <host>` to /etc/hosts.
+    host: process.env.NUXT_HOST || 'nuxtinator.localhost',
     port: Number(process.env.NUXT_PORT) || 2080
   },
 
   compatibilityDate: '2025-01-15',
+
+  vite: {
+    server: {
+      // Leading dot = accept any *.localhost Host header, so NUXT_HOST
+      // overrides don't also need an allowedHosts change.
+      allowedHosts: ['.localhost']
+    }
+  },
 
   eslint: {
     config: {

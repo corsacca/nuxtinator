@@ -118,6 +118,29 @@ const priorityQualOptions = [
   { label: 'Highest', value: 'highest' }
 ]
 
+// Post-type picker for non-feedback cards. Feedback cards keep their dedicated
+// layout; changing a card's type swaps the panel body on the next open.
+const postTypeOptions = [
+  { label: 'Task', value: 'task' },
+  { label: 'Feature', value: 'feature' },
+  { label: 'Bug', value: 'bug' },
+  { label: 'Artifact', value: 'artifact' },
+  { label: 'Feedback', value: 'feedback' }
+]
+
+// Priority select value. The panel edits `post_meta.priority_qualitative`;
+// cards created through the HTTP/MCP APIs carry severity in the `priority`
+// column instead, so fall back to it (its `critical` maps to this
+// vocabulary's `highest`) until an edit here writes the qualitative key.
+const priorityQualValue = computed<string | undefined>(() => {
+  const qual = getMeta('priority_qualitative')
+  if (qual) return qual
+  const col = String(props.card?.priority ?? '').toLowerCase()
+  if (!col) return undefined
+  if (col === 'critical') return 'highest'
+  return priorityQualOptions.some(o => o.value === col) ? col : undefined
+})
+
 // Triage labels live in post_meta.labels as an array of catalog keys. The
 // picker reads/writes that array; display text comes from the code catalog.
 const labelOptions = FEEDBACK_LABELS.map(l => ({ label: l.label, value: l.value as string }))
@@ -522,7 +545,7 @@ async function handleCopyForAgent() {
         </div>
 
         <!-- Content -->
-        <div class="flex-1 overflow-y-auto px-4 py-4">
+        <div class="flex-1 overflow-y-auto px-4 py-4 space-y-6">
           <!-- Feedback: single-column 3-section layout -->
           <div v-if="draft.post_type === 'feedback'" class="space-y-6">
             <!-- Section 1: Submitter · From · Device · Date (compact info bar) -->
@@ -653,67 +676,96 @@ async function handleCopyForAgent() {
               </div>
             </section>
 
-            <!-- Section 3: Coordination -->
-            <section class="space-y-4 pt-4 border-t border-(--ui-border)">
+          </div>
+
+          <!-- Task / feature / bug / artifact: free-form details -->
+          <div v-else class="space-y-6">
+            <section class="space-y-4">
               <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
-                Coordination
+                Details
               </h3>
-              <UFormField v-if="isDoing" label="Phase">
+              <UFormField label="Title">
+                <UInput v-model="draft.title" placeholder="One-line summary" class="w-full" />
+              </UFormField>
+              <UFormField label="Type">
                 <USelect
-                  :model-value="getMeta('phase') || 'backlog'"
-                  :items="phaseSelectItems"
+                  :model-value="draft.post_type"
+                  :items="postTypeOptions"
                   class="w-full"
-                  @update:model-value="(v: any) => setMeta('phase', v)"
+                  @update:model-value="(v: any) => { if (draft) draft.post_type = v }"
                 />
               </UFormField>
-              <UFormField label="Assignee">
-                <USelectMenu
-                  v-model="draft.assignee"
-                  :items="assigneeOptions"
-                  placeholder="Unassigned"
-                  :clear="true"
-                  class="w-full"
-                />
-              </UFormField>
-              <UFormField label="Priority">
-                <USelect
-                  :model-value="getMeta('priority_qualitative') || undefined"
-                  :items="priorityQualOptions"
-                  placeholder="-- Select --"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
-                />
-              </UFormField>
-              <UFormField label="Labels">
-                <USelectMenu
-                  v-model="draftLabels"
-                  :items="labelOptions"
-                  value-key="value"
-                  label-key="label"
-                  multiple
-                  placeholder="No labels"
-                  class="w-full"
-                />
-              </UFormField>
-              <UFormField label="Plan">
+              <UFormField label="Description">
                 <UTextarea
-                  :rows="3"
-                  :model-value="getMeta('plan')"
-                  :placeholder="planField.placeholder || ''"
-                  class="w-full"
-                  @update:model-value="(v: any) => setMeta('plan', v)"
-                />
-              </UFormField>
-              <UFormField label="Testing Results">
-                <UTextarea
-                  v-model="draft.testing_results"
-                  :rows="3"
-                  placeholder="Test results, feedback, notes..."
+                  v-model="draft.description"
+                  :rows="10"
+                  placeholder="What, where, why — markdown supported."
                   class="w-full"
                 />
               </UFormField>
             </section>
           </div>
+
+          <!-- Coordination — all post types -->
+          <section class="space-y-4 pt-4 border-t border-(--ui-border)">
+            <h3 class="text-sm font-semibold text-(--ui-text-muted) uppercase tracking-wide">
+              Coordination
+            </h3>
+            <UFormField v-if="isDoing" label="Phase">
+              <USelect
+                :model-value="getMeta('phase') || 'backlog'"
+                :items="phaseSelectItems"
+                class="w-full"
+                @update:model-value="(v: any) => setMeta('phase', v)"
+              />
+            </UFormField>
+            <UFormField label="Assignee">
+              <USelectMenu
+                v-model="draft.assignee"
+                :items="assigneeOptions"
+                placeholder="Unassigned"
+                :clear="true"
+                class="w-full"
+              />
+            </UFormField>
+            <UFormField label="Priority">
+              <USelect
+                :model-value="priorityQualValue"
+                :items="priorityQualOptions"
+                placeholder="-- Select --"
+                class="w-full"
+                @update:model-value="(v: any) => setMeta('priority_qualitative', v)"
+              />
+            </UFormField>
+            <UFormField label="Labels">
+              <USelectMenu
+                v-model="draftLabels"
+                :items="labelOptions"
+                value-key="value"
+                label-key="label"
+                multiple
+                placeholder="No labels"
+                class="w-full"
+              />
+            </UFormField>
+            <UFormField label="Plan">
+              <UTextarea
+                :rows="3"
+                :model-value="getMeta('plan')"
+                :placeholder="planField.placeholder || ''"
+                class="w-full"
+                @update:model-value="(v: any) => setMeta('plan', v)"
+              />
+            </UFormField>
+            <UFormField label="Testing Results">
+              <UTextarea
+                v-model="draft.testing_results"
+                :rows="3"
+                placeholder="Test results, feedback, notes..."
+                class="w-full"
+              />
+            </UFormField>
+          </section>
         </div>
 
         <!-- Footer -->
