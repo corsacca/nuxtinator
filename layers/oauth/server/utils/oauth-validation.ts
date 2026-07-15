@@ -1,5 +1,6 @@
-import { isPermission, PERMISSIONS } from '#core/app/utils/permissions'
+import { PERMISSIONS } from '#core/app/utils/permissions'
 import type { Permission } from '#core/app/utils/permissions'
+import { isRegisteredPermission } from '#core/server/utils/permissions-registry'
 import { getRegisteredScopes } from './scopes-registry'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
@@ -148,9 +149,13 @@ export function parseScopeString(raw: string | undefined | null): string[] {
 }
 
 // True if the scope is a known permission OR the offline_access protocol scope.
+// Checks the runtime permission registry (fed by each layer's Nitro plugin),
+// not the host's static PERMISSIONS array — the host owns no permissions of
+// its own, so the compile-time `isPermission()` would reject every
+// layer-contributed scope.
 export function isValidScope(scope: string): boolean {
   if (scope === OFFLINE_ACCESS_SCOPE) return true
-  return isPermission(scope)
+  return isRegisteredPermission(scope)
 }
 
 // Returns only scopes the user currently has the RBAC permission for.
@@ -162,7 +167,7 @@ export function filterScopesByPermissions(scopes: string[], userPermissions: Set
       surviving.push(scope)
       continue
     }
-    if (isPermission(scope) && userPermissions.has(scope)) {
+    if (isRegisteredPermission(scope) && userPermissions.has(scope as Permission)) {
       surviving.push(scope)
     }
   }

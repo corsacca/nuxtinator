@@ -1,7 +1,8 @@
 import type { H3Event } from 'h3'
 import { db } from '#core/server/utils/database'
 import { getUserPermissions } from '#core/server/utils/rbac'
-import { isPermission } from '#core/app/utils/permissions'
+import type { Permission } from '#core/app/utils/permissions'
+import { isRegisteredPermission } from '#core/server/utils/permissions-registry'
 import { sha256Hex } from './oauth-crypto'
 import { getOauthConfig, tryGetOauthConfig } from './oauth-config'
 import { parseScopeString, OFFLINE_ACCESS_SCOPE } from './oauth-validation'
@@ -152,9 +153,11 @@ export async function requireBearerScope(event: H3Event, requiredScope: string):
 
   // RBAC check: scope alone does not grant — current user permission is source of truth.
   // offline_access is OAuth-protocol, not a permission, so it doesn't need an RBAC check.
-  if (requiredScope !== OFFLINE_ACCESS_SCOPE && isPermission(requiredScope)) {
+  // Runtime registry check (`isRegisteredPermission`), not the host's empty
+  // static PERMISSIONS array — layer-contributed scopes must reach the RBAC gate.
+  if (requiredScope !== OFFLINE_ACCESS_SCOPE && isRegisteredPermission(requiredScope)) {
     const perms = await getUserPermissions(auth.userId)
-    if (!perms.has(requiredScope)) {
+    if (!perms.has(requiredScope as Permission)) {
       sendAuthError(event, 403, { requiredScope, error: 'insufficient_scope' }, 'Forbidden')
     }
   }
