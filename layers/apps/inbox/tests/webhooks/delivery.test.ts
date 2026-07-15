@@ -188,6 +188,54 @@ describe('delivery events webhook', () => {
     expect(rows[0]!.actor_user_id).toBeNull()
   })
 
+  it("a complaint after delivery suppresses the address but leaves the message 'delivered'", async () => {
+    const { org, opts, domain } = await createInboxOrgWith(sql)
+    await setInboxOrgSetting(sql, org.id, 'auto_ack_enabled', false)
+    const sender = uniqueSender('spamflag')
+    const inbound = await postInbound({ recipient: `hello@${domain}`, from: `S <${sender}>` })
+    const convId = inbound.body.conversation_id as string
+
+    const queued = await $fetch<{ id: string }>(`/api/inbox/conversations/${convId}/messages`, {
+      method: 'POST', body: { body: '<p>reply</p>' }, ...opts
+    })
+
+    let providerId = ''
+    for (let i = 0; i < 60 && !providerId; i++) {
+      const [row] = await sql`SELECT status, provider_message_id FROM inbox_messages WHERE id = ${queued.id}`
+      if (row!.status === 'sent' && row!.provider_message_id) providerId = row!.provider_message_id as string
+      else await new Promise(r => setTimeout(r, 250))
+    }
+    expect(providerId).toBeTruthy()
+    const messageIdHeader = { headers: { 'message-id': providerId.replace(/^<|>$/g, '') } }
+
+    await postDeliveryEvent({
+      event: 'delivered',
+      recipient: sender,
+      message: messageIdHeader,
+      'user-variables': { 'inbox-org': org.id }
+    })
+
+    const res = await postDeliveryEvent({
+      event: 'complained',
+      recipient: sender,
+      message: messageIdHeader,
+      'user-variables': { 'inbox-org': org.id }
+    })
+    expect(res.suppressed).toBe(true)
+
+    // The recipient DID receive the mail — the complaint must not rewrite
+    // delivery state, only suppress the address.
+    const [msg] = await sql`SELECT status FROM inbox_messages WHERE id = ${queued.id}`
+    expect(msg!.status).toBe('delivered')
+
+    const suppressions = await sql`
+      SELECT s.reason FROM crm_channel_suppressions s
+      JOIN crm_channels ch ON ch.id = s.channel_id WHERE ch.value = ${sender}
+    `
+    expect(suppressions.length).toBe(1)
+    expect(suppressions[0]!.reason).toBe('complaint')
+  })
+
   it('absorbs a repeated complaint idempotently — one suppression row', async () => {
     const { org, domain } = await createInboxOrgWith(sql)
     const sender = uniqueSender('complainer')

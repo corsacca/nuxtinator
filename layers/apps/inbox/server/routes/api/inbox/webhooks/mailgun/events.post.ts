@@ -6,7 +6,10 @@
 //      the channel's 'marketing' consent to opt-out. Deliverability
 //      (conversational/transactional mail) is untouched.
 //   3. Outbound message state — flips the matching inbox message to
-//      delivered/failed by provider message-id.
+//      delivered/failed by provider message-id. Only delivery outcomes
+//      (delivered/failed/permanent_fail/rejected) flip state; complaints and
+//      legacy bounces correlate read-only (job 1 is their whole effect), and
+//      a failure never downgrades an already-delivered message.
 // Never touches channel `verified` — ownership is established solely by
 // authenticated inbound mail.
 //
@@ -86,23 +89,34 @@ export default defineEventHandler(async (event) => {
         let scopeActed = false
 
         // 2. Outbound message correlation — also anchors org resolution for
-        // events without the user-variable.
+        // events without the user-variable. Only true delivery outcomes
+        // (delivered/failed/permanent_fail/rejected) write message state;
+        // complaints and legacy bounces correlate read-only — the mail WAS
+        // delivered, and their consequence is the suppression row below, not
+        // a state flip.
         if (messageId && (eventType === 'delivered' || suppressReason || eventType === 'failed'
           || eventType === 'permanent_fail' || eventType === 'rejected')) {
+          const writesState = eventType === 'delivered' || eventType === 'failed'
+            || eventType === 'permanent_fail' || eventType === 'rejected'
           const status = eventType === 'delivered' ? 'delivered' as const : 'failed' as const
-          const row = await inboxMarkDeliveryByProviderId(tx, messageId, status, {
-            failedReason: status === 'failed' ? (reasonText || 'Delivery failed') : undefined,
-            deliveredAt: status === 'delivered' ? new Date() : undefined
-          })
+          const flipped = writesState
+            ? await inboxMarkDeliveryByProviderId(tx, messageId, status, {
+                failedReason: status === 'failed' ? (reasonText || 'Delivery failed') : undefined,
+                deliveredAt: status === 'delivered' ? new Date() : undefined
+              })
+            : null
+          const row = flipped ?? await inboxFindOutboundByProviderId(tx, messageId)
           if (row) {
             matched = true
             scopeActed = true
+          }
+          if (flipped) {
             // Conversation-timeline trail for the state flip — best-effort,
             // a logging failure must not fail (and re-trigger) the webhook.
             try {
               await inboxLogConversationEvent(
                 tx,
-                row.conversation_id,
+                flipped.conversation_id,
                 status === 'delivered' ? 'inbox_delivery_delivered' : 'inbox_delivery_failed',
                 status === 'delivered' ? 'Delivered to recipient' : `Delivery failed${reasonText ? `: ${reasonText}` : ''}`,
                 { extra: { providerMessageId: messageId } }

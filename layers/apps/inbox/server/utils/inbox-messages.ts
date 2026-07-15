@@ -275,7 +275,9 @@ export async function inboxListDueQueued(tx: Tx, limit = 20): Promise<InboxMessa
 
 // Update delivery state by the provider's message-id (used by the delivery
 // webhook). Matches provider_message_id or email_message_id, ignoring angle
-// brackets.
+// brackets. A failure never downgrades an already-delivered message — the
+// mail reached the recipient; whatever arrived later (a complaint, a late
+// bounce record) rides suppressions, not message state.
 export async function inboxMarkDeliveryByProviderId(
   tx: Tx,
   providerMessageId: string,
@@ -283,7 +285,7 @@ export async function inboxMarkDeliveryByProviderId(
   extra: { failedReason?: string, deliveredAt?: Date } = {}
 ): Promise<InboxMessageRow | null> {
   const normalized = providerMessageId.replace(/^<|>$/g, '')
-  const row = await tx
+  let qb = tx
     .updateTable('inbox_messages')
     .set({
       status,
@@ -296,7 +298,28 @@ export async function inboxMarkDeliveryByProviderId(
       replace(replace(provider_message_id, '<', ''), '>', '') = ${normalized}
       OR replace(replace(email_message_id, '<', ''), '>', '') = ${normalized}
     )`)
-    .returningAll()
+  if (status === 'failed') qb = qb.where('status', '!=', 'delivered')
+  const row = await qb.returningAll().executeTakeFirst()
+  return row ?? null
+}
+
+// Correlate an outbound message by the provider's message-id WITHOUT touching
+// its state. The delivery webhook uses this to anchor org resolution for
+// events that must not rewrite delivery state (complaints, legacy bounces,
+// failures on an already-delivered message).
+export async function inboxFindOutboundByProviderId(
+  tx: Tx,
+  providerMessageId: string
+): Promise<InboxMessageRow | null> {
+  const normalized = providerMessageId.replace(/^<|>$/g, '')
+  const row = await tx
+    .selectFrom('inbox_messages')
+    .selectAll()
+    .where('direction', '=', 'outbound')
+    .where(sql<boolean>`(
+      replace(replace(provider_message_id, '<', ''), '>', '') = ${normalized}
+      OR replace(replace(email_message_id, '<', ''), '>', '') = ${normalized}
+    )`)
     .executeTakeFirst()
   return row ?? null
 }
