@@ -111,11 +111,6 @@ function handleAdd() {
     projectId: props.project.id
   })
 }
-
-const APPROX_VISIBLE = 5
-const hiddenCount = computed(() =>
-  isCollapsed.value ? 0 : Math.max(0, cellCards.value.length - APPROX_VISIBLE)
-)
 </script>
 
 <template>
@@ -181,13 +176,6 @@ const hiddenCount = computed(() =>
       >
         + Add card
       </button>
-
-      <div
-        v-if="hiddenCount > 0"
-        class="shrink-0 text-center text-[11px] text-(--ui-text-muted) bg-(--ui-bg-accented) rounded px-1 py-0.5 mt-0.5 select-none"
-      >
-        Scroll for {{ hiddenCount }} more
-      </div>
     </template>
 
     <div
