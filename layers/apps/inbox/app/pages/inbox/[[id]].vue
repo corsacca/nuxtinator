@@ -18,7 +18,7 @@ const selectedId = computed(() => {
   return id || null
 })
 
-const { items, counts, tagCounts, pending, error, scope, status, q, tag, refresh } = useInboxConversations()
+const { items, total, counts, tagCounts, pending, error, scope, status, q, tag, refresh } = useInboxConversations()
 const { thread, error: threadError, refresh: refreshThread, patch, reply, saveDraft, deleteDraft, saveAiDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact } = useInboxThread(selectedId)
 const { users: assignees } = useInboxAssignees()
 const { palette, createTag, deleteTag, setConversationTags } = useInboxTags()
@@ -65,6 +65,30 @@ const viewLabel = computed(() => {
 function open(id: string) {
   router.push(withQuery(inboxPath(`/inbox/${id}`)))
 }
+
+// A new outbound conversation must appear in the list and rail counts right
+// away, not on the next natural refetch.
+function onComposeCreated(id: string) {
+  refresh()
+  open(id)
+}
+
+// Mobile folder access: the rail is hidden below lg, so the list header's
+// view label doubles as a folder menu there (scopes + tag folders).
+const mobileFolders = computed(() => {
+  const scopeItems = [
+    { label: 'Needs review', icon: 'i-lucide-shield-alert', onSelect: () => { scope.value = 'held' } },
+    { label: 'All', icon: 'i-lucide-inbox', onSelect: () => { scope.value = 'all' } },
+    { label: 'Unassigned', icon: 'i-lucide-user-x', onSelect: () => { scope.value = 'unassigned' } },
+    { label: 'Mine', icon: 'i-lucide-user-check', onSelect: () => { scope.value = 'mine' } }
+  ]
+  const tagItems = palette.value.map(t => ({
+    label: t.name,
+    icon: 'i-lucide-tag',
+    onSelect: () => { tag.value = t.slug }
+  }))
+  return tagItems.length ? [scopeItems, tagItems] : [scopeItems]
+})
 
 function withQuery(path: string) {
   return { path, query: route.query }
@@ -252,7 +276,20 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
     <section class="flex-1 flex min-w-0 overflow-hidden">
       <div class="flex flex-col min-h-0" :class="selectedId ? 'hidden lg:flex' : 'flex w-full lg:w-auto'">
         <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-(--ui-border)">
-          <span class="text-sm font-medium text-(--ui-text-muted) capitalize">{{ viewLabel }}</span>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <UDropdownMenu :items="mobileFolders" class="lg:hidden">
+              <UButton
+                :label="viewLabel"
+                trailing-icon="i-lucide-chevron-down"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                class="capitalize"
+              />
+            </UDropdownMenu>
+            <span class="hidden lg:inline text-sm font-medium text-(--ui-text-muted) capitalize truncate">{{ viewLabel }}</span>
+            <span class="text-xs text-(--ui-text-dimmed) shrink-0">{{ total }}</span>
+          </div>
           <div class="flex items-center gap-1.5">
             <UButton
               v-if="me"
@@ -360,7 +397,7 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
 
     <UAlert v-if="error" color="error" variant="subtle" :title="error" class="absolute bottom-4 right-4 w-80" />
 
-    <InboxComposeModal v-model:open="showCompose" @created="open" />
+    <InboxComposeModal v-model:open="showCompose" @created="onComposeCreated" />
 
     <InboxCannedManager
       v-if="canManageCanned"

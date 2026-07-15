@@ -69,9 +69,15 @@ export function useInboxConversations() {
     set: v => setQuery({ scope: v === 'all' ? undefined : v, tag: undefined })
   })
 
+  // Status default is per-scope: normal views open on 'open'; the held review
+  // queue opens unnarrowed ('all' — it's the whole alarm queue) and a status
+  // choice within it is an explicit opt-in.
   const status = computed<string>({
-    get: () => queryString('status') || 'open',
-    set: v => setQuery({ status: v === 'open' ? undefined : v })
+    get: () => queryString('status') || (scope.value === 'held' ? 'all' : 'open'),
+    set: (v) => {
+      const scopeDefault = scope.value === 'held' ? 'all' : 'open'
+      setQuery({ status: v === scopeDefault ? undefined : v })
+    }
   })
 
   // The active tag folder (empty = none). Selecting a tag clears the scope and
@@ -92,15 +98,16 @@ export function useInboxConversations() {
     const id = ++requestId
     pending.value = true
     const statusParam = status.value === 'all' ? undefined : status.value
-    const query: Record<string, unknown> = { limit: 50 }
+    const query: Record<string, unknown> = { limit: 100 }
     if (tag.value) {
       // Tag folder overrides scope. Status may still narrow within it, but
       // defaults to 'all' (set when the tag was selected).
       query.tag = tag.value
       if (statusParam) query.status = statusParam
     } else if (scope.value === 'held') {
-      // The held folder is status-independent — it's the whole review queue.
+      // The whole review queue by default; the status strip can narrow it.
       query.held = true
+      if (statusParam) query.status = statusParam
     } else {
       if (statusParam) query.status = statusParam
       if (scope.value === 'unassigned') query.unassigned = true

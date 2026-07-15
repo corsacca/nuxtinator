@@ -49,7 +49,7 @@ const statusTabs = computed(() => [
         size="sm"
         class="w-full"
       />
-      <div v-if="scope !== 'held'" class="flex gap-1 overflow-x-auto">
+      <div class="flex gap-1 overflow-x-auto">
         <UButton
           v-for="tab in statusTabs"
           :key="tab.key"

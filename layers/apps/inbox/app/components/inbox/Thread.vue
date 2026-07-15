@@ -51,6 +51,7 @@ const crmPath = useCrmPath()
 // in from the AI modal and land in the editor.
 const replyBody = defineModel<string>('replyBody', { default: '' })
 const confirmSpam = ref(false)
+const confirmClose = ref(false)
 
 // Whether the conversation is resolved enough to capture a knowledge entry
 // from — and whether this user may (KB writes are inbox.send-tier, same as
@@ -101,6 +102,10 @@ watch(() => props.thread.conversation.id, () => {
   showSignaturePreview.value = false
   view.value = 'conversation'
   emit('dismissAiMeta')
+  // Resume where the team left off: the freshest shared draft loads into the
+  // composer on open (drafts arrive oldest-first).
+  const latest = props.thread.drafts[props.thread.drafts.length - 1]
+  if (latest) loadDraft(latest)
 }, { immediate: true })
 
 function draftPreview(d: InboxThreadDraft): string {
@@ -213,6 +218,11 @@ const statusValue = computed({
       confirmSpam.value = true
       return
     }
+    // Closing also clears the review flag server-side — worth a confirm.
+    if (v === 'closed') {
+      confirmClose.value = true
+      return
+    }
     emit('patch', { status: v })
   }
 })
@@ -261,6 +271,15 @@ const appliedTags = computed(() =>
           color="warning"
           variant="subtle"
           @click="emit('patch', { needsReview: false })"
+        />
+        <UButton
+          v-else
+          label="Flag for review"
+          icon="i-lucide-flag"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          @click="emit('patch', { needsReview: true })"
         />
         <UButton
           v-if="canAddKnowledge"
@@ -549,6 +568,24 @@ const appliedTags = computed(() =>
             label="Block sender"
             color="error"
             @click="emit('patch', { status: 'spam' }); confirmSpam = false"
+          />
+        </div>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="confirmClose" title="Close conversation?">
+      <template #body>
+        <p class="text-sm text-(--ui-text-muted)">
+          Closing marks this conversation resolved and clears its review flag.
+          A new message from the contact reopens it.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton label="Cancel" variant="ghost" color="neutral" @click="confirmClose = false" />
+          <UButton
+            label="Close conversation"
+            @click="emit('patch', { status: 'closed' }); confirmClose = false"
           />
         </div>
       </template>
