@@ -17,7 +17,8 @@
 // unknown message known.
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import { claimChannel, findChannel, recordDeliverySuppression, revokeConsent } from '#crm/server'
+import type { TenantContext } from '#tenant/server'
+import { claimChannel, findChannel, recordDeliverySuppression, revokeConsent, recordCrmActivity } from '#crm/server'
 
 // Map a Mailgun event to a deliverability-suppression reason, or null when it
 // must not suppress. A `failed` event suppresses only on an explicit
@@ -96,6 +97,19 @@ export default defineEventHandler(async (event) => {
           if (row) {
             matched = true
             scopeActed = true
+            // Conversation-timeline trail for the state flip — best-effort,
+            // a logging failure must not fail (and re-trigger) the webhook.
+            try {
+              await inboxLogConversationEvent(
+                tx,
+                row.conversation_id,
+                status === 'delivered' ? 'inbox_delivery_delivered' : 'inbox_delivery_failed',
+                status === 'delivered' ? 'Delivered to recipient' : `Delivery failed${reasonText ? `: ${reasonText}` : ''}`,
+                { extra: { providerMessageId: messageId } }
+              )
+            } catch (err) {
+              console.warn('[inbox] delivery-state activity write failed:', err instanceof Error ? err.message : err)
+            }
           }
         }
 
@@ -121,6 +135,12 @@ export default defineEventHandler(async (event) => {
               })
               suppressed = true
               scopeActed = true
+              await recordChannelTimeline(
+                tx,
+                channel.id,
+                'email_suppressed',
+                `Email suppressed (${suppressReason === 'complaint' ? 'spam complaint' : 'hard bounce'})${reasonText ? ` — ${reasonText}` : ''}`
+              )
             }
             if (eventType === 'unsubscribed') {
               await revokeConsent(tx, { userId: null }, {
@@ -130,6 +150,7 @@ export default defineEventHandler(async (event) => {
               })
               unsubscribed = true
               scopeActed = true
+              await recordChannelTimeline(tx, channel.id, 'unsubscribed', 'Unsubscribed from marketing email')
             }
           }
         }
@@ -162,4 +183,34 @@ export default defineEventHandler(async (event) => {
 // addresses this scope has already claimed.
 async function findScopedChannel(tx: Transaction<Database>, recipient: string) {
   return await findChannel(tx, { channelType: 'email', value: recipient })
+}
+
+// Record-timeline fanout for a channel-level deliverability event: one entry
+// per CRM record linked to the channel (a channel usually backs one contact,
+// but can back several). Records are the only timeline surface staff see, so
+// the entry lands there rather than on the channel. Best-effort — a timeline
+// failure must never fail (and re-trigger) the webhook.
+async function recordChannelTimeline(
+  tx: Transaction<Database>,
+  channelId: string,
+  action: string,
+  note: string
+): Promise<void> {
+  try {
+    const links = await tx
+      .selectFrom('crm_contact_channels')
+      .select('record_id')
+      .where('channel_id', '=', channelId)
+      .execute()
+    for (const link of links) {
+      // recordCrmActivity only reads ctx.userId; the webhook has no session,
+      // so the actor is null with a provider label.
+      await recordCrmActivity(tx, { userId: null } as unknown as TenantContext, link.record_id, action, {
+        note,
+        actorLabel: 'Mailgun'
+      })
+    }
+  } catch (err) {
+    console.warn('[inbox] channel timeline write failed:', err instanceof Error ? err.message : err)
+  }
 }

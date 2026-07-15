@@ -145,6 +145,47 @@ describe('delivery events webhook', () => {
     // mail verifies a channel.
     const [ch] = await sql`SELECT verified FROM crm_channels WHERE value = ${sender}`
     expect(ch!.verified).toBe(false)
+
+    // The state flip leaves a conversation-timeline trace.
+    const trail = await $fetch<{ items: Array<{ eventType: string }> }>(
+      `/api/inbox/conversations/${convId}/activity`, opts
+    )
+    expect(trail.items.some(i => i.eventType === 'inbox_delivery_delivered')).toBe(true)
+  })
+
+  it('writes a record-timeline entry when a linked contact is suppressed or unsubscribes', async () => {
+    const { org, opts, domain } = await createInboxOrgWith(sql)
+    const sender = uniqueSender('timeline')
+    const inbound = await postInbound({ recipient: `hello@${domain}`, from: `T <${sender}>` })
+    const convId = inbound.body.conversation_id as string
+
+    // Link a CRM record to the conversation's channel.
+    const record = await $fetch<{ id: string }>(`/api/inbox/conversations/${convId}/contact`, {
+      method: 'POST', body: { name: 'test-inbox Timeline' }, ...opts
+    })
+
+    await postDeliveryEvent({
+      event: 'failed',
+      severity: 'permanent',
+      recipient: sender,
+      'delivery-status': { message: '550 gone' },
+      'user-variables': { 'inbox-org': org.id }
+    })
+    await postDeliveryEvent({
+      event: 'unsubscribed',
+      recipient: sender,
+      'user-variables': { 'inbox-org': org.id }
+    })
+
+    const rows = await sql`
+      SELECT action, note, actor_label, actor_user_id FROM crm_record_activity
+      WHERE record_id = ${record.id} AND action IN ('email_suppressed', 'unsubscribed')
+      ORDER BY action
+    `
+    expect(rows.map(r => r.action)).toEqual(['email_suppressed', 'unsubscribed'])
+    expect(rows[0]!.note).toContain('hard bounce')
+    expect(rows[0]!.actor_label).toBe('Mailgun')
+    expect(rows[0]!.actor_user_id).toBeNull()
   })
 
   it('absorbs a repeated complaint idempotently — one suppression row', async () => {
