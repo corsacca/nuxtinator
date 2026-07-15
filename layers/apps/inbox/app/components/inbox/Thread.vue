@@ -66,10 +66,11 @@ const showCreateContact = ref(false)
 const view = ref<'conversation' | 'notes'>('conversation')
 
 // From identity selection — offered only when the agent has a personal alias.
+// The shared option is labelled with the brand From name actually sent.
 const fromOptions = computed(() => {
   const opts: { label: string, value: 'personal' | 'contact' }[] = []
   if (props.me?.personalFrom) opts.push({ label: `You · ${props.me.personalFrom}`, value: 'personal' })
-  opts.push({ label: `Shared · ${props.me?.contactAddress ?? 'contact address'}`, value: 'contact' })
+  opts.push({ label: `${props.me?.brandFromName || 'Shared'} · ${props.me?.contactAddress ?? 'contact address'}`, value: 'contact' })
   return opts
 })
 // Continuity heuristic: default to the shared address, unless a prior non-draft

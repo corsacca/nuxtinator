@@ -448,7 +448,7 @@ export default defineEventHandler(async (event) => {
         subject: subject || a.conversation.subject,
         replyToken: a.conversation.reply_token,
         contactAddress: courtesy.contactAddress,
-        appName: String(useRuntimeConfig().appName || 'Support')
+        brandName: courtesy.brandFromName
       }).catch(err => console.warn('[inbox] courtesy send failed:', err))
     }
 

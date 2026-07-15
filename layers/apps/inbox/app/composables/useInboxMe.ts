@@ -9,6 +9,8 @@ export interface InboxMe {
   signature: string | null
   personalFrom: string | null
   contactAddress: string | null
+  // The org's display name on shared-address sends ("Acme Support").
+  brandFromName: string | null
   canManageAliases: boolean
 }
 

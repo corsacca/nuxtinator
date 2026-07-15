@@ -10,6 +10,7 @@ import {
   INBOX_SETTINGS_NAMESPACE,
   INBOX_SETTING_INBOUND_DOMAIN,
   INBOX_SETTING_CONTACT_ADDRESS,
+  INBOX_SETTING_BRAND_FROM_NAME,
   INBOX_SETTING_AUTO_ACK,
   INBOX_SETTING_CONTACT_FORM_API_KEY,
   INBOX_SETTING_GROUNDING_SOURCE_URLS
@@ -26,6 +27,7 @@ const Body = z.object({
   contactAddress: z.string().trim().max(320)
     .refine(v => v === '' || z.string().email().safeParse(v).success, 'Must be an email address')
     .optional(),
+  brandFromName: z.string().trim().max(200).optional(),
   autoAckEnabled: z.boolean().optional(),
   contactFormApiKey: z.string().trim().max(255).optional(),
   groundingSourceUrls: z.array(z.string().max(2000)).max(20).optional()
@@ -43,6 +45,7 @@ export default defineEventHandler(async (event) => {
     const b = parsed.data
     if (b.inboundDomain !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_INBOUND_DOMAIN, b.inboundDomain)
     if (b.contactAddress !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_ADDRESS, b.contactAddress)
+    if (b.brandFromName !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_BRAND_FROM_NAME, b.brandFromName)
     if (b.autoAckEnabled !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_AUTO_ACK, b.autoAckEnabled)
     if (b.contactFormApiKey !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_FORM_API_KEY, b.contactFormApiKey)
     if (b.groundingSourceUrls !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_GROUNDING_SOURCE_URLS, b.groundingSourceUrls)
@@ -51,6 +54,7 @@ export default defineEventHandler(async (event) => {
     return {
       inboundDomain: s.inboundDomain,
       contactAddress: s.contactAddress,
+      brandFromName: s.brandFromName,
       autoAckEnabled: s.autoAckEnabled,
       contactFormApiKey: s.contactFormApiKey,
       groundingSourceUrls: s.groundingSourceUrls

@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
     return {
       inboundDomain: s.inboundDomain,
       contactAddress: s.contactAddress,
+      brandFromName: s.brandFromName,
       autoAckEnabled: s.autoAckEnabled,
       contactFormApiKey: s.contactFormApiKey,
       groundingSourceUrls: s.groundingSourceUrls

@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
       // inbound domain configured to host it.
       personalFrom: alias && settings.inboundDomain ? `${alias}@${settings.inboundDomain}` : null,
       contactAddress: settings.contactAddress || null,
+      brandFromName: settings.brandFromName || null,
       canManageAliases: ctx.roles.includes('admin')
     }
   })

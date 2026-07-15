@@ -9,6 +9,7 @@ import type { DbClient } from '#core/server/utils/settings'
 export const INBOX_SETTINGS_NAMESPACE = 'inbox'
 export const INBOX_SETTING_INBOUND_DOMAIN = 'inbound_domain'
 export const INBOX_SETTING_CONTACT_ADDRESS = 'contact_address'
+export const INBOX_SETTING_BRAND_FROM_NAME = 'brand_from_name'
 export const INBOX_SETTING_AUTO_ACK = 'auto_ack_enabled'
 export const INBOX_SETTING_CONTACT_FORM_API_KEY = 'contact_form_api_key'
 export const INBOX_SETTING_GROUNDING_SOURCE_URLS = 'grounding_source_urls'
@@ -35,6 +36,9 @@ export interface InboxSettings {
   inboundDomain: string
   // Shared From identity and the base of contact+<token> reply addresses.
   contactAddress: string
+  // Display name on shared-address sends and courtesy mail ("Acme Support").
+  // Personal-alias sends carry the agent's own name instead.
+  brandFromName: string
   // Whether brand-new authenticated conversations get an automatic
   // acknowledgment email.
   autoAckEnabled: boolean
@@ -47,9 +51,10 @@ export interface InboxSettings {
 }
 
 export async function getInboxSettings(tx: DbClient): Promise<InboxSettings> {
-  const [inboundDomain, contactAddress, autoAckEnabled, contactFormApiKey, groundingSourceUrls] = await Promise.all([
+  const [inboundDomain, contactAddress, brandFromName, autoAckEnabled, contactFormApiKey, groundingSourceUrls] = await Promise.all([
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_INBOUND_DOMAIN),
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_ADDRESS),
+    getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_BRAND_FROM_NAME),
     getSetting<boolean>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_AUTO_ACK),
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_FORM_API_KEY),
     getSetting<string[]>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_GROUNDING_SOURCE_URLS)
@@ -57,6 +62,7 @@ export async function getInboxSettings(tx: DbClient): Promise<InboxSettings> {
   return {
     inboundDomain: String(inboundDomain || '').toLowerCase(),
     contactAddress: String(contactAddress || '').toLowerCase(),
+    brandFromName: String(brandFromName || '').trim(),
     autoAckEnabled: autoAckEnabled !== false,
     contactFormApiKey: String(contactFormApiKey || ''),
     groundingSourceUrls: sanitizeGroundingUrls(groundingSourceUrls)

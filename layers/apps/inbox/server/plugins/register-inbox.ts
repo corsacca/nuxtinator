@@ -10,6 +10,7 @@ import {
   INBOX_SETTINGS_NAMESPACE,
   INBOX_SETTING_INBOUND_DOMAIN,
   INBOX_SETTING_CONTACT_ADDRESS,
+  INBOX_SETTING_BRAND_FROM_NAME,
   INBOX_SETTING_AUTO_ACK,
   INBOX_SETTING_CONTACT_FORM_API_KEY,
   INBOX_SETTING_GROUNDING_SOURCE_URLS,
@@ -52,6 +53,13 @@ export default defineNitroPlugin(() => {
     default: String(config.inboxContactAddress || '').toLowerCase(),
     parse: v => String(v ?? '').trim().toLowerCase(),
     label: 'Shared contact address'
+  })
+  registerSetting<string>({
+    namespace: INBOX_SETTINGS_NAMESPACE,
+    key: INBOX_SETTING_BRAND_FROM_NAME,
+    default: String(config.appName || 'Support'),
+    parse: v => String(v ?? '').trim(),
+    label: 'Brand From name'
   })
   registerSetting<boolean>({
     namespace: INBOX_SETTINGS_NAMESPACE,

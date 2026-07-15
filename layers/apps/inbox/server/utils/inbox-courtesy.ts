@@ -12,7 +12,8 @@ export interface InboxCourtesyContext {
   subject: string | null
   replyToken: string
   contactAddress: string
-  appName: string
+  // Display name on the courtesy From (the org's brand From name).
+  brandName: string
 }
 
 function ackBodyHtml(ctx: InboxCourtesyContext): string {
@@ -39,7 +40,7 @@ export async function inboxSendCourtesy(
   const bodyHtml = kind === 'auto_ack' ? ackBodyHtml(ctx) : heldBodyHtml(ctx)
   const subject = ctx.subject ? `Re: ${ctx.subject}` : `We received your message`
   const result = await inboxSendEmail({
-    from: inboxBuildFromAddress({ displayName: ctx.appName, contactAddress: ctx.contactAddress }),
+    from: inboxBuildFromAddress({ displayName: ctx.brandName || null, contactAddress: ctx.contactAddress }),
     to: ctx.toEmail,
     subject,
     html: inboxRenderMessageEmail({ bodyHtml, subject }),

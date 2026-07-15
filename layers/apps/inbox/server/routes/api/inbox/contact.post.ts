@@ -105,6 +105,7 @@ export default defineEventHandler(async (event) => {
       conversationId: conversation.id,
       replyToken: conversation.reply_token,
       contactAddress: settings.contactAddress,
+      brandFromName: settings.brandFromName,
       autoAck: settings.autoAckEnabled
     }
   })
@@ -117,7 +118,7 @@ export default defineEventHandler(async (event) => {
       subject,
       replyToken: created.replyToken,
       contactAddress: created.contactAddress,
-      appName: String(useRuntimeConfig().appName || 'Support')
+      brandName: created.brandFromName
     }).catch(err => console.warn('[inbox] contact-form auto-ack failed:', err))
   }
 

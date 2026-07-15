@@ -154,16 +154,22 @@ async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend |
     .map(a => ({ s3Key: a.s3_key, filename: a.filename, contentType: a.content_type }))
 
   // From address: the personal alias snapshotted onto the row at queue time,
-  // else the shared contact address. The display name is re-derived here from
-  // the sender's CURRENT display_name (not snapshotted) so a rename shows on
-  // pending sends. Reply-To always stays the contact+<token> address so the
-  // contact's reply threads back regardless of which From we sent on.
+  // else the shared contact address. A personal send carries the agent's
+  // CURRENT display_name (not snapshotted, so a rename shows on pending
+  // sends); a shared-address send carries the org's brand From name — the
+  // shared identity exists to not expose the individual. Reply-To always
+  // stays the contact+<token> address so the contact's reply threads back
+  // regardless of which From we sent on.
+  const usingPersonalFrom = !!claimed.from_email
   const fromBase = claimed.from_email || settings.contactAddress
 
   return {
     claimed,
     toEmail,
-    fromAddress: inboxBuildFromAddress({ displayName: senderName, contactAddress: fromBase }),
+    fromAddress: inboxBuildFromAddress({
+      displayName: usingPersonalFrom ? senderName : (settings.brandFromName || null),
+      contactAddress: fromBase
+    }),
     replyTo: inboxBuildReplyAddress(conversation.reply_token, settings.contactAddress),
     subject,
     html: inboxRenderMessageEmail({ bodyHtml: inboxConstrainImages(bodyHtml), subject }),

@@ -8,6 +8,7 @@ definePageMeta({ middleware: 'auth' })
 interface InboxAdminSettings {
   inboundDomain: string
   contactAddress: string
+  brandFromName: string
   autoAckEnabled: boolean
   contactFormApiKey: string
   groundingSourceUrls: string[]
@@ -91,6 +92,7 @@ async function save() {
       body: {
         inboundDomain: form.value.inboundDomain,
         contactAddress: form.value.contactAddress,
+        brandFromName: form.value.brandFromName,
         autoAckEnabled: form.value.autoAckEnabled,
         contactFormApiKey: form.value.contactFormApiKey,
         groundingSourceUrls: urlsText.value.split('\n').map(s => s.trim()).filter(Boolean)
@@ -153,6 +155,13 @@ function generateApiKey() {
           description="The From identity for team replies and the base of contact+token reply addresses. Must live on the inbound domain."
         >
           <UInput v-model="form.contactAddress" placeholder="contact@mail.example.com" class="w-full" />
+        </UFormField>
+
+        <UFormField
+          label="Brand From name"
+          description="The display name on shared-address sends and courtesy replies (e.g. Acme Support). Personal-alias sends carry the agent's own name."
+        >
+          <UInput v-model="form.brandFromName" placeholder="Acme Support" class="w-full" />
         </UFormField>
 
         <UFormField
