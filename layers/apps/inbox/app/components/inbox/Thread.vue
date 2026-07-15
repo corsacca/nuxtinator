@@ -207,14 +207,14 @@ const statusValue = computed({
   }
 })
 
+// The composer is NOT cleared here — the parent owns replyBody/currentDraftId
+// (v-model) and clears them only after the send request succeeds, so a failed
+// send keeps the typed text for retry.
 function submitReply() {
   if (props.sending) return
   const body = replyBody.value.trim()
   if (!body || body === '<p></p>') return
   emit('reply', replyBody.value, currentDraftId.value ?? undefined, props.me?.personalFrom ? fromIdentity.value : undefined)
-  replyBody.value = ''
-  currentDraftId.value = null
-  emit('dismissAiMeta')
 }
 
 function submitContact() {

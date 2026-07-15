@@ -79,6 +79,11 @@ async function onReply(body: string, draftId?: string, fromIdentity?: 'personal'
   replying.value = true
   try {
     await reply(body, draftId, fromIdentity)
+    // Clear the composer only on a confirmed queue — a failed send keeps the
+    // typed text, draft linkage, and AI review panel for retry.
+    replyBody.value = ''
+    currentDraftId.value = null
+    aiMeta.value = null
     await refresh()
     toast.add({ title: 'Reply queued', icon: 'i-lucide-send', color: 'success' })
   } catch (err) {
