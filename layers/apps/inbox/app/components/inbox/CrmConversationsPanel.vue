@@ -17,18 +17,29 @@ const inboxPath = useInboxPath()
 const toast = useToast()
 
 const { items, channels, pending, denied, refresh } = useInboxRecordConversations(() => props.recordId)
+const { me } = useInboxMe()
 
 const showCompose = ref(false)
 const composeChannel = computed(() => channels.value[0] ?? null)
 
-// Inline quick-reply state (one open row at a time).
+// Inline quick-reply state (one open row at a time). The From choice matches
+// the reply composer's; personal is the default when the agent has an alias
+// (mirroring new-compose — the quick reply is usually a personal touch).
 const replyingId = ref<string | null>(null)
 const replyText = ref('')
 const replySending = ref(false)
+const fromIdentity = ref<'personal' | 'contact'>('contact')
+const fromOptions = computed(() => {
+  const opts: { label: string, value: 'personal' | 'contact' }[] = []
+  if (me.value?.personalFrom) opts.push({ label: `You · ${me.value.personalFrom}`, value: 'personal' })
+  opts.push({ label: `${me.value?.brandFromName || 'Shared'} · ${me.value?.contactAddress ?? 'contact address'}`, value: 'contact' })
+  return opts
+})
 
 function startReply(id: string) {
   replyingId.value = id
   replyText.value = ''
+  fromIdentity.value = me.value?.personalFrom ? 'personal' : 'contact'
 }
 
 function escapeHtml(s: string): string {
@@ -48,7 +59,13 @@ async function sendReply(id: string) {
   try {
     const url: string = `/api/inbox/conversations/${id}/messages`
     // <_, string> pins the request type off the deep typed-route union (TS2589).
-    await $fetch<unknown, string>(url, { method: 'POST', body: { body: toMarkup(text) } })
+    await $fetch<unknown, string>(url, {
+      method: 'POST',
+      body: {
+        body: toMarkup(text),
+        ...(me?.value?.personalFrom ? { fromIdentity: fromIdentity.value } : {})
+      }
+    })
     replyingId.value = null
     replyText.value = ''
     await refresh()
@@ -108,6 +125,10 @@ function statusMeta(row: InboxRecordConversationRow) {
         <p v-if="row.snippet" class="text-xs text-(--ui-text-dimmed) truncate">{{ row.snippet }}</p>
         <div class="flex items-center gap-2 text-xs text-(--ui-text-muted)">
           <span class="truncate">{{ row.channelValue }}</span>
+          <span v-if="row.assigneeName" class="flex items-center gap-1 shrink-0 text-(--ui-text-dimmed)">
+            <UIcon name="i-lucide-user-check" class="size-3" />
+            {{ row.assigneeName }}
+          </span>
           <!-- Quick-reply is hidden on spam rows (the thread is closed silently). -->
           <UButton
             v-if="canSend && row.status !== 'spam' && replyingId !== row.id"
@@ -131,6 +152,13 @@ function statusMeta(row: InboxRecordConversationRow) {
             autofocus
           />
           <div class="flex items-center justify-end gap-2">
+            <USelect
+              v-if="fromOptions.length > 1"
+              v-model="fromIdentity"
+              :items="fromOptions"
+              size="xs"
+              class="w-56 mr-auto"
+            />
             <UButton label="Cancel" size="xs" color="neutral" variant="ghost" @click="replyingId = null" />
             <UButton
               label="Send"

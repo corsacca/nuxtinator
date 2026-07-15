@@ -51,4 +51,31 @@ describe('crm record conversations panel', () => {
     const panel2 = await $fetch<{ items: Array<{ id: string }> }>(`/api/inbox/records/${record.id}/conversations`, opts)
     expect(panel2.items.map(i => i.id)).toEqual(expect.arrayContaining([convId, created.id]))
   })
+
+  it('quick-replies with a personal identity and surfaces the assignee name on panel rows', async () => {
+    const { opts, user, domain } = await createInboxOrgWith(sql)
+    await $fetch(`/api/inbox/identities/${user.id}`, {
+      method: 'PUT', body: { alias: 'jane', signature: '<p>Best, Jane</p>' }, ...opts
+    })
+    const sender = `test-inbox-${randomUUID().slice(0, 8)}@sender.example`
+    const res = await postInbound({ recipient: `hello@${domain}`, from: `Q <${sender}>` })
+    const convId = res.body.conversation_id as string
+    const record = await $fetch<{ id: string }>(`/api/inbox/conversations/${convId}/contact`, {
+      method: 'POST', body: { name: 'Quick Reply Target' }, ...opts
+    })
+
+    // The panel quick-reply path: same messages endpoint with fromIdentity.
+    const reply = await $fetch<{ id: string }>(`/api/inbox/conversations/${convId}/messages`, {
+      method: 'POST', body: { body: '<p>quick note</p>', fromIdentity: 'personal' }, ...opts
+    })
+    const [msg] = await sql`SELECT from_email, body_html FROM inbox_messages WHERE id = ${reply.id}`
+    expect(msg!.from_email).toBe(`jane@${domain}`)
+    expect(msg!.body_html).toContain('Best, Jane')
+
+    // The reply auto-assigned the agent; the panel row now names them.
+    const panel = await $fetch<{ items: Array<{ id: string, assigneeName: string | null }> }>(
+      `/api/inbox/records/${record.id}/conversations`, opts
+    )
+    expect(panel.items.find(i => i.id === convId)?.assigneeName).toBe(user.display_name)
+  })
 })

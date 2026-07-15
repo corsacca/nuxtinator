@@ -38,6 +38,7 @@ export default defineEventHandler(async (event) => {
         needsReview: c.needs_review,
         source: c.source,
         counterpartyName: c.counterparty_name,
+        assigneeName: c.assignee_name,
         tags: c.tags,
         channelValue: c.channel_value,
         messageCount: c.message_count,

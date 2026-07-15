@@ -11,6 +11,7 @@ export interface InboxRecordConversationRow {
   needsReview: boolean
   source: string
   counterpartyName: string | null
+  assigneeName: string | null
   tags: string[]
   channelValue: string
   messageCount: number
