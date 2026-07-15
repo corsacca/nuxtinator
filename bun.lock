@@ -146,6 +146,7 @@
         "@types/sanitize-html": "^2.13.0",
       },
       "optionalDependencies": {
+        "@nuxtinator/ai": "*",
         "@nuxtinator/core": "*",
         "@nuxtinator/crm": "*",
       },
