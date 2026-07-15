@@ -261,6 +261,13 @@ export default defineEventHandler(async (event) => {
             counterpartyName: fromName,
             assignedUserId
           })
+          // Origin row commits WITH the shell (log-before-store): if phase B
+          // then fails for good, the leftover empty conversation still
+          // explains itself. The reused-shell branch above was logged by its
+          // own first ingest.
+          await inboxLogConversationEvent(tx, conversation.id, 'inbox_conversation_created', 'Conversation opened', {
+            extra: { source: 'inbound_email', recipient }
+          })
         }
       }
 
@@ -414,13 +421,9 @@ export default defineEventHandler(async (event) => {
         })
       }
 
-      // Audit trail (system actor — no session). A new-conversation origin row
-      // followed by the per-inbound outcome; both explain how a thread grew.
-      if (a.isNewConversation) {
-        await inboxLogConversationEvent(tx, a.conversation.id, 'inbox_conversation_created', 'Conversation opened', {
-          extra: { source: 'inbound_email', recipient }
-        })
-      }
+      // Audit trail (system actor — no session). The conversation-origin row
+      // was written in tx A alongside the shell; this logs the per-inbound
+      // classification outcome.
       const autoReplyNote = a.isVacationReply ? ', auto-reply → closed' : ''
       await inboxLogConversationEvent(tx, a.conversation.id, 'inbox_inbound_received', `Inbound email (${a.outcome}${autoReplyNote})`, {
         extra: { outcome: a.outcome, authenticated: a.authenticated, autoReply: a.looksAutoReply, vacation: a.isVacationReply }

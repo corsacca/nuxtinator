@@ -52,6 +52,32 @@ describe('inbound durability', () => {
     expect(messages.length).toBe(1)
   })
 
+  it('commits the conversation-origin activity row with the shell, before artifact persistence', async () => {
+    const { domain } = await createInboxOrgWith(sql)
+    const sender = uniqueSender('shell')
+
+    // Persistence fails and never retries — the leftover shell must still
+    // explain where it came from.
+    const failed = await postInbound({
+      recipient: `hello@${domain}`,
+      from: `S <${sender}>`,
+      extraFields: { 'x-test-fail': 'persist' }
+    })
+    expect(failed.status).toBe(503)
+
+    const [shell] = await sql`
+      SELECT c.id FROM inbox_conversations c
+      JOIN crm_channels ch ON ch.id = c.channel_id
+      WHERE ch.value = ${sender}
+    `
+    expect(shell).toBeTruthy()
+    const origin = await sql`
+      SELECT id FROM activity_logs
+      WHERE event_type = 'inbox_conversation_created' AND record_id = ${shell!.id as string}
+    `
+    expect(origin.length).toBe(1)
+  })
+
   it('rejects a non-form payload with 400', async () => {
     await createInboxOrgWith(sql)
     await expect(
