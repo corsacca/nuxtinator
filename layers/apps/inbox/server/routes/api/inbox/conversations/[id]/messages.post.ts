@@ -88,7 +88,8 @@ export default defineEventHandler(async (event) => {
         id: draftId,
         conversationId: id,
         bodyHtml: rawBody ? html : (draft.body_html ?? ''),
-        bodyText: rawBody ? text : (draft.body_text ?? '')
+        bodyText: rawBody ? text : (draft.body_text ?? ''),
+        senderUserId: ctx.userId
       })
       if (!promoted) throw createError({ statusCode: 404, statusMessage: 'Draft not found' })
       message = promoted
@@ -110,7 +111,9 @@ export default defineEventHandler(async (event) => {
     // From identity: snapshot the personal From onto the row at queue time
     // (an admin removing the alias later can't change an already-queued send),
     // and bake the signature into body_html only. Personal with no alias falls
-    // back to the contact address (from_email stays null → resolved at send).
+    // back to the contact address (from_email cleared → resolved at send) —
+    // clearing matters for promoted drafts, which may carry a previous
+    // author's alias snapshot the sender has no claim to.
     if (parsed.data.fromIdentity === 'personal') {
       const settings = await getInboxSettings(tx)
       const { personalFrom, signature } = await inboxResolvePersonalIdentity(tx, ctx.userId, settings)
@@ -119,6 +122,12 @@ export default defineEventHandler(async (event) => {
         await tx
           .updateTable('inbox_messages')
           .set({ from_email: personalFrom, body_html: sql`COALESCE(body_html, '') || ${sig}`, updated_at: new Date() })
+          .where('id', '=', message.id)
+          .execute()
+      } else {
+        await tx
+          .updateTable('inbox_messages')
+          .set({ from_email: null, updated_at: new Date() })
           .where('id', '=', message.id)
           .execute()
       }

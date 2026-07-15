@@ -4,7 +4,16 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { $fetch } from '@nuxt/test-utils/e2e'
 import { randomUUID } from 'node:crypto'
-import { getHostAdminDb, cleanupInboxTestData, createInboxOrgWith, postInbound } from '../helpers'
+import {
+  getHostAdminDb,
+  cleanupInboxTestData,
+  createInboxOrgWith,
+  createInboxUser,
+  addTestMembership,
+  getAuthHeaders,
+  withOrgHeader,
+  postInbound
+} from '../helpers'
 
 const sql = getHostAdminDb()
 afterEach(async () => { await cleanupInboxTestData(sql) })
@@ -55,6 +64,35 @@ describe('shared drafts', () => {
     // The 2s sweep may already have claimed it — either way it left 'draft'.
     expect(['queued', 'sent']).toContain(row!.status)
     expect(row!.from_email).toBeNull()
+  })
+
+  it("a teammate with no alias sending 'personal' clears the author's stale alias and takes over attribution", async () => {
+    const { org, opts, user, domain } = await createInboxOrgWith(sql)
+    await $fetch(`/api/inbox/identities/${user.id}`, { method: 'PUT', body: { alias: 'author' }, ...opts })
+    const res = await postInbound({ recipient: `hello@${domain}`, from: `F <${sender('takeover')}>` })
+    const id = res.body.conversation_id as string
+
+    // Author (with alias) saves the draft as personal — the snapshot sticks.
+    const draft = await $fetch<{ id: string }>(`/api/inbox/conversations/${id}/messages`, {
+      method: 'POST', body: { saveDraft: true, body: '<p>handoff</p>', fromIdentity: 'personal' }, ...opts
+    })
+    const [saved] = await sql`SELECT from_email FROM inbox_messages WHERE id = ${draft.id}`
+    expect(saved!.from_email).toBe(`author@${domain}`)
+
+    // A teammate WITHOUT an alias promotes it choosing 'personal': the send
+    // must fall back to the shared address, not ride the author's alias, and
+    // the row's sender must become the teammate.
+    const teammate = await createInboxUser(sql)
+    await addTestMembership(sql, { user_id: teammate.id, org_id: org.id, roles: ['admin'] })
+    const teammateOpts = withOrgHeader(getAuthHeaders(teammate), org.slug)
+    await $fetch(`/api/inbox/conversations/${id}/messages`, {
+      method: 'POST', body: { draftId: draft.id, fromIdentity: 'personal' }, ...teammateOpts
+    })
+
+    const [row] = await sql`SELECT status, from_email, sender_user_id FROM inbox_messages WHERE id = ${draft.id}`
+    expect(['queued', 'sent']).toContain(row!.status)
+    expect(row!.from_email).toBeNull()
+    expect(row!.sender_user_id).toBe(teammate.id)
   })
 
   it('creates, updates, and promotes a draft (kept out of the thread until sent)', async () => {

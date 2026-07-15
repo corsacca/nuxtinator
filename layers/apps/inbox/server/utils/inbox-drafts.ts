@@ -143,19 +143,24 @@ export async function inboxDeleteDraft(tx: Tx, id: string, conversationId: strin
   return Number(result.numDeletedRows ?? 0) > 0
 }
 
-// Promote a draft to a queued send: apply the latest body and flip
-// draft→queued atomically. The atomic status guard means two concurrent sends
-// of the same draft can't both win. Returns null if it is no longer a draft.
+// Promote a draft to a queued send: apply the latest body, stamp the actual
+// sender, and flip draft→queued atomically. The sender stamp matters because
+// drafts are shared — attribution (and the personal display-name derivation
+// at send time) must follow whoever hit send, not whoever authored the draft.
+// The atomic status guard means two concurrent sends of the same draft can't
+// both win. Returns null if it is no longer a draft.
 export async function inboxPromoteDraft(tx: Tx, params: {
   id: string
   conversationId: string
   bodyHtml: string
   bodyText: string
+  senderUserId: string
 }): Promise<InboxMessageRow | null> {
   const row = await tx
     .updateTable('inbox_messages')
     .set({
       status: 'queued',
+      sender_user_id: params.senderUserId,
       body_html: params.bodyHtml,
       body_text: params.bodyText,
       updated_at: new Date()
