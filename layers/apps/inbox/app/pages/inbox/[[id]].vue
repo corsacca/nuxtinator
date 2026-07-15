@@ -22,7 +22,7 @@ const { items, counts, tagCounts, pending, error, scope, status, q, tag, refresh
 const { thread, error: threadError, refresh: refreshThread, patch, reply, saveDraft, deleteDraft, saveAiDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact } = useInboxThread(selectedId)
 const { users: assignees } = useInboxAssignees()
 const { palette, createTag, deleteTag, setConversationTags } = useInboxTags()
-const { items: cannedItems, create: createCanned, update: updateCanned, remove: removeCanned } = useInboxCanned()
+const { items: cannedItems, failed: cannedFailed, refresh: refreshCanned, create: createCanned, update: updateCanned, remove: removeCanned } = useInboxCanned()
 const { me, saveIdentity } = useInboxMe()
 const { hasPermission } = usePermissions()
 const { available: aiAvailable } = useInboxAiStatus('inbox.draft')
@@ -30,6 +30,16 @@ const { available: aiAvailable } = useInboxAiStatus('inbox.draft')
 const toast = useToast()
 const showCompose = ref(false)
 const showCanned = ref(false)
+// The manager edits the live org list — refetch on every open so it never
+// shows a stale set, and make a load failure visible (the picker deliberately
+// degrades silently; a management surface must not).
+watch(showCanned, async (v) => {
+  if (!v) return
+  await refreshCanned()
+  if (cannedFailed.value) {
+    toast.add({ title: 'Could not load canned responses', color: 'error' })
+  }
+})
 const showIdentity = ref(false)
 const showSuppressions = ref(false)
 const showAiDraft = ref(false)

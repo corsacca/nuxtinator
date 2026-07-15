@@ -39,7 +39,9 @@ export default defineEventHandler(async (event) => {
   }
   const { email, name, message } = parsed.data
   const firstLine = message.split('\n').map(l => l.trim()).find(Boolean) ?? ''
-  const subject = parsed.data.subject?.trim() || firstLine.slice(0, 120) || 'Contact form message'
+  // The 120-char display cap applies to a caller-supplied subject too — the
+  // schema's 500 limit only bounds the payload, not what a list row can show.
+  const subject = (parsed.data.subject?.trim() || firstLine || 'Contact form message').slice(0, 120)
   const html = inboxSanitizeEmailHtml(`<p>${message.split('\n').map(escapeHtml).join('<br>')}</p>`)
   const country = inboxNormalizeCountry(parsed.data.country)
   const ip = getRequestIP(event, { xForwardedFor: true }) ?? null
@@ -69,9 +71,10 @@ export default defineEventHandler(async (event) => {
     })
     // Log the origin BEFORE the first message insert, so a failed message write
     // still leaves an explainable shell. The normalized country rides the
-    // origin log (channels have no country column).
+    // origin log (channels have no country column). The visitor is the SENDER
+    // of this conversation's first message, labelled accordingly.
     await inboxLogConversationEvent(tx, conversation.id, 'inbox_conversation_created', 'Conversation opened', {
-      extra: { source: 'contact_form', recipient: email, ...(country ? { country } : {}) }
+      extra: { source: 'contact_form', sender: email, ...(country ? { country } : {}) }
     })
     const msg = await inboxCreateMessage(tx, {
       conversationId: conversation.id,

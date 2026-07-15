@@ -67,9 +67,15 @@ async function onImagePicked(e: Event) {
   }
 }
 
+// The editor's "empty" state is markup like <p></p> — strip tags before
+// deciding there's content, or an effectively blank email passes validation.
+function hasBodyText(): boolean {
+  return !!body.value.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
+}
+
 async function submit() {
   const hasRecipient = props.lockedRecipient ? true : !!toEmail.value
-  if (!hasRecipient || !subject.value || !body.value.trim()) return
+  if (!hasRecipient || !subject.value || !hasBodyText()) return
   sending.value = true
   error.value = null
   try {

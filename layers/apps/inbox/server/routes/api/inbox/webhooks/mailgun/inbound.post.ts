@@ -266,7 +266,7 @@ export default defineEventHandler(async (event) => {
           // explains itself. The reused-shell branch above was logged by its
           // own first ingest.
           await inboxLogConversationEvent(tx, conversation.id, 'inbox_conversation_created', 'Conversation opened', {
-            extra: { source: 'inbound_email', recipient }
+            extra: { source: 'inbound_email', recipient, sender: fromEmail }
           })
         }
       }
@@ -346,7 +346,17 @@ export default defineEventHandler(async (event) => {
         throw new TransientError(s3err instanceof Error ? s3err.message : 'Attachment persistence failed')
       }
     } else {
-      console.warn('[inbox] S3 not configured — inbound attachments and raw MIME are not archived')
+      // Deliberate SLA choice: an S3-less deploy still accepts mail (503-ing
+      // would eventually make the provider drop it entirely), but dropping
+      // real artifacts is data loss — shout at error level when this message
+      // actually carried something to store.
+      const droppedFiles = [...form.entries()].some(([, v]) => typeof v !== 'string' && (v as File).name)
+      const droppedRaw = !!field('body-mime')
+      if (droppedFiles || droppedRaw) {
+        console.error(`[inbox] S3 not configured — DROPPING inbound artifacts for message ${a.messageId} (attachments: ${droppedFiles}, raw MIME: ${droppedRaw})`)
+      } else {
+        console.warn('[inbox] S3 not configured — inbound attachments and raw MIME are not archived')
+      }
     }
 
     // --- tx C: side effects ---

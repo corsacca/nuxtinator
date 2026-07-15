@@ -82,6 +82,24 @@ function buildThread(messages: (InboxMessageRow & { sender_name: string | null }
     .join('\n\n')
 }
 
+// Transient provider errors — rate limits and upstream 5xx, which `#ai/server`
+// surfaces as 429/5xx-status createErrors — get a short in-request retry with
+// backoff before the reviewer ever sees a failure. Anything else (bad request,
+// auth, feature disabled) throws immediately.
+async function withTransientRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const delaysMs = [500, 1500]
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const status = (err as { statusCode?: number })?.statusCode ?? 0
+      const transient = status === 429 || status >= 500
+      if (!transient || attempt >= delaysMs.length) throw err
+      await new Promise(resolve => setTimeout(resolve, delaysMs[attempt]))
+    }
+  }
+}
+
 export async function generateInboxDraft(
   tx: Tx,
   ctx: CrmCtx,
@@ -126,7 +144,7 @@ export async function generateInboxDraft(
       : 'Draft a reply to the most recent CONTACT message. Call submit_draft with the result.'
   )
 
-  const { input } = await generate<Partial<InboxDraftResult>>({
+  const { input } = await withTransientRetry(() => generate<Partial<InboxDraftResult>>({
     model,
     system,
     messages: [{ role: 'user', content: userSegments.join('\n\n') }],
@@ -134,7 +152,7 @@ export async function generateInboxDraft(
     maxTokens: 8192,
     // generate() only forwards temperature to models that accept it.
     temperature: 0.4
-  })
+  }))
 
   const draftHtml = (input.draft_html ?? '').trim()
   const draftText = (input.draft_text ?? '').trim()

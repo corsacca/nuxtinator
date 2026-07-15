@@ -138,6 +138,14 @@ locally with a signed multipart POST — the fixture builder in
 path). Tests: `bun run test -- --project inbox`. The app seeds into the catalog as
 `available` — enable it per org (host admin UI or an `org_apps` row).
 
+**Small deliberate deltas vs Doxa (kept).** Replies stamp a normalized `Re: `
+subject prefix (Doxa reused the raw subject; standard client threading
+etiquette wins). The messages endpoint refuses replies on `spam` conversations
+server-side (Doxa only hid the composer; a guard beats a convention). The AI
+grounding static pack builds from the tone guide + per-org reference URLs + KB
+only — Doxa's filesystem feature-docs input was dropped (the layer ships no
+equivalent docs tree; per-org reference URLs cover the need).
+
 ## Built since the initial port (see PLAN.md phases)
 
 - **Shared drafts + outbound attachments + inline-image CID pipeline** (Phase 2).

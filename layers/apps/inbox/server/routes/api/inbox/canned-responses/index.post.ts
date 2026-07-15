@@ -5,7 +5,9 @@ import { withOrgPermission } from '#tenant/server'
 import { logEvent } from '#core/server/utils/activity-logger'
 
 const Body = z.object({
-  title: z.string().min(1).max(200),
+  // trim-then-validate: a whitespace-only title must not create an
+  // empty-titled snippet.
+  title: z.string().trim().min(1).max(200),
   bodyHtml: z.string().max(100_000).optional()
 })
 

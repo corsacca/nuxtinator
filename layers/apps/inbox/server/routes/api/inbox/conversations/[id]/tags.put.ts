@@ -5,7 +5,9 @@
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
 
-const Body = z.object({ tags: z.array(z.string()).max(50) })
+// Elements are unknown, not string: non-string entries are narrowed away
+// below (matching the drop-silently contract) instead of 400-ing the request.
+const Body = z.object({ tags: z.array(z.unknown()).max(50) })
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')!
@@ -20,7 +22,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const palette = await inboxListTags(tx)
-    const slugs = inboxSanitizeSlugs(palette, parsed.data.tags)
+    const slugs = inboxSanitizeSlugs(palette, parsed.data.tags.filter((t): t is string => typeof t === 'string'))
     await inboxSetConversationTags(tx, id, slugs)
     await inboxLogConversationEvent(tx, id, 'inbox_tags_updated', 'Tags updated', {
       userId: ctx.userId, extra: { tags: slugs }
