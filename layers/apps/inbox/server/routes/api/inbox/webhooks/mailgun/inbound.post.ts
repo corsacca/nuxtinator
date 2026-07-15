@@ -320,6 +320,12 @@ export default defineEventHandler(async (event) => {
     // acknowledged.
     let attachmentUploads: { s3Key: string, filename: string, contentType: string | null, sizeBytes: number }[] = []
     let rawKey: string | null = null
+    // Test seam (VITEST only): simulate an artifact-persistence failure so the
+    // suite can pin the delete-claim + 503-retry contract without an S3 outage.
+    if (process.env.VITEST && field('x-test-fail') === 'persist') {
+      await inboxWithScopeTx(scope, tx => inboxDeleteMessage(tx, a.messageId))
+      throw new TransientError('Injected persistence failure')
+    }
     if (process.env.S3_ENDPOINT) {
       try {
         attachmentUploads = await persistAttachmentFiles(form)

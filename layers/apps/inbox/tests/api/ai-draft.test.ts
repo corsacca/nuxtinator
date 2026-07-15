@@ -152,4 +152,57 @@ describe('inbox grounding refresh', () => {
     expect(res.synced).toContain('https://example.com/help')
     expect(res.failed).toHaveLength(0)
   })
+
+  it('prunes documents whose urls are no longer configured', async () => {
+    const { org, opts } = await createInboxOrgWith(sql)
+    await setInboxOrgSetting(sql, org.id, 'grounding_source_urls', ['https://example.com/old'])
+    await $fetch('/api/inbox/grounding/refresh', { method: 'POST', body: {}, ...opts })
+
+    await setInboxOrgSetting(sql, org.id, 'grounding_source_urls', ['https://example.com/new'])
+    const res = await $fetch<{ synced: string[], pruned: number }>(
+      '/api/inbox/grounding/refresh',
+      { method: 'POST', body: {}, ...opts }
+    )
+    expect(res.synced).toContain('https://example.com/new')
+    expect(res.pruned).toBe(1)
+
+    const docs = await sql`
+      SELECT doc_key FROM inbox_grounding_documents WHERE org_id = ${org.id} AND source = 'page'
+    `
+    expect(docs.map(d => d.doc_key)).toEqual(['https://example.com/new'])
+  })
+
+  it('gates the refresh behind inbox.send', async () => {
+    const member = await createInboxOrgWith(sql, ['member'])
+    await expect(
+      $fetch('/api/inbox/grounding/refresh', { method: 'POST', body: {}, ...member.opts })
+    ).rejects.toMatchObject({ statusCode: 403 })
+  })
+})
+
+describe('inbox AI edge paths', () => {
+  it('404s on a conversation that does not exist', async () => {
+    const { opts } = await createInboxOrgWith(sql)
+    await expect(
+      $fetch(`/api/inbox/conversations/${randomUUID()}/draft-reply`, { method: 'POST', body: {}, ...opts })
+    ).rejects.toMatchObject({ statusCode: 404 })
+    await expect(
+      $fetch(`/api/inbox/conversations/${randomUUID()}/knowledge-entry/suggest`, { method: 'POST', body: {}, ...opts })
+    ).rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  it('400s on a body that fails field validation', async () => {
+    const { domain, opts } = await createInboxOrgWith(sql)
+    const id = await seedConversation(domain)
+    await expect(
+      $fetch(`/api/inbox/conversations/${id}/draft-reply`, {
+        method: 'POST', body: { direction: 42 }, ...opts
+      })
+    ).rejects.toMatchObject({ statusCode: 400 })
+    await expect(
+      $fetch(`/api/inbox/conversations/${id}/draft-reply`, {
+        method: 'POST', body: { save: { html: ['not', 'a', 'string'] } }, ...opts
+      })
+    ).rejects.toMatchObject({ statusCode: 400 })
+  })
 })

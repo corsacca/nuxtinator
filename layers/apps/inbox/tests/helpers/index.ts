@@ -108,6 +108,8 @@ export interface InboundFixtureOpts {
   // Raw MIME source. When present the webhook archives it to S3 and sets
   // `inbox_messages.raw_s3_key`.
   bodyMime?: string
+  // Extra top-level form fields (e.g. the x-test-fail persistence seam).
+  extraFields?: Record<string, string>
 }
 
 // POST a Mailgun-shaped inbound payload. The signature is computed with the
@@ -137,6 +139,7 @@ export async function postInbound(fixture: InboundFixtureOpts): Promise<{ status
   form.append('stripped-html', fixture.html ?? `<p>${fixture.text ?? 'Test body'}</p>`)
   form.append('message-headers', JSON.stringify(headers))
   if (fixture.bodyMime) form.append('body-mime', fixture.bodyMime)
+  for (const [k, v] of Object.entries(fixture.extraFields ?? {})) form.append(k, v)
 
   try {
     const body = await $fetch<Record<string, unknown>>('/api/inbox/webhooks/mailgun/inbound', {

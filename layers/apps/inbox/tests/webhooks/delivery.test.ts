@@ -3,11 +3,13 @@
 // delivered → message state. The sweep-side effect of suppression (a queued
 // reply failing instead of sending) is pinned in tests/api/send-sweep.test.ts.
 import { describe, it, expect, afterEach } from 'vitest'
+import { $fetch } from '@nuxt/test-utils/e2e'
 import { randomUUID } from 'node:crypto'
 import {
   getHostAdminDb,
   cleanupInboxTestData,
   createInboxOrgWith,
+  setInboxOrgSetting,
   postInbound,
   postDeliveryEvent
 } from '../helpers'
@@ -104,5 +106,66 @@ describe('delivery events webhook', () => {
     })
     expect(res.status).toBe('failed')
     expect(res.suppressed).toBeFalsy()
+  })
+
+  it("flips the message to 'delivered' by provider id without ever verifying the channel", async () => {
+    const { org, opts, domain } = await createInboxOrgWith(sql)
+    await setInboxOrgSetting(sql, org.id, 'auto_ack_enabled', false)
+    const sender = uniqueSender('delivered')
+    // Unauthenticated inbound so the channel starts (and must stay) unverified.
+    const inbound = await postInbound({ recipient: `hello@${domain}`, from: `D <${sender}>`, authenticated: false })
+    const convId = inbound.body.conversation_id as string
+
+    const queued = await $fetch<{ id: string }>(`/api/inbox/conversations/${convId}/messages`, {
+      method: 'POST', body: { body: '<p>reply</p>' }, ...opts
+    })
+
+    // The 2s sweep sends it; wait for the provider message id.
+    let providerId = ''
+    for (let i = 0; i < 60 && !providerId; i++) {
+      const [row] = await sql`SELECT status, provider_message_id FROM inbox_messages WHERE id = ${queued.id}`
+      if (row!.status === 'sent' && row!.provider_message_id) providerId = row!.provider_message_id as string
+      else await new Promise(r => setTimeout(r, 250))
+    }
+    expect(providerId).toBeTruthy()
+
+    const res = await postDeliveryEvent({
+      event: 'delivered',
+      recipient: sender,
+      message: { headers: { 'message-id': providerId.replace(/^<|>$/g, '') } },
+      'user-variables': { 'inbox-org': org.id }
+    })
+    expect(res.status).toBe('delivered')
+    expect(res.matched).toBe(true)
+
+    const [msg] = await sql`SELECT status FROM inbox_messages WHERE id = ${queued.id}`
+    expect(msg!.status).toBe('delivered')
+
+    // Delivery success is not ownership proof — only authenticated inbound
+    // mail verifies a channel.
+    const [ch] = await sql`SELECT verified FROM crm_channels WHERE value = ${sender}`
+    expect(ch!.verified).toBe(false)
+  })
+
+  it('absorbs a repeated complaint idempotently — one suppression row', async () => {
+    const { org, domain } = await createInboxOrgWith(sql)
+    const sender = uniqueSender('complainer')
+    await postInbound({ recipient: `hello@${domain}`, from: `C <${sender}>` })
+
+    for (let i = 0; i < 2; i++) {
+      const res = await postDeliveryEvent({
+        event: 'complained',
+        recipient: sender,
+        'user-variables': { 'inbox-org': org.id }
+      })
+      expect(res.suppressed).toBe(true)
+    }
+
+    const rows = await sql`
+      SELECT s.reason FROM crm_channel_suppressions s
+      JOIN crm_channels ch ON ch.id = s.channel_id WHERE ch.value = ${sender}
+    `
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.reason).toBe('complaint')
   })
 })

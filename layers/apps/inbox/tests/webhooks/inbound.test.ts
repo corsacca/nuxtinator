@@ -2,6 +2,7 @@
 // dedupe, token threading, thread-graft protection, the held queue, vacation
 // handling, channel claiming + DKIM-gated verification, and org isolation.
 import { describe, it, expect, afterEach } from 'vitest'
+import { $fetch } from '@nuxt/test-utils/e2e'
 import { randomUUID } from 'node:crypto'
 import {
   getHostAdminDb,
@@ -99,6 +100,48 @@ describe('inbound webhook', () => {
     })
     expect(reply.body.status).toBe('contact')
     expect(reply.body.conversation_id).toBe(first.body.conversation_id)
+  })
+
+  it('threads a tokenless In-Reply-To reply from the same sender into the conversation', async () => {
+    const { domain } = await createInboxOrgWith(sql)
+    const sender = uniqueSender('threads')
+    const messageId = `<test-inbox-pos-thread-${randomUUID()}@sender.example>`
+    const first = await postInbound({ recipient: `hello@${domain}`, from: `Jane <${sender}>`, messageId })
+    // No reply token — threading rides In-Reply-To, allowed because the
+    // sender's channel owns the referenced conversation.
+    const reply = await postInbound({
+      recipient: `hello@${domain}`,
+      from: `Jane <${sender}>`,
+      inReplyTo: messageId,
+      subject: 'Re: Test subject'
+    })
+    expect(reply.body.status).toBe('contact')
+    expect(reply.body.conversation_id).toBe(first.body.conversation_id)
+  })
+
+  it('reopens a closed conversation on a token reply, but a vacation auto-reply closes it instead', async () => {
+    const { opts, domain } = await createInboxOrgWith(sql)
+    const sender = uniqueSender('reopen')
+    const first = await postInbound({ recipient: `hello@${domain}`, from: `Jane <${sender}>` })
+    const convId = first.body.conversation_id as string
+    const [row] = await sql`SELECT reply_token FROM inbox_conversations WHERE id = ${convId}`
+    const tokenAddr = `contact+${row!.reply_token}@${domain}`
+
+    // Closed + a real reply from the contact → back with the team: open.
+    await $fetch(`/api/inbox/conversations/${convId}`, { method: 'PATCH', body: { status: 'closed' }, ...opts })
+    await postInbound({ recipient: tokenAddr, from: `Jane <${sender}>` })
+    let [state] = await sql`SELECT status FROM inbox_conversations WHERE id = ${convId}`
+    expect(state!.status).toBe('open')
+
+    // Pending + a vacation auto-reply → noise, not attention: closed.
+    await $fetch(`/api/inbox/conversations/${convId}`, { method: 'PATCH', body: { status: 'pending' }, ...opts })
+    await postInbound({
+      recipient: tokenAddr,
+      from: `Jane <${sender}>`,
+      headers: [['Auto-Submitted', 'auto-replied']]
+    })
+    ;[state] = await sql`SELECT status FROM inbox_conversations WHERE id = ${convId}`
+    expect(state!.status).toBe('closed')
   })
 
   it('holds token mail from a sender that does not own the conversation', async () => {
