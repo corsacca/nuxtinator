@@ -122,7 +122,7 @@ async function submit() {
             placeholder="Write your message…"
             :image="true"
             :mention="false"
-            class="min-h-32 max-h-72 overflow-y-auto rounded-md border border-(--ui-border)"
+            class="inbox-composer-editor min-h-32 max-h-72 overflow-y-auto rounded-md border border-(--ui-border)"
           />
         </UFormField>
         <div class="flex items-center">
@@ -149,3 +149,13 @@ async function submit() {
     </template>
   </UModal>
 </template>
+
+<style scoped>
+/* Match the size cap outbound mail applies per <img> at send time
+   (inboxConstrainImages), so the composer shows what recipients will see. */
+.inbox-composer-editor :deep(img) {
+  max-width: 100%;
+  max-height: 480px;
+  height: auto;
+}
+</style>

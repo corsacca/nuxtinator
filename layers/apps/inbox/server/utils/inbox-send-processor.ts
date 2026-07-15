@@ -27,7 +27,10 @@ interface PreparedSend {
   fromAddress: string
   replyTo: string
   subject: string
-  html: string
+  // Assembled body + quoted history, BEFORE the send-time HTML passes. The
+  // sweep applies those (embed → re-sanitize → constrain → shell wrap)
+  // outside the claim transaction, since embedding does network fetches.
+  bodyHtml: string
   text: string | undefined
   inReplyTo: string | undefined
   attachmentRefs: OutboundAttachmentRef[]
@@ -172,7 +175,7 @@ async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend |
     }),
     replyTo: inboxBuildReplyAddress(conversation.reply_token, settings.contactAddress),
     subject,
-    html: inboxRenderMessageEmail({ bodyHtml: inboxConstrainImages(bodyHtml), subject }),
+    bodyHtml,
     text: bodyText || undefined,
     inReplyTo: lastInbound?.email_message_id ?? undefined,
     attachmentRefs
@@ -203,16 +206,24 @@ export async function inboxRunSendSweep(): Promise<void> {
         continue
       }
 
-      // Inline images become CID parts and rewrite the HTML; unfetchable ones
-      // degrade rather than fail the send.
-      const embedded = await embedInlineImages(prep.html)
+      // Send-time HTML passes, in order: inline images become CID parts and
+      // rewrite the HTML (unfetchable ones degrade rather than fail the send);
+      // the assembled body is re-sanitized at this sink (belt-and-braces — the
+      // pieces were sanitized at write time, but the sink must not trust
+      // assembly); every <img> gets the size cap; the shell wraps last so its
+      // head/body chrome isn't subject to the body sanitizer.
+      const embedded = await embedInlineImages(prep.bodyHtml)
       const allAttachments = [...attachments, ...embedded.attachments]
+      const html = inboxRenderMessageEmail({
+        bodyHtml: inboxConstrainImages(inboxSanitizeEmailHtml(embedded.html)),
+        subject: prep.subject
+      })
 
       const result = await inboxSendEmail({
         from: prep.fromAddress,
         to: prep.toEmail,
         subject: prep.subject,
-        html: embedded.html,
+        html,
         text: prep.text,
         replyTo: prep.replyTo,
         inReplyTo: prep.inReplyTo,

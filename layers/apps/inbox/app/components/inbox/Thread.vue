@@ -425,7 +425,7 @@ function submitContact() {
         placeholder="Write your reply…"
         :image="true"
         :mention="false"
-        class="min-h-24 max-h-64 overflow-y-auto rounded-md border border-(--ui-border)"
+        class="inbox-composer-editor min-h-24 max-h-64 overflow-y-auto rounded-md border border-(--ui-border)"
       />
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -530,3 +530,13 @@ function submitContact() {
     </UModal>
   </div>
 </template>
+
+<style scoped>
+/* Match the size cap outbound mail applies per <img> at send time
+   (inboxConstrainImages), so the composer shows what recipients will see. */
+.inbox-composer-editor :deep(img) {
+  max-width: 100%;
+  max-height: 480px;
+  height: auto;
+}
+</style>

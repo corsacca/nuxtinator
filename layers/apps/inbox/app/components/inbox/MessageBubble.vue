@@ -75,7 +75,7 @@ const statusBadge = computed(() => {
     />
 
     <!-- eslint-disable-next-line vue/no-v-html — sanitized via DOMPurify above -->
-    <div class="prose prose-sm dark:prose-invert max-w-none break-words" v-html="displayHtml" />
+    <div class="inbox-message-body prose prose-sm dark:prose-invert max-w-none break-words" v-html="displayHtml" />
 
     <div v-if="hasQuoted" class="mt-2">
       <UButton
@@ -107,3 +107,13 @@ const statusBadge = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Match the size cap outbound mail applies per <img> at send time
+   (inboxConstrainImages), so the thread preview shows what recipients see. */
+.inbox-message-body :deep(img) {
+  max-width: 100%;
+  max-height: 480px;
+  height: auto;
+}
+</style>
