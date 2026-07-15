@@ -10,7 +10,7 @@ import { generate, getFeatureModel } from '#ai/server'
 import type { AiTextPart } from '#ai/server'
 import { resolveTypePermission } from '#crm/server'
 import { inboxGetConversation } from './inbox-conversations'
-import { inboxListMessages, type InboxMessageRow } from './inbox-messages'
+import { inboxListMessages, inboxAiContextMessages, type InboxMessageRow } from './inbox-messages'
 import { getInboxStaticPack, getInboxKnowledgeBlock, formatInboxContactRecord } from './inbox-ai-grounding'
 
 type Tx = Transaction<Database>
@@ -92,7 +92,8 @@ export async function generateInboxDraft(
   if (!conversation) throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
 
   const [messages, contactRecord, staticPack, knowledgeBlock, model] = await Promise.all([
-    inboxListMessages(tx, conversationId),
+    // Held rows never reach AI context — see inboxAiContextMessages.
+    inboxListMessages(tx, conversationId).then(inboxAiContextMessages),
     formatInboxContactRecord(tx, ctx, conversation.channel_id),
     getInboxStaticPack(tx, ctx.orgId),
     getInboxKnowledgeBlock(tx),

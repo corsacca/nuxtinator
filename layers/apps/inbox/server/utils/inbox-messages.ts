@@ -185,6 +185,17 @@ export async function inboxListMessages(
   return rows as (InboxMessageRow & { sender_name: string | null })[]
 }
 
+// The message set AI features may read (drafting, knowledge extraction).
+// Excludes held rows: a held sender reached the thread without owning it, so
+// their content is untrusted — a prompt-injection channel into staff-facing
+// AI output. Mirrors the reply-anchor (`inboxGetLastInbound`) and
+// quoted-history exclusions. Failed outbound rows stay: they're
+// staff-authored (trusted) and tell the model what the team already tried to
+// say.
+export function inboxAiContextMessages<T extends Pick<InboxMessageRow, 'status'>>(messages: T[]): T[] {
+  return messages.filter(m => m.status !== 'held')
+}
+
 // Atomically claim a queued message for sending (queued → sent), returning
 // the row only to the winner.
 export async function inboxClaimForSend(tx: Tx, id: string): Promise<InboxMessageRow | null> {

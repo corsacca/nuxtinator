@@ -7,7 +7,7 @@ import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { generate, getFeatureModel } from '#ai/server'
 import { inboxGetConversation } from './inbox-conversations'
-import { inboxListMessages } from './inbox-messages'
+import { inboxListMessages, inboxAiContextMessages } from './inbox-messages'
 import { inboxMessageText } from './inbox-ai-draft'
 
 type Tx = Transaction<Database>
@@ -52,7 +52,8 @@ export async function extractInboxKnowledgeEntry(tx: Tx, conversationId: string)
   const conversation = await inboxGetConversation(tx, conversationId)
   if (!conversation) throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
 
-  const messages = await inboxListMessages(tx, conversationId)
+  // Held rows never reach AI context — see inboxAiContextMessages.
+  const messages = inboxAiContextMessages(await inboxListMessages(tx, conversationId))
   const thread = messages
     .map(m => `${m.direction === 'inbound' ? 'CONTACT' : 'TEAM'}: ${inboxMessageText(m)}`)
     .join('\n\n')
