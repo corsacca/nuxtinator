@@ -72,10 +72,12 @@ export default defineNuxtConfig({
 
   devServer: {
     // NUXT_HOST / NUXT_PORT in dev/.env override per-instance without touching
-    // this file. A named host gives each project its own cookie jar (cookies
-    // ignore ports, so two apps on localhost share logged-in sessions). The
-    // hostname must resolve locally — add `127.0.0.1 <host>` to /etc/hosts.
-    host: process.env.NUXT_HOST || 'nuxtinator.localhost',
+    // this file. When running several nuxtinator projects side by side, set
+    // NUXT_HOST to a named host (e.g. myproject.localhost) to give each its
+    // own cookie jar — cookies ignore ports, so two apps on localhost share
+    // logged-in sessions. A named host must resolve locally: add
+    // `127.0.0.1 <host>` to /etc/hosts.
+    host: process.env.NUXT_HOST || 'localhost',
     port: Number(process.env.NUXT_PORT) || 2080
   },
 
