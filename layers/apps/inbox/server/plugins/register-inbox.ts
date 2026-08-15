@@ -14,7 +14,9 @@ import {
   INBOX_SETTING_AUTO_ACK,
   INBOX_SETTING_CONTACT_FORM_API_KEY,
   INBOX_SETTING_GROUNDING_SOURCE_URLS,
-  sanitizeGroundingUrls
+  INBOX_SETTING_NOTIFY_USER_IDS,
+  sanitizeGroundingUrls,
+  sanitizeInboxNotifyUserIds
 } from '../utils/inbox-settings'
 import { INBOX_SETTING_TAGS, sanitizeTagPalette, type InboxTag } from '../utils/inbox-tags'
 import { INBOX_AI_DRAFT_FEATURE } from '../utils/inbox-ai-draft'
@@ -88,6 +90,13 @@ export default defineNitroPlugin(() => {
     default: [],
     parse: v => sanitizeGroundingUrls(v),
     label: 'AI grounding source URLs'
+  })
+  registerSetting<string[]>({
+    namespace: INBOX_SETTINGS_NAMESPACE,
+    key: INBOX_SETTING_NOTIFY_USER_IDS,
+    default: [],
+    parse: v => sanitizeInboxNotifyUserIds(v),
+    label: 'Unassigned-mail email recipients'
   })
 
   // AI features — the admin AI page (@nuxtinator/ai) shows a model picker for

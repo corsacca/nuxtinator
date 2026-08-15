@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Per-org inbox configuration (org-admin only): inbound mail domain, shared
-// contact address, auto-ack, the contact-form API key, and the AI grounding
-// source URLs. Values are org-scoped overrides on top of code defaults —
+// contact address, auto-ack, the contact-form API key, who is emailed about
+// unassigned mail, and the AI grounding source URLs. Values are org-scoped
+// overrides on top of code defaults —
 // clearing a field falls back to the deployment default at read time.
 definePageMeta({ middleware: 'auth' })
 
@@ -14,6 +15,7 @@ interface InboxAdminSettings {
   autoAckEnabled: boolean
   contactFormApiKey: string
   groundingSourceUrls: string[]
+  notifyUserIds: string[]
 }
 
 const toast = useToast()
@@ -33,6 +35,12 @@ interface IdentityRow {
   saving: boolean
 }
 const identities = ref<IdentityRow[]>([])
+
+// Candidate notify recipients, shaped for USelectMenu (value = user id).
+// Same source as the identities table: everyone who can open the inbox.
+const userItems = computed(() =>
+  identities.value.map(r => ({ id: r.userId, label: r.displayName || 'Unnamed user' }))
+)
 
 async function loadIdentities() {
   const [assignees, ids] = await Promise.all([
@@ -97,7 +105,8 @@ async function save() {
         brandFromName: form.value.brandFromName,
         autoAckEnabled: form.value.autoAckEnabled,
         contactFormApiKey: form.value.contactFormApiKey,
-        groundingSourceUrls: urlsText.value.split('\n').map(s => s.trim()).filter(Boolean)
+        groundingSourceUrls: urlsText.value.split('\n').map(s => s.trim()).filter(Boolean),
+        notifyUserIds: form.value.notifyUserIds
       }
     })
     form.value = updated
@@ -198,6 +207,22 @@ function generateApiKey() {
               @click="generateApiKey"
             />
           </div>
+        </UFormField>
+
+        <UFormField
+          label="Email on unassigned mail"
+          description="These users are emailed as soon as mail lands on a conversation nobody has been assigned. Everyone with inbox access still gets the in-app notification. Leave empty to notify no one by email."
+        >
+          <USelectMenu
+            v-model="form.notifyUserIds"
+            :items="userItems"
+            value-key="id"
+            label-key="label"
+            multiple
+            :search-input="{ placeholder: 'Search users...' }"
+            placeholder="No email recipients"
+            class="w-full"
+          />
         </UFormField>
 
         <UFormField

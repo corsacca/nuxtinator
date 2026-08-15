@@ -1,5 +1,6 @@
 // Staff-notification targeting: an unassigned new inbound raises a bell-only
-// broadcast to everyone with inbox access; once a conversation has an
+// broadcast to everyone with inbox access, upgraded to an immediate email for
+// the users named in the notify_user_ids setting; once a conversation has an
 // assignee, a contact reply notifies only them with an immediate email; a
 // vacation auto-reply notifies nobody; a held (non-vacation) intruder message
 // raises the held notice.
@@ -10,6 +11,8 @@ import {
   getHostAdminDb,
   cleanupInboxTestData,
   createInboxOrgWith,
+  createInboxUser,
+  addTestMembership,
   setInboxOrgSetting,
   postInbound
 } from '../helpers'
@@ -36,6 +39,33 @@ describe('staff notification targeting', () => {
     expect(rows.every(r => (r.title as string).startsWith('New message from'))).toBe(true)
     expect(rows.every(r => r.email_mode === 'none')).toBe(true)
     expect(rows.map(r => r.user_id)).toContain(user.id)
+  })
+
+  it('emails the configured recipients on unassigned mail, bell-only for the rest', async () => {
+    const { org, user, domain } = await createInboxOrgWith(sql)
+    const other = await createInboxUser(sql)
+    await addTestMembership(sql, { user_id: other.id, org_id: org.id, roles: ['admin'] })
+    await setInboxOrgSetting(sql, org.id, 'notify_user_ids', [user.id])
+
+    const res = await postInbound({ recipient: `hello@${domain}`, from: `N <${uniqueSender('notify')}>` })
+    const rows = await notificationRows(res.body.conversation_id as string)
+
+    const modeByUser = new Map(rows.map(r => [r.user_id, r.email_mode]))
+    expect(modeByUser.get(user.id)).toBe('immediate')
+    expect(modeByUser.get(other.id)).toBe('none')
+  })
+
+  it('skips a configured recipient who has no inbox access', async () => {
+    const { org, user, domain } = await createInboxOrgWith(sql)
+    // No membership, so no inbox.access — a stale id left in the setting.
+    const outsider = await createInboxUser(sql)
+    await setInboxOrgSetting(sql, org.id, 'notify_user_ids', [outsider.id, user.id])
+
+    const res = await postInbound({ recipient: `hello@${domain}`, from: `N <${uniqueSender('stale')}>` })
+    const rows = await notificationRows(res.body.conversation_id as string)
+
+    expect(rows.map(r => r.user_id)).not.toContain(outsider.id)
+    expect(rows.find(r => r.user_id === user.id)?.email_mode).toBe('immediate')
   })
 
   it('sends the assignee an immediate email on a contact reply', async () => {

@@ -16,6 +16,7 @@ interface Settings {
   autoAckEnabled: boolean
   contactFormApiKey: string
   groundingSourceUrls: string[]
+  notifyUserIds: string[]
 }
 
 describe('inbox settings admin', () => {
@@ -58,6 +59,28 @@ describe('inbox settings admin', () => {
     expect(row!.org_id).toBe(org.id)
   })
 
+  it('round-trips the unassigned-mail email recipients, defaulting to empty', async () => {
+    const { user, opts } = await createInboxOrgWith(sql)
+
+    const current = await $fetch<Settings>('/api/inbox/settings', opts)
+    expect(current.notifyUserIds).toEqual([])
+
+    const updated = await $fetch<Settings>('/api/inbox/settings', {
+      method: 'PUT',
+      body: { notifyUserIds: [user.id, user.id] },
+      ...opts
+    })
+    // The registered parse dedupes on write.
+    expect(updated.notifyUserIds).toEqual([user.id])
+
+    const cleared = await $fetch<Settings>('/api/inbox/settings', {
+      method: 'PUT',
+      body: { notifyUserIds: [] },
+      ...opts
+    })
+    expect(cleared.notifyUserIds).toEqual([])
+  })
+
   it('refuses non-admins (403) and malformed values (400)', async () => {
     const agent = await createInboxOrgWith(sql, ['inbox_agent'])
     await expect($fetch('/api/inbox/settings', agent.opts)).rejects.toMatchObject({ statusCode: 403 })
@@ -71,6 +94,9 @@ describe('inbox settings admin', () => {
     ).rejects.toMatchObject({ statusCode: 400 })
     await expect(
       $fetch('/api/inbox/settings', { method: 'PUT', body: { contactAddress: 'not-an-email' }, ...admin.opts })
+    ).rejects.toMatchObject({ statusCode: 400 })
+    await expect(
+      $fetch('/api/inbox/settings', { method: 'PUT', body: { notifyUserIds: ['not-a-user-id'] }, ...admin.opts })
     ).rejects.toMatchObject({ statusCode: 400 })
   })
 })

@@ -13,6 +13,17 @@ export const INBOX_SETTING_BRAND_FROM_NAME = 'brand_from_name'
 export const INBOX_SETTING_AUTO_ACK = 'auto_ack_enabled'
 export const INBOX_SETTING_CONTACT_FORM_API_KEY = 'contact_form_api_key'
 export const INBOX_SETTING_GROUNDING_SOURCE_URLS = 'grounding_source_urls'
+export const INBOX_SETTING_NOTIFY_USER_IDS = 'notify_user_ids'
+
+// Coerce a stored notify list into deduped user-id strings, preserving order.
+export function sanitizeInboxNotifyUserIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  for (const v of value) {
+    if (typeof v === 'string' && v && !out.includes(v)) out.push(v)
+  }
+  return out
+}
 
 // Sanitize a stored grounding-URL list: keep http(s) strings, trim, dedupe,
 // preserve order.
@@ -48,16 +59,21 @@ export interface InboxSettings {
   // Page URLs the AI grounding sync snapshots into grounding_documents. Empty =
   // the drafter grounds only on the tone guide + knowledge base.
   groundingSourceUrls: string[]
+  // Who is emailed immediately when mail lands on an unassigned conversation.
+  // Everyone with inbox access still gets the bell; only these users get mail.
+  // Empty = bell only, so a busy inbox never mass-mails the whole team.
+  notifyUserIds: string[]
 }
 
 export async function getInboxSettings(tx: DbClient): Promise<InboxSettings> {
-  const [inboundDomain, contactAddress, brandFromName, autoAckEnabled, contactFormApiKey, groundingSourceUrls] = await Promise.all([
+  const [inboundDomain, contactAddress, brandFromName, autoAckEnabled, contactFormApiKey, groundingSourceUrls, notifyUserIds] = await Promise.all([
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_INBOUND_DOMAIN),
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_ADDRESS),
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_BRAND_FROM_NAME),
     getSetting<boolean>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_AUTO_ACK),
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_FORM_API_KEY),
-    getSetting<string[]>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_GROUNDING_SOURCE_URLS)
+    getSetting<string[]>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_GROUNDING_SOURCE_URLS),
+    getSetting<string[]>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_NOTIFY_USER_IDS)
   ])
   return {
     inboundDomain: String(inboundDomain || '').toLowerCase(),
@@ -65,6 +81,7 @@ export async function getInboxSettings(tx: DbClient): Promise<InboxSettings> {
     brandFromName: String(brandFromName || '').trim(),
     autoAckEnabled: autoAckEnabled !== false,
     contactFormApiKey: String(contactFormApiKey || ''),
-    groundingSourceUrls: sanitizeGroundingUrls(groundingSourceUrls)
+    groundingSourceUrls: sanitizeGroundingUrls(groundingSourceUrls),
+    notifyUserIds: sanitizeInboxNotifyUserIds(notifyUserIds)
   }
 }
