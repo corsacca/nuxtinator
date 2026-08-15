@@ -273,126 +273,133 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
   <div class="flex h-[calc(100vh-57px)] -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
     <InboxRail v-model:scope="scope" v-model:tag="tag" :counts="counts" :tags="palette" :tag-counts="tagCounts" :show-settings="me?.canManageAliases ?? false" />
 
-    <section class="flex-1 flex min-w-0 overflow-hidden">
-      <div class="flex flex-col min-h-0" :class="selectedId ? 'hidden lg:flex' : 'flex w-full lg:w-auto'">
-        <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-(--ui-border)">
-          <div class="flex items-center gap-1.5 min-w-0">
-            <UDropdownMenu :items="mobileFolders" class="lg:hidden">
+    <section class="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <InboxUnconfiguredBanner
+        v-if="me && !me.contactAddress"
+        :can-manage-settings="me.canManageAliases"
+      />
+
+      <div class="flex-1 flex min-w-0 overflow-hidden">
+        <div class="flex flex-col min-h-0" :class="selectedId ? 'hidden lg:flex' : 'flex w-full lg:w-auto'">
+          <div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-(--ui-border)">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <UDropdownMenu :items="mobileFolders" class="lg:hidden">
+                <UButton
+                  :label="viewLabel"
+                  trailing-icon="i-lucide-chevron-down"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  class="capitalize"
+                />
+              </UDropdownMenu>
+              <span class="hidden lg:inline text-sm font-medium text-(--ui-text-muted) capitalize truncate">{{ viewLabel }}</span>
+              <span class="text-xs text-(--ui-text-dimmed) shrink-0">{{ total }}</span>
+            </div>
+            <div class="flex items-center gap-1.5">
               <UButton
-                :label="viewLabel"
-                trailing-icon="i-lucide-chevron-down"
+                v-if="me"
+                label="Identity"
+                icon="i-lucide-signature"
                 size="xs"
                 color="neutral"
                 variant="ghost"
-                class="capitalize"
+                @click="showIdentity = true"
               />
-            </UDropdownMenu>
-            <span class="hidden lg:inline text-sm font-medium text-(--ui-text-muted) capitalize truncate">{{ viewLabel }}</span>
-            <span class="text-xs text-(--ui-text-dimmed) shrink-0">{{ total }}</span>
+              <UButton
+                v-if="canManageCanned"
+                label="Canned"
+                icon="i-lucide-message-square-text"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                @click="showCanned = true"
+              />
+              <UButton
+                v-if="canManageCanned"
+                label="Suppressions"
+                icon="i-lucide-mail-x"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                @click="showSuppressions = true"
+              />
+              <UButton
+                v-if="aiAvailable"
+                label="Knowledge"
+                icon="i-lucide-book-open"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                @click="showKnowledge = true"
+              />
+              <UButton label="New email" icon="i-lucide-pen-line" size="xs" @click="showCompose = true" />
+            </div>
           </div>
-          <div class="flex items-center gap-1.5">
-            <UButton
-              v-if="me"
-              label="Identity"
-              icon="i-lucide-signature"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              @click="showIdentity = true"
-            />
-            <UButton
-              v-if="canManageCanned"
-              label="Canned"
-              icon="i-lucide-message-square-text"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              @click="showCanned = true"
-            />
-            <UButton
-              v-if="canManageCanned"
-              label="Suppressions"
-              icon="i-lucide-mail-x"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              @click="showSuppressions = true"
-            />
-            <UButton
-              v-if="aiAvailable"
-              label="Knowledge"
-              icon="i-lucide-book-open"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              @click="showKnowledge = true"
-            />
-            <UButton label="New email" icon="i-lucide-pen-line" size="xs" @click="showCompose = true" />
-          </div>
+          <InboxConversationList
+            v-model:status="status"
+            v-model:q="q"
+            :items="items"
+            :counts="counts"
+            :pending="pending"
+            :scope="scope"
+            :selected-id="selectedId"
+            :palette="palette"
+            class="flex-1 min-h-0"
+            @select="open"
+          />
         </div>
-        <InboxConversationList
-          v-model:status="status"
-          v-model:q="q"
-          :items="items"
-          :counts="counts"
-          :pending="pending"
-          :scope="scope"
-          :selected-id="selectedId"
-          :palette="palette"
-          class="flex-1 min-h-0"
-          @select="open"
+
+        <template v-if="selectedId">
+          <div class="lg:hidden absolute top-2 left-2 z-10">
+            <UButton icon="i-lucide-arrow-left" variant="ghost" color="neutral" size="sm" :to="withQuery(inboxPath('/inbox'))" />
+          </div>
+          <InboxThread
+            v-if="thread"
+            v-model:draft-id="currentDraftId"
+            v-model:reply-body="replyBody"
+            :thread="thread"
+            :assignees="assignees"
+            :palette="palette"
+            :canned="cannedItems"
+            :me="me"
+            :sending="replying"
+            :upload-inline-image="uploadInlineImage"
+            :ai-available="aiAvailable"
+            :ai-meta="aiMeta"
+            @patch="onPatch"
+            @reply="onReply"
+            @save-draft="onSaveDraft"
+            @delete-draft="onDeleteDraft"
+            @attach-files="onAttachFiles"
+            @remove-attachment="onRemoveAttachment"
+            @create-contact="onCreateContact"
+            @set-tags="onSetTags"
+            @create-tag="onCreateTag"
+            @delete-tag="onDeleteTag"
+            @ai-draft="showAiDraft = true"
+            @add-knowledge="showAddKb = true"
+            @dismiss-ai-meta="aiMeta = null"
+            @load-draft-meta="aiMeta = $event"
+          />
+          <UEmpty
+            v-else-if="threadError"
+            icon="i-lucide-alert-triangle"
+            title="Conversation unavailable"
+            :description="threadError"
+            variant="naked"
+            class="m-auto"
+          />
+        </template>
+        <UEmpty
+          v-else
+          icon="i-lucide-mails"
+          title="Select a conversation"
+          description="Pick a conversation from the list, or start a new email."
+          variant="naked"
+          class="m-auto hidden lg:flex"
         />
       </div>
-
-      <template v-if="selectedId">
-        <div class="lg:hidden absolute top-2 left-2 z-10">
-          <UButton icon="i-lucide-arrow-left" variant="ghost" color="neutral" size="sm" :to="withQuery(inboxPath('/inbox'))" />
-        </div>
-        <InboxThread
-          v-if="thread"
-          v-model:draft-id="currentDraftId"
-          v-model:reply-body="replyBody"
-          :thread="thread"
-          :assignees="assignees"
-          :palette="palette"
-          :canned="cannedItems"
-          :me="me"
-          :sending="replying"
-          :upload-inline-image="uploadInlineImage"
-          :ai-available="aiAvailable"
-          :ai-meta="aiMeta"
-          @patch="onPatch"
-          @reply="onReply"
-          @save-draft="onSaveDraft"
-          @delete-draft="onDeleteDraft"
-          @attach-files="onAttachFiles"
-          @remove-attachment="onRemoveAttachment"
-          @create-contact="onCreateContact"
-          @set-tags="onSetTags"
-          @create-tag="onCreateTag"
-          @delete-tag="onDeleteTag"
-          @ai-draft="showAiDraft = true"
-          @add-knowledge="showAddKb = true"
-          @dismiss-ai-meta="aiMeta = null"
-          @load-draft-meta="aiMeta = $event"
-        />
-        <UEmpty
-          v-else-if="threadError"
-          icon="i-lucide-alert-triangle"
-          title="Conversation unavailable"
-          :description="threadError"
-          variant="naked"
-          class="m-auto"
-        />
-      </template>
-      <UEmpty
-        v-else
-        icon="i-lucide-mails"
-        title="Select a conversation"
-        description="Pick a conversation from the list, or start a new email."
-        variant="naked"
-        class="m-auto hidden lg:flex"
-      />
     </section>
 
     <UAlert v-if="error" color="error" variant="subtle" :title="error" class="absolute bottom-4 right-4 w-80" />

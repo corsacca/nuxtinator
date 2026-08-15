@@ -94,6 +94,12 @@ const signatureNotice = computed(() => {
 // the editor — the preview is the only way to see what will actually go out.
 const showSignaturePreview = ref(false)
 
+// Every send needs the org's shared contact address for its From identity;
+// without one the sweep holds the message instead of delivering it. Send is
+// blocked here so nobody writes a reply believing it went out. Drafting and
+// saving stay open — the text is preserved either way.
+const hasSendAddress = computed(() => !!props.me?.contactAddress)
+
 watch(() => props.thread.conversation.id, () => {
   replyBody.value = ''
   currentDraftId.value = null
@@ -231,7 +237,7 @@ const statusValue = computed({
 // (v-model) and clears them only after the send request succeeds, so a failed
 // send keeps the typed text for retry.
 function submitReply() {
-  if (props.sending) return
+  if (props.sending || !hasSendAddress.value) return
   const body = replyBody.value.trim()
   if (!body || body === '<p></p>') return
   emit('reply', replyBody.value, currentDraftId.value ?? undefined, props.me?.personalFrom ? fromIdentity.value : undefined)
@@ -489,6 +495,10 @@ const appliedTags = computed(() =>
         :mention="false"
         class="inbox-composer-editor min-h-24 max-h-64 overflow-y-auto rounded-md border border-(--ui-border)"
       />
+      <p v-if="!hasSendAddress" class="flex items-center gap-1.5 text-xs text-(--ui-text-warning)">
+        <UIcon name="i-lucide-mail-warning" class="shrink-0" />
+        <span>Sending is unavailable until this inbox has a shared contact address. You can still save this as a draft.</span>
+      </p>
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5 flex-wrap min-w-0">
           <UButton
@@ -544,7 +554,7 @@ const appliedTags = computed(() =>
             icon="i-lucide-send"
             size="sm"
             :loading="props.sending"
-            :disabled="props.sending"
+            :disabled="props.sending || !hasSendAddress"
             @click="submitReply"
           />
         </div>
