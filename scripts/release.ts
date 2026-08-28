@@ -55,7 +55,8 @@ writeFileSync(pkgPath, updated)
 
 // Commit ONLY the version bump (path-scoped commit ignores anything else staged).
 execSync(`git commit ${JSON.stringify(pkgPath)} -m ${JSON.stringify(`${id} ${next}`)}`, { stdio: 'inherit' })
-execSync(`git tag ${JSON.stringify(tag)}`, { stdio: 'inherit' })
+// Annotated, not lightweight — `git push --follow-tags` only pushes annotated tags.
+execSync(`git tag -a ${JSON.stringify(tag)} -m ${JSON.stringify(tag)}`, { stdio: 'inherit' })
 
 if (process.argv.includes('--push')) {
   execSync('git push --follow-tags', { stdio: 'inherit' })
