@@ -213,6 +213,17 @@ export async function withRecordOrgContext<T>(
   return await db.transaction().execute(fn)
 }
 
+// Membership check against the org bound to the current transaction (the GUC
+// set by `withOrgContext` / `withRecordOrgContext`). Single mode has no orgs —
+// every authenticated user belongs to the deployment — so this is always true.
+// The tenancy layer overrides it with a real memberships lookup.
+export async function isActiveOrgMember(
+  _tx: Transaction<Database>,
+  _userId: string
+): Promise<boolean> {
+  return true
+}
+
 // Migration helper. In single mode this is a no-op — single deploys don't
 // have an `orgs` table to reference and don't need RLS. Per-app tenancy
 // migrations call this from inside `*_T<NNN>_*.ts` files; those files are

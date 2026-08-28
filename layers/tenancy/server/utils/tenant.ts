@@ -379,6 +379,30 @@ export async function withRecordOrgContext<T>(
   })
 }
 
+// Check whether `userId` is a member of the org bound to the current
+// transaction (the `app.current_org` GUC set by `withOrgContext` /
+// `withRecordOrgContext`). Lets token-resolved routes (e.g. the videos share
+// endpoint) grant org-visibility access without the caller knowing the org id.
+// False when no GUC is set. `memberships` carries no RLS, so the regular DB
+// role can read it.
+export async function isActiveOrgMember(
+  tx: Transaction<Database>,
+  userId: string
+): Promise<boolean> {
+  const result = await sql<{ org_id: string | null }>`
+    select nullif(current_setting('app.current_org', true), '')::uuid as org_id
+  `.execute(tx)
+  const orgId = result.rows[0]?.org_id
+  if (!orgId) return false
+  const membership = await tx
+    .selectFrom('memberships')
+    .select('user_id')
+    .where('org_id', '=', orgId)
+    .where('user_id', '=', userId)
+    .executeTakeFirst()
+  return !!membership
+}
+
 // Schema-retrofit helper for app layer migrations. Per-app tenancy migrations
 // live at `<layer>/migrations/<appId>_T<NNN>_*.ts` and call this. The tenancy
 // layer's migration discovery module includes those files only when the
