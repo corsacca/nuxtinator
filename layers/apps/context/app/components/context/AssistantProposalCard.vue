@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { diffLines } from 'diff'
 import type { AssistantProposal } from '../../composables/useContextAssistant'
 
-const props = defineProps<{
+defineProps<{
   proposal: AssistantProposal
   index: number
   total: number
@@ -11,9 +10,6 @@ const props = defineProps<{
   showPortfolio: boolean
 }>()
 const emit = defineEmits<{ decide: [action: 'apply' | 'reject'] }>()
-
-const normalize = (s: string) => (s.endsWith('\n') ? s : `${s}\n`)
-const chunks = computed(() => diffLines(normalize(props.proposal.current_content), normalize(props.proposal.proposed_content)))
 </script>
 
 <template>
@@ -48,15 +44,11 @@ const chunks = computed(() => diffLines(normalize(props.proposal.current_content
       </UBadge>
     </div>
 
-    <div class="max-h-64 overflow-auto text-xs font-mono">
-      <div
-        v-for="(chunk, i) in chunks"
-        :key="i"
-        class="px-3 py-0.5 whitespace-pre-wrap"
-        :class="chunk.added
-          ? 'bg-(--ui-success)/10 border-l-2 border-(--ui-success)'
-          : chunk.removed ? 'bg-(--ui-error)/10 border-l-2 border-(--ui-error) line-through opacity-70' : ''"
-      >{{ chunk.value }}</div>
+    <div class="max-h-64 overflow-auto px-3 py-2 text-xs">
+      <ContextTextDiff
+        :before="proposal.current_content"
+        :after="proposal.proposed_content"
+      />
     </div>
 
     <div

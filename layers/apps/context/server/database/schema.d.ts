@@ -19,12 +19,17 @@ export interface ContextSectionsTable {
   last_edited_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
+// How a version came to be: a direct edit by the user, an accepted in-app
+// assistant proposal, or an AI client writing through MCP.
+export type ContextSectionVersionSource = 'user' | 'assistant' | 'mcp'
+
 export interface ContextSectionVersionsTable {
   id: Generated<string>
   section_id: string
   content: string
   edited_by: string | null
   edited_at: ColumnType<Date, Date | string | undefined, Date | string>
+  source: ContextSectionVersionSource | null
 }
 
 export interface ContextCustomSectionDefinitionsTable {

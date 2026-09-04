@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
     if (!section) {
       const known = await isKnownSectionKey(tx, p.id, key)
       if (!known) throw createError({ statusCode: 404, statusMessage: `Unknown section key: ${key}` })
-      const { section: created } = await saveSectionContent(tx, p.id, key, '', ctx.userId)
+      const { section: created } = await saveSectionContent(tx, p.id, key, '', ctx.userId, { source: 'user' })
       section = created
     }
 

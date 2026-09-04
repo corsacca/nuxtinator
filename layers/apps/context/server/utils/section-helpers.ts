@@ -4,6 +4,7 @@
 
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
+import type { ContextSectionVersionSource } from '../database/schema'
 import { CONTEXT_SECTION_KEYS } from './section-catalog'
 
 export const MAX_SECTION_BYTES = 100 * 1024
@@ -47,6 +48,9 @@ export async function loadSection(
 }
 
 export interface SaveSectionOptions {
+  // Stamped on the version row so history can show who made the change:
+  // 'user' for UI routes, 'assistant' for accepted proposals, 'mcp' for MCP tools.
+  source: ContextSectionVersionSource
   enforceKeyExists?: boolean
 }
 
@@ -58,7 +62,7 @@ export async function saveSectionContent(
   key: string,
   content: string,
   userId: string,
-  opts: SaveSectionOptions = {}
+  opts: SaveSectionOptions
 ): Promise<{ section: SectionRow, versionId: string }> {
   if (Buffer.byteLength(content, 'utf8') > MAX_SECTION_BYTES) {
     throw createError({ statusCode: 413, statusMessage: 'Section content exceeds 100KB limit.' })
@@ -105,7 +109,8 @@ export async function saveSectionContent(
     .values({
       section_id: section.id,
       content,
-      edited_by: userId
+      edited_by: userId,
+      source: opts.source
     })
     .returning('id')
     .executeTakeFirstOrThrow()

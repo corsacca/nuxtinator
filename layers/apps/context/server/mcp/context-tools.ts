@@ -297,7 +297,7 @@ export const updateSectionTool = defineMcpTool({
         }
 
         const { section, versionId } = await saveSectionContent(
-          tx, input.portfolio_id, input.section_key, input.content, ctx.auth.userId
+          tx, input.portfolio_id, input.section_key, input.content, ctx.auth.userId, { source: 'mcp' }
         )
 
         await mcpLog('UPDATE', 'context_sections', section.id, ctx, {
@@ -364,7 +364,7 @@ export const bulkUpdateSectionsTool = defineMcpTool({
             }
           }
           const { section, versionId } = await saveSectionContent(
-            tx, input.portfolio_id, u.section_key, u.content, ctx.auth.userId
+            tx, input.portfolio_id, u.section_key, u.content, ctx.auth.userId, { source: 'mcp' }
           )
           await mcpLog('UPDATE', 'context_sections', section.id, ctx, {
             portfolio_id: input.portfolio_id, key: u.section_key, version_id: versionId

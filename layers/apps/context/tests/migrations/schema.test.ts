@@ -35,6 +35,15 @@ describe('schema migrations', () => {
     expect(names).toContain('icon_url')
   })
 
+  it('context_section_versions has a source column', async () => {
+    const rows = await sql<{ column_name: string }[]>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'context_section_versions'
+    `
+    const names = rows.map(r => r.column_name)
+    expect(names).toContain('source')
+  })
+
   it('context_section_comments has anchor columns', async () => {
     const rows = await sql<{ column_name: string }[]>`
       SELECT column_name FROM information_schema.columns

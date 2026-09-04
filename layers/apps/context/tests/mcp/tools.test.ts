@@ -70,6 +70,14 @@ describe('context MCP tools file', () => {
     expect(src).toMatch(/last_edited_at:\s*z\.string\(\)\.datetime\(\)\.optional\(\)/)
   })
 
+  it('both write tools stamp versions with source mcp', async () => {
+    const src = await fs.readFile(TOOLS_FILE, 'utf8')
+    const saves = src.match(/saveSectionContent\(/g) ?? []
+    const stamped = src.match(/saveSectionContent\([^)]*\{ source: 'mcp' \}/g) ?? []
+    expect(saves.length).toBe(2)
+    expect(stamped.length).toBe(2)
+  })
+
   // Full per-tool dispatch (auth / OAuth token / write semantics) is covered
   // by the mcp layer's harness; an end-to-end JSON-RPC run from this project
   // would need an OAuth client + access token per scope. Tracked as TODO.

@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
         'v.content',
         'v.edited_at',
         'v.edited_by',
+        'v.source',
         'u.display_name as edited_by_name'
       ])
       .where('v.section_id', '=', section.id)

@@ -151,6 +151,10 @@ describe('assistant conversations', () => {
       WHERE s.portfolio_id = ${p.id} AND s.section_key = 'identity'
     `
     expect(versions[0]!.n).toBe(1)
+    const appliedVersion = await sql<{ source: string | null }[]>`
+      SELECT source FROM context_section_versions WHERE id = ${applied.version_id!}
+    `
+    expect(appliedVersion[0]!.source).toBe('assistant')
 
     const again = await decide(opts, conv.id, msg.id, 0, 'apply').catch(e => e)
     expect(again.statusCode).toBe(409)

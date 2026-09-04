@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
     }
     const portfolio = await getPortfolioBySlugOr404(tx, proposal.portfolio_slug)
     const { section, versionId } = await saveSectionContent(
-      tx, portfolio.id, proposal.section_key, proposal.proposed_content, ctx.userId
+      tx, portfolio.id, proposal.section_key, proposal.proposed_content, ctx.userId, { source: 'assistant' }
     )
     logUpdate('context_sections', section.id, ctx.userId, {
       source: 'assistant',
