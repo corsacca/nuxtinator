@@ -1,4 +1,4 @@
-import { Migrator, type Migration, type MigrationProvider } from 'kysely'
+import { Migrator, sql, type Kysely, type Migration, type MigrationProvider } from 'kysely'
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -21,6 +21,30 @@ import { createKyselyDb } from '#core/server/utils/db-connection'
 interface ProviderOpts {
   regularFolders: string[]
   tenancyFolders: string[]
+  // Names recorded as executed in the database. Any of them without a file
+  // on disk belongs to a layer the host no longer loads.
+  executedNames: string[]
+}
+
+// Kysely refuses to run at all when an executed migration has no file, so a
+// layer removed from the host would block every later migration of every
+// other layer. Its executed migrations are re-declared as no-ops: still
+// recorded, never run again, never rolled back, tables left as they are.
+function removedLayerStub(name: string): Migration {
+  return {
+    up: async () => {},
+    down: async () => {
+      throw new Error(`Migration "${name}" belongs to a layer that is no longer loaded and cannot be rolled back`)
+    }
+  }
+}
+
+// The migration table only exists after the first run.
+async function readExecutedMigrationNames(db: Kysely<unknown>): Promise<string[]> {
+  const table = await sql<{ present: boolean }>`select to_regclass('kysely_migration') is not null as present`.execute(db)
+  if (!table.rows[0]?.present) return []
+  const rows = await sql<{ name: string }>`select name from kysely_migration`.execute(db)
+  return rows.rows.map(r => r.name)
 }
 
 class LayeredMigrationProvider implements MigrationProvider {
@@ -65,6 +89,12 @@ class LayeredMigrationProvider implements MigrationProvider {
       await collect(folder, true)
     }
 
+    const removed = this.opts.executedNames.filter(name => !migrations[name])
+    if (removed.length > 0) {
+      console.warn(`Migrations from layers no longer loaded, kept as executed: ${removed.join(', ')}`)
+      for (const name of removed) migrations[name] = removedLayerStub(name)
+    }
+
     return migrations
   }
 }
@@ -89,9 +119,11 @@ export default defineNitroPlugin(async () => {
   ]
   const tenancyFolders = ((config.tenancyMigrationPaths as string[] | undefined) || []).filter(Boolean)
 
+  const executedNames = await readExecutedMigrationNames(adminDb)
+
   const migrator = new Migrator({
     db: adminDb,
-    provider: new LayeredMigrationProvider({ regularFolders, tenancyFolders }),
+    provider: new LayeredMigrationProvider({ regularFolders, tenancyFolders, executedNames }),
     // Layers can ship new migrations whose names don't sort after every
     // already-executed one — allow unordered runs.
     allowUnorderedMigrations: true
