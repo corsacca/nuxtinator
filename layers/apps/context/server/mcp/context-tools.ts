@@ -9,7 +9,8 @@
 // which in multi mode resolves the org (the `org` input, else the
 // `X-Active-Org` header on the MCP HTTP request), enforces the bearer's
 // membership, and sets the active-org GUC; in single mode it is a plain
-// transaction.
+// transaction. The transaction spans the whole handler, so a tool that
+// returns an error has written nothing.
 //
 // `read_organization` is the source-API name — it returns the whole portfolio
 // (sections + content) for a given portfolio_id. The name is preserved for
@@ -258,7 +259,7 @@ export const readOrganizationTool = defineMcpTool({
 
 export const updateSectionTool = defineMcpTool({
   name: 'update_section',
-  description: 'Update the markdown content of a portfolio section. Creates a version snapshot. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection.',
+  description: 'Update the markdown content of a portfolio section. Creates a version snapshot. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection. Atomic: if the call returns an error, nothing was written.',
   scope: 'context.write',
   input: z.object({
     org: orgInput,
@@ -319,7 +320,7 @@ export const updateSectionTool = defineMcpTool({
 
 export const bulkUpdateSectionsTool = defineMcpTool({
   name: 'bulk_update_sections',
-  description: 'Update multiple portfolio sections in a single call. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still updated.',
+  description: 'Update multiple portfolio sections in a single call. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still updated. Runs as one transaction: if the call returns an error, every update in it was rolled back and nothing was written.',
   scope: 'context.write',
   input: z.object({
     org: orgInput,

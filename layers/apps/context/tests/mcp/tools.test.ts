@@ -1,9 +1,8 @@
 // MCP tool registry smoke test — confirms the 11 tools are declared with
 // the right scopes and that `update_section`'s optional optimistic-lock
-// field is intact. Full dispatch tests live in the MCP layer's own harness
-// (which exercises auth / scope gating / rate limits in isolation); driving
-// them via the booted Nuxt server here would require an issued OAuth token
-// per scope per test, which is overkill for a name/scope smoke.
+// field is intact. The write tools are driven end to end over /mcp in
+// write-tools.test.ts; auth / scope gating / rate limits are covered by the
+// MCP layer's own harness.
 import { describe, it, expect } from 'vitest'
 import { promises as fs } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -78,9 +77,7 @@ describe('context MCP tools file', () => {
     expect(stamped.length).toBe(2)
   })
 
-  // Full per-tool dispatch (auth / OAuth token / write semantics) is covered
-  // by the mcp layer's harness; an end-to-end JSON-RPC run from this project
-  // would need an OAuth client + access token per scope. Tracked as TODO.
+  // Read-tool dispatch over /mcp is not exercised here yet; write-tools.test.ts
+  // has the bearer-minting recipe to reuse.
   it.todo('dispatches each read tool via /mcp JSON-RPC with a valid bearer token')
-  it.todo('dispatches each write tool via /mcp JSON-RPC under an OAuth-issued token with context.write')
 })
