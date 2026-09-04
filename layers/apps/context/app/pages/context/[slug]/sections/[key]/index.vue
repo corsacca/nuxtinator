@@ -25,7 +25,6 @@ const editing = ref(false)
 const draft = ref(data.value?.content ?? '')
 const saving = ref(false)
 const error = ref<string | null>(null)
-const showAssistant = ref(false)
 const sidebarOpen = ref(false)
 
 watch(data, (next) => {
@@ -89,9 +88,6 @@ async function save() {
             {{ data.description }}
           </p>
         </div>
-        <UButton variant="ghost" icon="i-lucide-sparkles" size="sm" @click="showAssistant = !showAssistant">
-          Assistant
-        </UButton>
         <UButton variant="outline" icon="i-lucide-history" size="sm" :to="`/context/${slug}/sections/${key}/versions`">
           History
         </UButton>
@@ -126,10 +122,6 @@ async function save() {
             <ContextSectionPreview v-else :content="data.content" />
           </div>
         </div>
-
-        <SidebarPanel v-if="showAssistant" class="w-96 border-l border-(--ui-border) overflow-hidden">
-          <ContextAssistantPanel :slug="slug" :current-key="key" @applied="refresh" />
-        </SidebarPanel>
       </div>
 
       <footer class="flex items-center gap-3 px-3 py-1.5 border-t border-(--ui-border) bg-(--ui-bg) text-xs text-(--ui-text-muted)">

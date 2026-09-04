@@ -1,5 +1,5 @@
 // The `#ai/server` alias surface. Re-exports the OpenRouter client, model
-// catalog, per-org model resolution, and the feature registry for consumer
+// catalog, host-level model resolution, and the feature registry for consumer
 // layers. Mirrors the exact surface of core's `#ai/server` fallback
 // (ai-fallback/ai.ts) so consumers see one interface whether or not this layer
 // is loaded.

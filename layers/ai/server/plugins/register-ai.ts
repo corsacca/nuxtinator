@@ -10,12 +10,12 @@ import {
   sanitizeFeatureModels
 } from '../utils/ai-settings'
 
-// Single owner of the AI layer's boot registrations: the three `core_settings`
-// overrides (enabled models / custom ids / per-feature model choices) with their
-// code-owned defaults, plus the admin AI section. No permission slug — model
-// enablement is operator-admin (the shared API key spends the host's budget), so
-// the endpoints gate on requireOperatorAdmin and the section rides the
-// operator-gated /admin area with no requiredPermission.
+// Single owner of the AI layer's boot registrations: the three host-level
+// settings overrides (enabled models / custom ids / per-feature model choices)
+// with their code-owned defaults, plus the admin AI section. No permission
+// slug — model enablement is operator-admin (the shared API key spends the
+// host's budget), so the endpoints gate on requireOperatorAdmin and the section
+// rides the operator-gated /admin area with no requiredPermission.
 export default defineNitroPlugin(() => {
   registerSetting<string[]>({
     namespace: AI_SETTINGS_NAMESPACE,

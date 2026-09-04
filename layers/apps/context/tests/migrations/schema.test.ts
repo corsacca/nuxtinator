@@ -1,4 +1,4 @@
-// Migrations create the six context tables with the expected columns.
+// Migrations create the context tables with the expected columns.
 // Runs against the booted Nuxt server's DB (which ran every migration via
 // the core layer's Nitro migrations plugin).
 import { describe, it, expect } from 'vitest'
@@ -10,7 +10,9 @@ const TABLES = [
   'context_section_versions',
   'context_custom_section_definitions',
   'context_section_comments',
-  'context_section_comment_replies'
+  'context_section_comment_replies',
+  'context_assistant_conversations',
+  'context_assistant_messages'
 ] as const
 
 describe('schema migrations', () => {

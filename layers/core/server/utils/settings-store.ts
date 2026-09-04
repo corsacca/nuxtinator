@@ -10,6 +10,13 @@
 // already returns just this org's rows and inserts default `org_id` to the
 // active org. In single-tenant mode there is no org column and the store is
 // deployment-global. Callers pass the request `tx` and never touch org_id.
+//
+// Two scopes share the registry and the merge rule and differ only in table:
+// `getSetting` / `setSetting` use `core_settings` (org-scoped as above);
+// `getHostSetting` / `setHostSetting` use `core_host_settings`, which the
+// tenancy layer never retrofits, so one row is one value for the whole
+// deployment in either mode — for settings an operator admin decides once for
+// everyone (e.g. which AI models the shared API key may spend on).
 
 import { sql } from 'kysely'
 import { defineSettings, type DbClient, type SettingsReader } from './settings'
@@ -57,9 +64,54 @@ export async function getSetting<T = unknown>(
   namespace: string,
   key: string
 ): Promise<T> {
+  return readSetting<T>(tx, 'core_settings', namespace, key)
+}
+
+// Host-level counterpart of `getSetting`: the deployment-global override if
+// present, else the declared default.
+export async function getHostSetting<T = unknown>(
+  tx: DbClient,
+  namespace: string,
+  key: string
+): Promise<T> {
+  return readSetting<T>(tx, 'core_host_settings', namespace, key)
+}
+
+// Persist an override for one setting. The value is coerced through the
+// registered `parse` before storage; `writeSetting` holds the jsonb and
+// read-then-write mechanics.
+export async function setSetting(
+  tx: DbClient,
+  namespace: string,
+  key: string,
+  value: unknown
+): Promise<void> {
+  await writeSetting(tx, 'core_settings', namespace, key, value)
+}
+
+// Host-level counterpart of `setSetting`: persists a deployment-global override.
+export async function setHostSetting(
+  tx: DbClient,
+  namespace: string,
+  key: string,
+  value: unknown
+): Promise<void> {
+  await writeSetting(tx, 'core_host_settings', namespace, key, value)
+}
+
+// The two tables share one row shape; the scope helpers above differ only in
+// which one they hit.
+type SettingsTable = 'core_settings' | 'core_host_settings'
+
+async function readSetting<T>(
+  tx: DbClient,
+  table: SettingsTable,
+  namespace: string,
+  key: string
+): Promise<T> {
   const def = requireSetting(namespace, key)
   const row = await tx
-    .selectFrom('core_settings')
+    .selectFrom(table)
     .select('value')
     .where('namespace', '=', namespace)
     .where('key', '=', key)
@@ -68,17 +120,17 @@ export async function getSetting<T = unknown>(
   return (def.parse ? def.parse(raw) : raw) as T
 }
 
-// Persist an override for one setting. The value is coerced through the
-// registered `parse` before storage and written as jsonb via a `::text::jsonb`
-// cast: the intermediate ::text stops postgres-js from JSON-encoding the
-// already-stringified value a SECOND time, which would store an array/object
-// setting as a jsonb string scalar instead of a real jsonb array/object.
-// Read-then-write keeps this mode-agnostic: the unique key is `(namespace,
-// key)` in single mode but `(org_id, namespace, key)` in multi mode, so
-// there's no single ON CONFLICT target valid in both — and RLS already scopes
-// the read/write to the active org.
-export async function setSetting(
+// The value is written as jsonb via a `::text::jsonb` cast: the intermediate
+// ::text stops postgres-js from JSON-encoding the already-stringified value a
+// SECOND time, which would store an array/object setting as a jsonb string
+// scalar instead of a real jsonb array/object. Read-then-write keeps this
+// mode-agnostic: `core_settings` is unique on `(namespace, key)` in single mode
+// but `(org_id, namespace, key)` in multi mode, so there's no single ON
+// CONFLICT target valid in both — and RLS already scopes the read/write to the
+// active org.
+async function writeSetting(
   tx: DbClient,
+  table: SettingsTable,
   namespace: string,
   key: string,
   value: unknown
@@ -88,7 +140,7 @@ export async function setSetting(
   const json = sql`${JSON.stringify(parsed ?? null)}::text::jsonb`
 
   const existing = await tx
-    .selectFrom('core_settings')
+    .selectFrom(table)
     .select('id')
     .where('namespace', '=', namespace)
     .where('key', '=', key)
@@ -96,14 +148,14 @@ export async function setSetting(
 
   if (existing) {
     await tx
-      .updateTable('core_settings')
+      .updateTable(table)
       .set({ value: json, updated_at: sql`now()` })
       .where('namespace', '=', namespace)
       .where('key', '=', key)
       .execute()
   } else {
     await tx
-      .insertInto('core_settings')
+      .insertInto(table)
       .values({ namespace, key, value: json })
       .execute()
   }

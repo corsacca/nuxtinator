@@ -62,6 +62,41 @@ export interface ContextSectionCommentRepliesTable {
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
+export type ContextAssistantProposalStatus = 'pending' | 'applied' | 'rejected'
+
+// One section update the assistant proposed in a message. Stored as JSON on
+// the message so it can be applied or rejected later; `status` records the
+// user's decision.
+export interface ContextAssistantProposal {
+  portfolio_slug: string
+  portfolio_name: string
+  section_key: string
+  section_title: string
+  current_content: string
+  proposed_content: string
+  status: ContextAssistantProposalStatus
+}
+
+export interface ContextAssistantConversationsTable {
+  id: Generated<string>
+  user_id: string
+  portfolio_id: string | null
+  section_key: string | null
+  title: Generated<string>
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+  updated_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
+export interface ContextAssistantMessagesTable {
+  id: Generated<string>
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  proposals: Generated<ContextAssistantProposal[]>
+  context_loaded: Generated<string[]>
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
 declare global {
   interface NuxtinatorDatabaseTables {
     context_portfolios: ContextPortfoliosTable
@@ -70,5 +105,7 @@ declare global {
     context_custom_section_definitions: ContextCustomSectionDefinitionsTable
     context_section_comments: ContextSectionCommentsTable
     context_section_comment_replies: ContextSectionCommentRepliesTable
+    context_assistant_conversations: ContextAssistantConversationsTable
+    context_assistant_messages: ContextAssistantMessagesTable
   }
 }

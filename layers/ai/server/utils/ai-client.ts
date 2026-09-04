@@ -9,11 +9,18 @@ import type {
   AiTextPart
 } from '#core/ai-fallback/types'
 import { supportsTemperature } from './ai-models'
+import { runCompletionLoop, type ProviderCall } from './ai-tool-loop'
+import { aiFakeComplete, aiFakeGenerate } from './ai-test-fake'
 
 // OpenRouter client. OpenRouter is OpenAI-compatible, so this is a plain fetch
 // to `${baseUrl}/chat/completions` — no SDK, sidestepping the `@anthropic-ai/sdk`
-// bundling caveats. `generate()` forces a single tool call and returns its
-// parsed arguments as structured output; `complete()` returns assistant text.
+// bundling caveats. `complete()` returns assistant text, resolving any tool
+// calls the model makes through the caller's handler (see ai-tool-loop.ts);
+// `generate()` forces a single tool call and returns its parsed arguments as
+// structured output.
+//
+// Under VITEST both route to the primeable fake in ai-test-fake.ts instead of
+// the network.
 //
 // Error contract (consumers branch on these): 503 = not configured; 502 =
 // transient upstream (retry); 500 = auth/other misconfig (check server logs).
@@ -64,15 +71,14 @@ function toApiMessages(system: AiContent | undefined, messages: AiMessage[]): un
 
 function buildBody(
   model: string,
-  system: AiContent | undefined,
-  messages: AiMessage[],
+  apiMessages: unknown[],
   maxTokens: number,
   temperature: number | undefined,
   extra: Record<string, unknown>
 ): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model,
-    messages: toApiMessages(system, messages),
+    messages: apiMessages,
     max_tokens: maxTokens
   }
   // Only send sampling params to models that accept them — some models 400 on
@@ -131,21 +137,43 @@ async function callOpenRouter(body: Record<string, unknown>): Promise<any> {
   return res.json()
 }
 
-export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResult> {
-  if (process.env.VITEST) {
-    return { text: `[[stub:${opts.model}]]`, model: opts.model, finishReason: 'stop' }
+// One chat-completions round trip in the shape the tool loop consumes.
+function providerCall(model: string, maxTokens: number, temperature: number | undefined): ProviderCall {
+  return async (apiMessages, apiTools) => {
+    const data = await callOpenRouter(
+      buildBody(model, apiMessages, maxTokens, temperature, apiTools ? { tools: apiTools } : {})
+    )
+    const choice = data.choices?.[0]
+    const finishReason: string = choice?.finish_reason ?? 'stop'
+    if (finishReason === 'length') {
+      throw createError({ statusCode: 502, statusMessage: 'The AI response was cut off. Try again.' })
+    }
+    const rawCalls: any[] = Array.isArray(choice?.message?.tool_calls) ? choice.message.tool_calls : []
+    return {
+      text: String(choice?.message?.content ?? '').trim(),
+      finishReason,
+      toolCalls: rawCalls.map(tc => ({
+        id: String(tc.id ?? ''),
+        name: String(tc.function?.name ?? ''),
+        arguments: String(tc.function?.arguments ?? '')
+      }))
+    }
   }
+}
 
-  const data = await callOpenRouter(
-    buildBody(opts.model, opts.system, opts.messages, opts.maxTokens ?? 2048, opts.temperature, {})
+export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResult> {
+  if (process.env.VITEST) return aiFakeComplete(opts)
+
+  const result = await runCompletionLoop(
+    providerCall(opts.model, opts.maxTokens ?? 2048, opts.temperature),
+    {
+      apiMessages: toApiMessages(opts.system, opts.messages),
+      tools: opts.tools,
+      onToolCall: opts.onToolCall,
+      maxToolRounds: opts.maxToolRounds ?? 4
+    }
   )
-  const choice = data.choices?.[0]
-  const finishReason: string = choice?.finish_reason ?? 'stop'
-  if (finishReason === 'length') {
-    throw createError({ statusCode: 502, statusMessage: 'The AI response was cut off. Try again.' })
-  }
-  const text = String(choice?.message?.content ?? '').trim()
-  return { text, model: opts.model, finishReason }
+  return { ...result, model: opts.model }
 }
 
 // Force the model to call `opts.tool` and return its parsed arguments. A
@@ -154,11 +182,9 @@ export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResul
 export async function generate<T = Record<string, unknown>>(
   opts: AiGenerateOptions
 ): Promise<AiGenerateResult<T>> {
-  if (process.env.VITEST) {
-    return { input: stubToolInput(opts) as T, model: opts.model, finishReason: 'tool_calls' }
-  }
+  if (process.env.VITEST) return aiFakeGenerate<T>(opts)
 
-  const body = buildBody(opts.model, opts.system, opts.messages, opts.maxTokens ?? 8192, opts.temperature, {
+  const body = buildBody(opts.model, toApiMessages(opts.system, opts.messages), opts.maxTokens ?? 8192, opts.temperature, {
     tools: [
       {
         type: 'function',
@@ -196,32 +222,4 @@ export async function generate<T = Record<string, unknown>>(
     throw createError({ statusCode: 502, statusMessage: 'The AI returned an unparseable result. Try again.' })
   }
   return { input, model: opts.model, finishReason }
-}
-
-// Deterministic schema-shaped stub for VITEST: fills each declared property with
-// a value of the right JSON type so a consumer's `required` fields are present.
-function stubToolInput(opts: AiGenerateOptions): Record<string, unknown> {
-  const schema = opts.tool.parameters as { properties?: Record<string, { type?: string }> }
-  const props = schema.properties ?? {}
-  const out: Record<string, unknown> = {}
-  for (const [key, spec] of Object.entries(props)) {
-    switch (spec?.type) {
-      case 'number':
-      case 'integer':
-        out[key] = 0
-        break
-      case 'boolean':
-        out[key] = false
-        break
-      case 'array':
-        out[key] = []
-        break
-      case 'object':
-        out[key] = {}
-        break
-      default:
-        out[key] = `stub-${key}`
-    }
-  }
-  return out
 }

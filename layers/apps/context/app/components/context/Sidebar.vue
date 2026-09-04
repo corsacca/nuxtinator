@@ -35,4 +35,6 @@ watch(() => route.path, () => { open.value = false })
       </SidebarPanel>
     </template>
   </USlideover>
+
+  <ContextAssistantLauncher />
 </template>

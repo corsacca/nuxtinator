@@ -1,29 +1,29 @@
 // GET /api/ai/status[?feature=<key>]
 // Lightweight, auth-gated readiness probe for consumer client UIs (e.g. the
-// inbox AI button) to decide whether to surface AI features. Runs in the org tx
-// so the enabled set / feature resolution reflect the active org.
+// inbox AI button) to decide whether to surface AI features. Model config is
+// host-level, so the answer is the same from every org.
 //
 //   configured        — an API key is present (live generation possible)
-//   hasEnabledModel    — the org has at least one model enabled
+//   hasEnabledModel    — at least one model is enabled
 //   featureAvailable   — for the given feature, it resolves to an enabled model
 //                        (or, with no feature, that any model is enabled)
 import { getQuery } from 'h3'
-import { withOrgContext } from '#tenant/server'
+import { requireAuth } from '#core/server/utils/auth'
+import { db } from '#core/server/utils/database'
 import { isAiConfigured, getEnabledModelIds, getFeatureModel } from '#ai/server'
 
 export default defineEventHandler(async (event) => {
+  requireAuth(event)
   const feature = String(getQuery(event).feature ?? '').trim()
 
-  return withOrgContext(event, async (tx) => {
-    const configured = isAiConfigured()
-    const enabled = await getEnabledModelIds(tx)
-    const hasEnabledModel = enabled.length > 0
-    const featureModel = feature ? await getFeatureModel(tx, feature) : ''
+  const configured = isAiConfigured()
+  const enabled = await getEnabledModelIds(db)
+  const hasEnabledModel = enabled.length > 0
+  const featureModel = feature ? await getFeatureModel(db, feature) : ''
 
-    return {
-      configured,
-      hasEnabledModel,
-      featureAvailable: configured && (feature ? enabled.includes(featureModel) : hasEnabledModel)
-    }
-  })
+  return {
+    configured,
+    hasEnabledModel,
+    featureAvailable: configured && (feature ? enabled.includes(featureModel) : hasEnabledModel)
+  }
 })

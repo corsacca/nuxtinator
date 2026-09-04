@@ -1,13 +1,15 @@
-import { getSetting } from '#core/server/utils/settings-store'
+import { getHostSetting } from '#core/server/utils/settings-store'
 import type { AiDbClient, AiModelInfo } from '#core/ai-fallback/types'
 import { AI_MODEL_CATALOG, AI_DEFAULT_MODEL, getCatalogEntry } from './ai-models'
 
 // The DB-backed half of the AI layer's model config. Everything here is an
 // override on top of the code-owned catalog (ai-models.ts): reads merge the
-// registered defaults with the `core_settings` (namespace `ai`) overrides, so
-// adding a model or changing a default is never a migration. In multi-tenant
-// mode `core_settings` is RLS-scoped, so this is per-org; in single mode it's
-// deployment-global. Callers pass the request `tx`.
+// registered defaults with the `core_host_settings` (namespace `ai`) overrides,
+// so adding a model or changing a default is never a migration. The config is
+// host-level — one enabled set for the whole deployment in both single- and
+// multi-tenant mode, because every model spends the deployment's shared API
+// key. Callers pass any db client; a request `tx` inside an org transaction
+// reads the same rows.
 
 export const AI_SETTINGS_NAMESPACE = 'ai'
 
@@ -68,13 +70,13 @@ export function modelInfo(id: string): AiModelInfo {
   return { id, label: id, supportsTemperature: false, supportsCaching: false, custom: true }
 }
 
-// The ids an org has enabled: the stored enabled set, narrowed to models that
+// The ids the deployment has enabled: the stored enabled set, narrowed to models that
 // actually exist (catalog entry or a registered custom id) so a removed model
 // can't linger as enabled.
 export async function getEnabledModelIds(tx: AiDbClient): Promise<string[]> {
   const [enabled, custom] = await Promise.all([
-    getSetting<string[]>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_ENABLED_MODELS),
-    getSetting<string[]>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_CUSTOM_MODELS)
+    getHostSetting<string[]>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_ENABLED_MODELS),
+    getHostSetting<string[]>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_CUSTOM_MODELS)
   ])
   const known = new Set<string>([...AI_MODEL_CATALOG.map(m => m.id), ...sanitizeModelIdList(custom)])
   return sanitizeModelIdList(enabled).filter(id => known.has(id))
@@ -92,7 +94,7 @@ export async function getEnabledModels(tx: AiDbClient): Promise<AiModelInfo[]> {
 // returns AI_DEFAULT_MODEL as a last resort so a request never runs model-less.
 export async function getFeatureModel(tx: AiDbClient, feature: string): Promise<string> {
   const [featureModels, enabled] = await Promise.all([
-    getSetting<Record<string, string>>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_FEATURE_MODELS),
+    getHostSetting<Record<string, string>>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_FEATURE_MODELS),
     getEnabledModelIds(tx)
   ])
   const chosen = sanitizeFeatureModels(featureModels)[feature]

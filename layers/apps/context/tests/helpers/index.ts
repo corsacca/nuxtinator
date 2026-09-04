@@ -8,6 +8,7 @@
 // sections, comments, etc.
 import type postgres from 'postgres'
 import { randomUUID } from 'node:crypto'
+import { $fetch } from '@nuxt/test-utils/e2e'
 import {
   createTestUser,
   getAuthHeaders,
@@ -19,7 +20,50 @@ import {
 } from 'layer-tenancy/test-helpers'
 
 export * from 'layer-tenancy/test-helpers'
-export * from './assistant'
+
+// --- The AI fake ---
+//
+// Under VITEST the AI layer routes every model call to a primeable fake and
+// exposes it at `/api/_test/ai`. Assistant tests script the next reply (and
+// any tool calls the model "makes") and read back what it was asked.
+
+export interface AiFakeScript {
+  text?: string
+  toolCalls?: Array<{ name: string, input: Record<string, unknown> }>
+}
+
+export interface AiFakeCall {
+  kind: 'complete' | 'generate'
+  model: string
+  system: string | undefined
+  messages: Array<{ role: string, content: string }>
+  tools: string[]
+  toolResults: Array<{ name: string, input: Record<string, unknown>, result: string }>
+}
+
+export async function primeAiFake(script: AiFakeScript): Promise<void> {
+  await $fetch('/api/_test/ai', { method: 'POST', body: script })
+}
+
+export async function getAiFakeLog(): Promise<AiFakeCall[]> {
+  return await $fetch<AiFakeCall[]>('/api/_test/ai')
+}
+
+export async function resetAiFake(): Promise<void> {
+  await $fetch('/api/_test/ai', { method: 'DELETE' })
+}
+
+// Render a section-update block the way the assistant prompt asks the model
+// to, so a primed reply exercises the real parser.
+export function sectionUpdateBlock(u: { portfolio?: string, section_key: string, section_title: string, content: string }): string {
+  return '```section-update\n'
+    + (u.portfolio ? `PORTFOLIO: ${u.portfolio}\n` : '')
+    + `SECTION_KEY: ${u.section_key}\n`
+    + `SECTION_TITLE: ${u.section_title}\n`
+    + '---\n'
+    + `${u.content}\n`
+    + '```'
+}
 
 // Users / orgs are tagged with `test-context-` so per-layer cleanup stays
 // scoped. Anything tagged `test-tenancy-` or `test-core-` is owned by other
@@ -130,6 +174,10 @@ export async function seedTestCustomSection(
 // test-context-/test-tenancy-/test-core- user is fair game. Activity logs
 // authored by those users also get swept.
 export async function cleanupContextTestData(sql: ReturnType<typeof postgres>): Promise<void> {
+  await sql`
+    DELETE FROM context_assistant_conversations
+    WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'test-%@example.com')
+  `
   // Comment replies cascade off comments, comments cascade off sections,
   // sections cascade off portfolios. Belt-and-braces: explicit deletes for
   // any leak rows whose author/editor is a test user but whose parent

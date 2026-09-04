@@ -41,18 +41,36 @@ export interface AiTool {
   parameters: Record<string, unknown>
 }
 
+// Resolves one tool call the model made during `complete`. The returned string
+// is fed back to the model as the tool result.
+export type AiToolHandler = (name: string, input: Record<string, unknown>) => Promise<string> | string
+
+export interface AiToolCallRecord {
+  name: string
+  input: Record<string, unknown>
+}
+
 export interface AiCompleteOptions {
   model: string
   system?: AiContent
   messages: AiMessage[]
   maxTokens?: number
   temperature?: number
+  // Tools the model may call. Each call is resolved through `onToolCall` and
+  // its result appended to the conversation before the model is asked again.
+  // After `maxToolRounds` rounds (default 4) one final call runs without tools
+  // so the model must answer in text.
+  tools?: AiTool[]
+  onToolCall?: AiToolHandler
+  maxToolRounds?: number
 }
 
 export interface AiCompleteResult {
   text: string
   model: string
   finishReason: string
+  // Tool calls resolved while producing this answer, in order.
+  toolCalls: AiToolCallRecord[]
 }
 
 export interface AiGenerateOptions {

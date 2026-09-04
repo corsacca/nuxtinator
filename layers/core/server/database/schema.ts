@@ -110,6 +110,18 @@ export interface CoreSettingsTable {
   updated_at: ColumnType<Date, string | undefined, string>
 }
 
+// Deployment-global settings store. Same row shape and merge rule as
+// `core_settings`, but the tenancy layer never retrofits this table, so one
+// row is one value for the whole deployment in either mode. Read and written
+// only through `getHostSetting` / `setHostSetting` (settings-store.ts).
+export interface CoreHostSettingsTable {
+  id: Generated<string>
+  namespace: string
+  key: string
+  value: ColumnType<unknown, unknown, unknown>
+  updated_at: ColumnType<Date, string | undefined, string>
+}
+
 // Per-user additive permission grants — effective perms = role perms ∪ these
 // rows (see rbac + the tenant kernels). `permission` is a slug; the runtime
 // permissions registry decides whether a stored slug still grants anything.
@@ -154,6 +166,7 @@ export interface CoreDatabase {
   apps: AppsTable
   notifications: NotificationsTable
   core_settings: CoreSettingsTable
+  core_host_settings: CoreHostSettingsTable
   user_permission_grants: UserPermissionGrantsTable
 }
 

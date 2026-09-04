@@ -42,6 +42,13 @@ describe('ai admin config', () => {
     await expect(getConfig(opts)).rejects.toMatchObject({ statusCode: 403 })
   })
 
+  it('answers without an active org (the /admin/ai page sends none)', async () => {
+    const { auth } = await createAiOrg(sql)
+    const config = await getConfig(auth)
+    expect(config.configured).toBe(true)
+    expect(config.models.length).toBeGreaterThan(0)
+  })
+
   it('reports configured (VITEST) and the default-enabled catalog', async () => {
     const { opts } = await createAiOrg(sql)
     const config = await getConfig(opts)
@@ -89,14 +96,14 @@ describe('ai admin config', () => {
     expect(custom!.enabled).toBe(true)
   })
 
-  it('keeps org config isolated', async () => {
+  it('shares one config across orgs (host-level)', async () => {
     const a = await createAiOrg(sql)
     const b = await createAiOrg(sql)
     await putConfig(a.opts, { enabled_models: ['openai/gpt-4.1'] })
     const configB = await getConfig(b.opts)
-    // B still sees the catalog defaults, not A's override.
-    expect(configB.models.find(m => m.id === 'anthropic/claude-sonnet-4.5')!.enabled).toBe(true)
-    expect(configB.models.find(m => m.id === 'openai/gpt-4.1')!.enabled).toBe(false)
+    // B sees A's override: the enabled set is deployment-wide.
+    expect(configB.models.find(m => m.id === 'openai/gpt-4.1')!.enabled).toBe(true)
+    expect(configB.models.find(m => m.id === 'anthropic/claude-sonnet-4.5')!.enabled).toBe(false)
   })
 })
 

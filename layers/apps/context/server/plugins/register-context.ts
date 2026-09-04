@@ -2,6 +2,8 @@ import { registerPermissions } from '#core/server/utils/permissions-registry'
 import { registerDefaultGrants } from '#core/server/utils/default-grants-registry'
 import { registerApp } from '#core/server/utils/app-registry'
 import { registerNavItem } from '#core/server/utils/nav-registry'
+import { registerAiFeature } from '#ai/server'
+import { CONTEXT_ASSISTANT_FEATURE } from '../utils/assistant'
 import {
   CONTEXT_PERMISSIONS,
   CONTEXT_PERMISSION_META,
@@ -11,6 +13,14 @@ import {
 export default defineNitroPlugin(() => {
   registerPermissions(CONTEXT_PERMISSIONS, CONTEXT_PERMISSION_META)
   registerDefaultGrants('context', CONTEXT_DEFAULT_GRANTS)
+
+  // The admin AI page shows a model picker for this. A no-op when the AI layer
+  // isn't loaded (core ships a fallback).
+  registerAiFeature({
+    key: CONTEXT_ASSISTANT_FEATURE,
+    label: 'Context — portfolio assistant',
+    description: 'Chats about portfolios and proposes section updates.'
+  })
 
   registerApp({
     id: 'context',

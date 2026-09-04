@@ -30,6 +30,18 @@ export async function getPortfolioBySlug(
   return (row as PortfolioRow | undefined) ?? null
 }
 
+export async function getPortfolioById(
+  tx: Transaction<Database>,
+  id: string
+): Promise<PortfolioRow | null> {
+  const row = await tx
+    .selectFrom('context_portfolios')
+    .select(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
+    .where('id', '=', id)
+    .executeTakeFirst()
+  return (row as PortfolioRow | undefined) ?? null
+}
+
 export async function getPortfolioBySlugOr404(
   tx: Transaction<Database>,
   slug: string

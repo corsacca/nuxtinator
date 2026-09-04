@@ -9,11 +9,13 @@ model powers each AI feature.
 
 - **`#ai/server`** — server helpers for consumer layers:
   - `isAiConfigured()` — is an API key present (gate your UI on this).
-  - `complete(opts)` — chat completion → assistant text.
+  - `complete(opts)` — chat completion → assistant text. Pass `tools` plus an
+    `onToolCall` handler and the model may call them; each result is fed back
+    and the loop ends on a text answer (or a forced one after `maxToolRounds`).
   - `generate(opts)` — force a single tool call, return its parsed arguments as
     structured output (the pattern for AI-drafting, extraction, classification).
   - `getFeatureModel(tx, featureKey)` / `getEnabledModels(tx)` — resolve the
-    per-org model for a feature.
+    deployment's model for a feature.
   - `registerAiFeature({ key, label })` — declare a capability so it appears in
     the admin model picker.
 - **Admin → AI** page (`/admin/ai`, operator-admin) — enable/disable models, add
@@ -67,11 +69,26 @@ const { input } = await generate<{ reply: string }>({
 })
 ```
 
+## Testing against the fake
+
+Under VITEST the client never touches the network: `complete()` and `generate()`
+route to a primeable fake. Script it over `/api/_test/ai` (only served under
+VITEST) with the helpers exported from this layer's `tests/helpers`:
+
+```ts
+await primeAiFake({ text: 'Here is the answer.', toolCalls: [{ name: 'load_section', input: { section_key: 'team' } }] })
+// ... call your endpoint ...
+const log = await getAiFakeLog()   // what the model was asked, and each tool result
+await resetAiFake()
+```
+
 ## Notes
 
-- **Model config is per-org** in multi-tenant mode (stored in `core_settings`,
-  namespace `ai`) and deployment-global in single-tenant mode. Only the explicit
-  enable/disable, custom ids, and per-feature choices are persisted — the model
+- **Model config is host-level** (stored in `core_host_settings`, namespace
+  `ai`): one enabled set for the whole deployment in both single- and
+  multi-tenant mode, since every model spends the deployment's shared API key.
+  Only the explicit enable/disable, custom ids, and per-feature choices are
+  persisted — the model
   catalog and its defaults live in code ([server/utils/ai-models.ts](server/utils/ai-models.ts)).
   Adding a model or changing a default is a code edit, never a migration.
 - **Sampling params are guarded per model.** Some models reject `temperature`;

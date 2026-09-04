@@ -31,7 +31,7 @@ onto OpenRouter so any layer can use it.
   JSON, not an error).
 - **Persisted-state: catalog in code, overrides in DB.** [server/utils/ai-models.ts](server/utils/ai-models.ts)
   is the code-owned catalog (id, label, capability flags, default-enabled).
-  `core_settings` namespace `ai` stores only `enabled_models` / `custom_models` /
+  `core_host_settings` namespace `ai` (deployment-global) stores only `enabled_models` / `custom_models` /
   `feature_models` overrides. Adding a model or default is a code edit, not a
   migration. **No migration in this layer.**
 - **Free-text custom model ids.** Beyond the curated catalog, an admin can add
@@ -41,12 +41,12 @@ onto OpenRouter so any layer can use it.
 - **Per-feature model, not one global model.** Consumers `registerAiFeature`;
   each feature resolves its own model (`getFeatureModel`), falling back to the
   default model, then any enabled model.
-- **Model config gated on operator-admin, scoped to the active org.** Model
-  enablement spends the shared API budget, so the admin endpoints use
-  `requireOperatorAdmin`; they write org-scoped `core_settings` via `withOrgContext`
-  (per-org in multi mode, deployment-global in single mode). The `/admin/ai`
-  section carries no `requiredPermission` — it rides the operator-gated `/admin`
-  area.
+- **Model config gated on operator-admin, host-level.** Model enablement spends
+  the shared API budget, so the admin endpoints use `requireOperatorAdmin` and
+  read/write the deployment-global `core_host_settings` store (`getHostSetting`
+  / `setHostSetting`) with no org context — `/admin/ai` lives under the org-less
+  `/admin` area, so its requests never carry an active org. The section carries
+  no `requiredPermission` — it rides the operator-gated `/admin` area.
 
 ## Gotchas (hard-won)
 
@@ -58,10 +58,12 @@ onto OpenRouter so any layer can use it.
    (`$fetch<T, string>(...)`) so `$fetch` resolves against the fallback branch
    instead of deep-walking the route union. Watch for this when adding endpoints.
 2. **VITEST short-circuits at the network boundary.** `isAiConfigured()` returns
-   true under VITEST (no key needed); `generate`/`complete` return deterministic
-   stubs. `generate`'s stub is schema-shaped — it fills each declared tool
-   property with a value of the right JSON type, so a consumer's `required`
-   fields are present in tests.
+   true under VITEST (no key needed); `generate`/`complete` route to the
+   primeable fake in [server/utils/ai-test-fake.ts](server/utils/ai-test-fake.ts).
+   Unprimed, `complete` returns `[[stub:<model>]]` and `generate` a schema-shaped
+   stub (each declared tool property filled with a value of the right JSON
+   type, so a consumer's `required` fields are present). Suites script answers
+   and tool calls over `/api/_test/ai` and read back the call log.
 3. **New server files need a dev-server restart** (Nitro's dev scan misses files
    created after boot — the register plugin silently won't run). Same as every
    other layer.
@@ -69,7 +71,9 @@ onto OpenRouter so any layer can use it.
 ## Files
 
 - Client: [server/utils/ai-client.ts](server/utils/ai-client.ts) (OpenRouter fetch,
-  error map, VITEST stub) · catalog [server/utils/ai-models.ts](server/utils/ai-models.ts)
+  error map) · tool loop [server/utils/ai-tool-loop.ts](server/utils/ai-tool-loop.ts)
+  (pure, unit-tested) · VITEST fake [server/utils/ai-test-fake.ts](server/utils/ai-test-fake.ts)
+  + control route [server/routes/api/_test/ai.ts](server/routes/api/_test/ai.ts) · catalog [server/utils/ai-models.ts](server/utils/ai-models.ts)
   · settings [server/utils/ai-settings.ts](server/utils/ai-settings.ts) · feature
   registry [server/utils/ai-feature-registry.ts](server/utils/ai-feature-registry.ts).
 - Barrel: [server/exports/index.ts](server/exports/index.ts) (`#ai/server`) ·
@@ -80,14 +84,17 @@ onto OpenRouter so any layer can use it.
   · [server/routes/api/ai/status.get.ts](server/routes/api/ai/status.get.ts).
 - Admin UI: [app/pages/admin/ai/index.vue](app/pages/admin/ai/index.vue).
 - Tests: [tests/unit/ai-models.test.ts](tests/unit/ai-models.test.ts) (pure) ·
+  [tests/unit/ai-tool-loop.test.ts](tests/unit/ai-tool-loop.test.ts) (pure) ·
   [tests/api/ai-admin.test.ts](tests/api/ai-admin.test.ts) (endpoints, gating,
-  merge, sanitization, org isolation).
+  merge, sanitization, cross-org sharing).
+
+## Consumers
+
+- inbox — `generate` for draft replies and knowledge extraction.
+- context — `complete` with `load_section` / `load_portfolio` tools for the
+  portfolio assistant (feature `context.assistant`).
 
 ## Follow-ups
 
-- **Retire the `context` layer's ad-hoc `anthropic-client.ts`** — the plan notes
-  the AI layer should absorb it. Not done yet; `context` still calls
-  `@anthropic-ai/sdk` directly. A separate refactor: make `context` a `#ai/server`
-  consumer.
 - Real generation is only exercisable with `OPENROUTER_API_KEY` set (tests use
   the VITEST stub). Smoke-test live once a key is wired.

@@ -30,4 +30,16 @@ describe('rls (multi-tenant test mode)', () => {
     `
     expect(rows.some(r => r.policyname === 'tenant_isolation')).toBe(true)
   })
+
+  it('context_assistant_conversations is tenant-scoped directly', async () => {
+    const cols = await sql<{ column_name: string }[]>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'context_assistant_conversations'
+    `
+    expect(cols.map(r => r.column_name)).toContain('org_id')
+    const policies = await sql<{ policyname: string }[]>`
+      SELECT policyname FROM pg_policies WHERE tablename = 'context_assistant_conversations'
+    `
+    expect(policies.some(r => r.policyname === 'tenant_isolation')).toBe(true)
+  })
 })

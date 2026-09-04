@@ -295,16 +295,14 @@ test('export: full-portfolio zip download returns a zip', async ({ page }) => {
 
 // ─── assistant chat ───────────────────────────────────────────────────────
 //
-// The assistant chat needs the Anthropic SDK stubbed via the test-only
-// `server/plugins/test-anthropic.ts` plugin, which only mounts when the
-// spawned Nuxt server is booted with `CONTEXT_TEST_ANTHROPIC=1`. The host's
-// Playwright webServer doesn't set that env var, so without a config change
-// the assistant routes call the real Anthropic API (or fail if no key).
-//
-// Wiring this up is a dev/playwright.config.ts edit + adding the env var.
-// Deferred for now — the assistant logic is already covered by the vitest
-// suite (`tests/assistant/chat.test.ts`) which boots a separate Nuxt server
-// with the env var set.
+// The assistant runs through `#ai/server`, which only swaps in its primeable
+// fake (and the `/api/_test/ai` control route) when the server process has
+// `VITEST` set. The Playwright webServer runs without it, so the launcher
+// stays hidden (no OPENROUTER_API_KEY → feature unavailable) and a real send
+// would reach OpenRouter. Setting VITEST on the webServer would also flip the
+// mailgun / inbox network stubs for the whole e2e suite, so this stays
+// deferred; the vitest suite (`tests/assistant/chat.test.ts`) covers the
+// conversation flow end to end against the fake.
 test.fixme('assistant: opening panel and sending a message round-trips through the fake', async () => {})
 
 // ─── comments ─────────────────────────────────────────────────────────────

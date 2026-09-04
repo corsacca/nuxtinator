@@ -8,15 +8,16 @@
     "./test-helpers": "./tests/helpers/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.1",
     "archiver": "^7.0.1",
+    "diff": "^8.0.4",
     "dompurify": "^3.4.13",
     "marked": "^14.1.0"
   },
   "optionalDependencies": {
+    "@nuxtinator/ai": "*",
     "@nuxtinator/core": "*",
-    "@nuxtinator/tenancy": "*",
-    "@nuxtinator/mcp": "*"
+    "@nuxtinator/mcp": "*",
+    "@nuxtinator/tenancy": "*"
   },
   "devDependencies": {
     "@types/archiver": "^6.0.3",

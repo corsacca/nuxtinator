@@ -56,7 +56,8 @@ export const CONTEXT_DEFAULT_GRANTS = {
     'context.access',
     'context.read',
     'context.write',
-    'context.assistant.chat'
+    'context.assistant.chat',
+    'context.assistant.apply'
   ],
   admin: [...CONTEXT_PERMISSIONS]
 } as const
