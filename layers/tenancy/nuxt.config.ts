@@ -6,6 +6,7 @@ export default defineNuxtConfig({
   modules: [
     fileURLToPath(new URL('./modules/tenant-kernel.ts', import.meta.url)),
     fileURLToPath(new URL('./modules/tenant-pages-extend.ts', import.meta.url)),
+    fileURLToPath(new URL('./modules/tenant-fetch-template.ts', import.meta.url)),
     fileURLToPath(new URL('./modules/tenant-migrations.ts', import.meta.url))
   ],
 

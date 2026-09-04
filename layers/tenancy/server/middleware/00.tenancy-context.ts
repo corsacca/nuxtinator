@@ -9,7 +9,7 @@
 //      filesystem router doesn't reliably resolve `@` literals in path
 //      segments the way Vue Router does for pages.)
 //   2. `X-Active-Org` header — for app-layer APIs at `/api/<app>/...`. The
-//      client-side fetch interceptor injects it from the current page route.
+//      tenancy layer's `$fetch` instance injects it from the current page URL.
 //
 // Membership validation runs once here so handlers don't repeat it. Bare
 // admin endpoints (`/api/admin/*` without `/orgs/:orgId`) skip this — they
