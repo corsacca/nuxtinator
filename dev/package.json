@@ -31,6 +31,7 @@
     "@nuxtinator/email-mailgun": "workspace:*",
     "@nuxtinator/feedback": "workspace:*",
     "@nuxtinator/files": "workspace:*",
+    "@nuxtinator/gmail": "workspace:*",
     "@nuxtinator/inbox": "workspace:*",
     "@nuxtinator/list-of-100": "workspace:*",
     "@nuxtinator/mcp": "workspace:*",

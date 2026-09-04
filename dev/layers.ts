@@ -35,5 +35,6 @@ export const LAYERS = [
   { id: 'context', pkg: '@nuxtinator/context' },
   { id: 'crm', pkg: '@nuxtinator/crm' },
   { id: 'inbox', pkg: '@nuxtinator/inbox' },
+  { id: 'gmail', pkg: '@nuxtinator/gmail' },
   { id: 'dev', pkg: '@nuxtinator/dev' }
 ] as const

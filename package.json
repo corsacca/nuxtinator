@@ -21,7 +21,8 @@
     "layers/apps/files",
     "layers/apps/context",
     "layers/apps/crm",
-    "layers/apps/inbox"
+    "layers/apps/inbox",
+    "layers/apps/gmail"
   ],
   "//overrides": "Minimum patched versions for transitive dependencies carrying published advisories. Every pin stays inside the major its dependents declare, so it only lifts the floor. Drop an entry once every dependent resolves at or above it on its own.",
   "overrides": {

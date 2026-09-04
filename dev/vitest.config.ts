@@ -69,6 +69,7 @@ export default defineConfig({
       layerProject('context', '../layers/apps/context/tests'),
       layerProject('crm', '../layers/apps/crm/tests'),
       layerProject('inbox', '../layers/apps/inbox/tests'),
+      layerProject('gmail', '../layers/apps/gmail/tests'),
       layerProject('ai', '../layers/ai/tests')
     ]
   }
