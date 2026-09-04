@@ -1,9 +1,12 @@
 // MCP tool definitions for the files layer.
 //
-// Read tools use scope `files.read`; write tools use `files.write`. All tools
-// run inside `runInOrgTransaction(event, ...)` from `#tenant/server`, which
-// sets the `app.current_org` GUC in multi mode (driven by the `X-Active-Org`
-// header on the MCP HTTP request) and is a plain transaction in single mode.
+// Read tools use scope `files.read`; write tools use `files.write`. Every
+// tool takes an optional `org` slug and runs inside
+// `runInOrgTransaction(event, { org, userId }, ...)` from `#tenant/server`,
+// which in multi mode resolves the org (the `org` input, else the
+// `X-Active-Org` header on the MCP HTTP request), enforces the bearer's
+// membership, and sets the `app.current_org` GUC; in single mode it is a
+// plain transaction.
 //
 // Only documents are exposed for create/update — binary upload over MCP is
 // out of scope.
@@ -22,6 +25,11 @@ function asAuditExecutor(tx: unknown): Kysely<CoreDatabase> {
   return tx as Kysely<CoreDatabase>
 }
 
+// Org slug selecting which org the tool runs in. Optional so clients pinned
+// to one org via a fixed `X-Active-Org` header keep working unchanged.
+const orgInput = z.string().min(1).max(64).optional()
+  .describe('Org slug to operate in. Defaults to the X-Active-Org header sent by the client.')
+
 function textResult(text: string, structured?: Record<string, unknown>) {
   return {
     content: [{ type: 'text' as const, text }],
@@ -36,12 +44,13 @@ export const listFilesTool = defineMcpTool({
   description: 'List documents and uploaded files in the active org, newest first.',
   scope: 'files.read',
   input: z.object({
+    org: orgInput,
     kind: z.enum(['doc', 'file', 'site']).optional(),
     limit: z.number().int().min(1).max(100).optional()
   }).strict(),
   handler: async (input, ctx) => {
     const limit = input.limit ?? 50
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       let qb = tx
         .selectFrom('files_items as f')
         .leftJoin('users as u', 'u.id', 'f.created_by')
@@ -75,9 +84,9 @@ export const readDocTool = defineMcpTool({
   name: 'files_read_doc',
   description: 'Read a single document, returning its markdown body.',
   scope: 'files.read',
-  input: z.object({ id: z.string().uuid() }).strict(),
+  input: z.object({ org: orgInput, id: z.string().uuid() }).strict(),
   handler: async (input, ctx) => {
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       const item = await loadItem(tx, input.id)
       if (!item) throw createError({ statusCode: 404, statusMessage: 'Document not found.' })
       if (item.kind !== 'doc') {
@@ -100,13 +109,14 @@ export const createDocTool = defineMcpTool({
   description: 'Create a new markdown document in the active org.',
   scope: 'files.write',
   input: z.object({
+    org: orgInput,
     title: z.string().min(1).max(500),
     body_md: z.string().max(MAX_DOC_BYTES).optional(),
     tags: z.array(z.string().min(1).max(64)).max(50).optional()
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const bodyMd = input.body_md ?? ''
         // z.string().max() caps UTF-16 units, not bytes — enforce the real
         // byte cap here so MCP matches the REST create + saveDocContent paths.
@@ -147,13 +157,14 @@ export const updateDocTool = defineMcpTool({
   description: 'Update a document\'s title and/or markdown body. Creates a new version snapshot.',
   scope: 'files.write',
   input: z.object({
+    org: orgInput,
     id: z.string().uuid(),
     title: z.string().min(1).max(500).optional(),
     body_md: z.string().max(MAX_DOC_BYTES).optional()
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const item = await loadItem(tx, input.id)
         if (!item) throw createError({ statusCode: 404, statusMessage: 'Document not found.' })
         if (item.kind !== 'doc') {

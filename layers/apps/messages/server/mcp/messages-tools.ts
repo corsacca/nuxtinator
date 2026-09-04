@@ -1,10 +1,12 @@
 // MCP tool definitions for the messages layer.
 //
 // Read tools use scope `messages.read`; write tools use `messages.write`.
-// All tools run inside `runInOrgTransaction(event, ...)` from `#tenant/server`,
-// which sets the `app.current_org` GUC in multi mode (driven by the
-// `X-Active-Org` header on the MCP HTTP request) and is a plain transaction
-// in single mode.
+// Every tool takes an optional `org` slug and runs inside
+// `runInOrgTransaction(event, { org, userId }, ...)` from `#tenant/server`,
+// which in multi mode resolves the org (the `org` input, else the
+// `X-Active-Org` header on the MCP HTTP request), enforces the bearer's
+// membership, and sets the `app.current_org` GUC; in single mode it is a
+// plain transaction.
 //
 // The data model stores raw markdown — there is no TipTap JSON ↔ markdown
 // round-trip needed for the body. Mention validation hard-fails on
@@ -40,6 +42,11 @@ function asAuditExecutor(tx: unknown): Kysely<CoreDatabase> {
   return tx as Kysely<CoreDatabase>
 }
 
+// Org slug selecting which org the tool runs in. Optional so clients pinned
+// to one org via a fixed `X-Active-Org` header keep working unchanged.
+const orgInput = z.string().min(1).max(64).optional()
+  .describe('Org slug to operate in. Defaults to the X-Active-Org header sent by the client.')
+
 function textResult(text: string, structured?: Record<string, unknown>) {
   return {
     content: [{ type: 'text' as const, text }],
@@ -53,9 +60,9 @@ export const listConversationsTool = defineMcpTool({
   name: 'messages_list_conversations',
   description: 'List channels and DMs the calling user has access to in the active org. Includes unread counts.',
   scope: 'messages.read',
-  input: z.object({}).strict(),
-  handler: async (_input, ctx) => {
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+  input: z.object({ org: orgInput }).strict(),
+  handler: async (input, ctx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       const userId = ctx.auth.userId
 
       const channels = await tx
@@ -143,13 +150,14 @@ export const listItemsTool = defineMcpTool({
   description: 'List items in a conversation, newest first. Body returned as markdown.',
   scope: 'messages.read',
   input: z.object({
+    org: orgInput,
     conversation_id: z.string().uuid(),
     cursor: z.string().optional(),
     limit: z.number().int().min(1).max(100).optional()
   }).strict(),
   handler: async (input, ctx) => {
     const limit = input.limit ?? 30
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       const conv = await requireConversationAccess(tx, ctx.auth.userId, input.conversation_id)
 
       let qb = tx
@@ -199,9 +207,9 @@ export const readItemTool = defineMcpTool({
   name: 'messages_read_item',
   description: 'Read a single item with all its comments. Bodies returned as markdown.',
   scope: 'messages.read',
-  input: z.object({ item_id: z.string().uuid() }).strict(),
+  input: z.object({ org: orgInput, item_id: z.string().uuid() }).strict(),
   handler: async (input, ctx) => {
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       const item = await tx
         .selectFrom('messages_items as i')
         .innerJoin('users as u', 'u.id', 'i.author_id')
@@ -281,12 +289,13 @@ export const searchTool = defineMcpTool({
   description: 'Postgres full-text search over messages items + comments in the active org.',
   scope: 'messages.read',
   input: z.object({
+    org: orgInput,
     q: z.string().min(1).max(500),
     limit: z.number().int().min(1).max(50).optional()
   }).strict(),
   handler: async (input, ctx) => {
     const limit = input.limit ?? 20
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       const tsQuery = sql<unknown>`websearch_to_tsquery('english', ${input.q})`
 
       const itemRows = await tx
@@ -355,13 +364,14 @@ export const listNotificationsTool = defineMcpTool({
   description: 'List unread mentions, DMs, and comment notifications for the calling user.',
   scope: 'messages.read',
   input: z.object({
+    org: orgInput,
     limit: z.number().int().min(1).max(100).optional(),
     unread_only: z.boolean().optional()
   }).strict(),
   handler: async (input, ctx) => {
     const limit = input.limit ?? 30
     const unreadOnly = input.unread_only ?? true
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       let qb = tx
         .selectFrom('notifications as n')
         .leftJoin('users as actor', 'actor.id', 'n.actor_id')
@@ -406,12 +416,13 @@ export const postItemTool = defineMcpTool({
   description: 'Post a markdown item to a conversation. Mentions written as `[@DisplayName](user-uuid)` resolve to mention nodes.',
   scope: 'messages.write',
   input: z.object({
+    org: orgInput,
     conversation_id: z.string().uuid(),
     body_md: z.string().min(1).max(MAX_ITEM_BODY_BYTES)
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const orgId = getOrgId(ctx)
         const conv = await requireConversationAccess(tx, ctx.auth.userId, input.conversation_id)
         const bodyMd = await validateMcpMarkdown(tx, input.body_md, {
@@ -487,6 +498,7 @@ export const postCommentTool = defineMcpTool({
   description: 'Post a markdown comment on an item. `parent_comment_id` may only reference a top-level comment.',
   scope: 'messages.write',
   input: z.object({
+    org: orgInput,
     item_id: z.string().uuid(),
     body_md: z.string().min(1).max(MAX_COMMENT_BODY_BYTES),
     parent_comment_id: z.string().uuid().nullable().optional(),
@@ -502,7 +514,7 @@ export const postCommentTool = defineMcpTool({
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const orgId = getOrgId(ctx)
         const item = await tx
           .selectFrom('messages_items')
@@ -617,13 +629,14 @@ export const reactTool = defineMcpTool({
   description: 'Add a reaction emoji to an item or comment.',
   scope: 'messages.write',
   input: z.object({
+    org: orgInput,
     target_kind: z.enum(['item', 'comment']),
     target_id: z.string().uuid(),
     emoji: z.string().min(1).max(64)
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         // Resolve the conversation of the target so we can do an access check.
         let conversationId: string | null = null
         if (input.target_kind === 'item') {
@@ -687,6 +700,7 @@ export const markReadTool = defineMcpTool({
   // (Claude Code) reject wholesale. The either/or contract is enforced in the
   // handler instead.
   input: z.object({
+    org: orgInput,
     conversation_id: z.string().uuid().optional(),
     notification_ids: z.array(z.string().uuid()).min(1).max(100).optional()
   }).strict(),
@@ -695,7 +709,7 @@ export const markReadTool = defineMcpTool({
       if (!!input.conversation_id === !!input.notification_ids) {
         throw createError({ statusCode: 400, statusMessage: 'Provide exactly one of conversation_id or notification_ids.' })
       }
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         if (input.conversation_id) {
           const conv = await loadConversation(tx, input.conversation_id)
           if (!conv) {

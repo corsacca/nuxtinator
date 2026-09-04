@@ -40,6 +40,14 @@ describe('context MCP tools file', () => {
     expect(writeMatches.length).toBe(2)
   })
 
+  it('every tool except list_orgs declares the optional org input', async () => {
+    const src = await fs.readFile(TOOLS_FILE, 'utf8')
+    const orgInputs = src.match(/\borg: orgInput\b/g) ?? []
+    expect(orgInputs.length).toBe(7)
+    const orgScopedCalls = src.match(/runInOrgTransaction\(ctx\.event, \{ org: input\.org, userId: ctx\.auth\.userId \}/g) ?? []
+    expect(orgScopedCalls.length).toBe(7)
+  })
+
   it('update_section accepts optional last_edited_at for optimistic locking', async () => {
     const src = await fs.readFile(TOOLS_FILE, 'utf8')
     expect(src).toMatch(/last_edited_at:\s*z\.string\(\)\.datetime\(\)\.optional\(\)/)

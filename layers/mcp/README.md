@@ -167,6 +167,12 @@ Gates 2 and 3 reference the same string but check different surfaces. A user dem
 
 `tools/list` filters by both gates 2 and 3, so the model only sees tools it can actually call.
 
+## Org selection in multi-tenant mode
+
+When the tenancy layer is loaded, every tool that touches org-scoped data accepts an optional `org` input: the slug of the org to operate in (the context layer's `list_orgs` returns the bearer's memberships). Without it the tool falls back to the request's `X-Active-Org` header, so a client pinned to one org through a fixed header keeps working. Either way the tool runs inside `runInOrgTransaction(event, { org, userId }, ...)` from `#tenant/server`, which rejects an org the bearer's user is not a member of (404, indistinguishable from a non-existent org), a suspended org (423), and a call that names no org at all (400).
+
+A tool opts in by adding an `org` field to its Zod input and passing `{ org: input.org, userId: ctx.auth.userId }` as the second argument; the single-mode kernel accepts the option and ignores it.
+
 ## Rate limits
 
 Three default buckets, all overridable via `runtimeConfig.mcpRateLimits`:

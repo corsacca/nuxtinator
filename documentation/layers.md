@@ -524,7 +524,7 @@ If you deploy through a connection pooler, configure transaction-pooling mode. `
 
 ### URL shape
 
-In multi mode, app pages mount at `/@:orgSlug/<app>/...` via `pages:extend` aliasing. APIs always live at `/api/<app>/...`; the org slug travels in an `X-Active-Org` header injected by the [fetch interceptor](../layers/tenancy/app/plugins/tenant-fetch-interceptor.client.ts).
+In multi mode, app pages mount at `/@:orgSlug/<app>/...` via `pages:extend` aliasing. APIs always live at `/api/<app>/...`; the org slug travels in an `X-Active-Org` header that the tenancy layer builds into the global `$fetch` instance via its [fetch-template module](../layers/tenancy/modules/tenant-fetch-template.ts). MCP tools instead take an optional `org` slug input, falling back to the same header.
 
 The tenancy layer's own pages live at `/@<slug>/settings/*` (org settings), `/orgs` (picker), `/orgs/new` (create org), `/admin/orgs` (host admin).
 

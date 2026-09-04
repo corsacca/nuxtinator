@@ -1,9 +1,12 @@
 // MCP tool definitions for the context layer.
 //
 // Read tools use scope `context.read`; write tools use `context.write`.
-// All tools run inside `runInOrgTransaction(event, ...)` from `#tenant/server`,
-// which sets the active-org GUC in multi mode (the `X-Active-Org` header on
-// the MCP HTTP request) and is a plain transaction in single mode.
+// All tools except `list_orgs` take an optional `org` slug and run inside
+// `runInOrgTransaction(event, { org, userId }, ...)` from `#tenant/server`,
+// which in multi mode resolves the org (the `org` input, else the
+// `X-Active-Org` header on the MCP HTTP request), enforces the bearer's
+// membership, and sets the active-org GUC; in single mode it is a plain
+// transaction.
 //
 // `read_organization` is the source-API name — it returns the whole portfolio
 // (sections + content) for a given portfolio_id. The name is preserved for
@@ -26,6 +29,11 @@ function asAuditExecutor(tx: unknown): Kysely<CoreDatabase> {
   return tx as Kysely<CoreDatabase>
 }
 
+// Org slug selecting which org the tool runs in. Optional so clients pinned
+// to one org via a fixed `X-Active-Org` header keep working unchanged.
+const orgInput = z.string().min(1).max(64).optional()
+  .describe('Org slug to operate in. Defaults to the X-Active-Org header sent by the client.')
+
 function textResult(text: string, structured?: Record<string, unknown>) {
   return {
     content: [{ type: 'text' as const, text }],
@@ -35,7 +43,7 @@ function textResult(text: string, structured?: Record<string, unknown>) {
 
 export const listOrgsTool = defineMcpTool({
   name: 'list_orgs',
-  description: 'List organizations the bearer is a member of. Returns org id, slug, and name. Use these to filter portfolios via list_portfolios.',
+  description: 'List organizations the bearer is a member of. Returns org id, slug, and name. Pass a slug as `org` to any other tool to operate in that org.',
   scope: 'context.read',
   input: z.object({}).strict(),
   handler: async (_input, ctx) => {
@@ -63,10 +71,10 @@ export const listPortfoliosTool = defineMcpTool({
   name: 'list_portfolios',
   description: 'List portfolios in the active organization. Returns portfolio id, slug, name, color, icon_url, created_at, updated_at.',
   scope: 'context.read',
-  input: z.object({}).strict(),
-  handler: async (_input, ctx) => {
+  input: z.object({ org: orgInput }).strict(),
+  handler: async (input, ctx) => {
     try {
-      return await runInOrgTransaction(ctx.event, async (tx) => {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const rows = await tx
           .selectFrom('context_portfolios')
           .select(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
@@ -82,10 +90,10 @@ export const listSectionsTool = defineMcpTool({
   name: 'list_sections',
   description: 'List all sections in a portfolio with titles, descriptions, content_length, and last_edited_at. Survey step: use content_length to decide which sections to load.',
   scope: 'context.read',
-  input: z.object({ portfolio_id: z.string().uuid() }).strict(),
+  input: z.object({ org: orgInput, portfolio_id: z.string().uuid() }).strict(),
   handler: async (input, ctx) => {
     try {
-      return await runInOrgTransaction(ctx.event, async (tx) => {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const exists = await tx
           .selectFrom('context_portfolios')
           .select('id')
@@ -123,12 +131,13 @@ export const readSectionTool = defineMcpTool({
   description: 'Read the markdown content of a single portfolio section. Returns content and last_edited_at (pass last_edited_at to update_section for optimistic-lock conflict detection).',
   scope: 'context.read',
   input: z.object({
+    org: orgInput,
     portfolio_id: z.string().uuid(),
     section_key: z.string().min(1).max(64)
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      return await runInOrgTransaction(ctx.event, async (tx) => {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const exists = await tx
           .selectFrom('context_portfolios')
           .select('id')
@@ -159,12 +168,13 @@ export const bulkReadSectionsTool = defineMcpTool({
   description: 'Read multiple portfolio sections in a single call. Validates all keys up front; rejects unknown keys.',
   scope: 'context.read',
   input: z.object({
+    org: orgInput,
     portfolio_id: z.string().uuid(),
     section_keys: z.array(z.string().min(1).max(64)).min(1).max(50)
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      return await runInOrgTransaction(ctx.event, async (tx) => {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const defs = await getPortfolioSections(tx, input.portfolio_id)
         const knownKeys = new Set(defs.map(d => d.key))
         const unknown = input.section_keys.filter(k => !knownKeys.has(k))
@@ -200,10 +210,10 @@ export const readOrganizationTool = defineMcpTool({
   name: 'read_organization',
   description: 'Read all sections of a portfolio in one call (sections + content). Use when you need broad context across the whole portfolio.',
   scope: 'context.read',
-  input: z.object({ portfolio_id: z.string().uuid() }).strict(),
+  input: z.object({ org: orgInput, portfolio_id: z.string().uuid() }).strict(),
   handler: async (input, ctx) => {
     try {
-      return await runInOrgTransaction(ctx.event, async (tx) => {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const p = await tx
           .selectFrom('context_portfolios')
           .select(['id', 'slug', 'name'])
@@ -244,6 +254,7 @@ export const updateSectionTool = defineMcpTool({
   description: 'Update the markdown content of a portfolio section. Creates a version snapshot. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection.',
   scope: 'context.write',
   input: z.object({
+    org: orgInput,
     portfolio_id: z.string().uuid(),
     section_key: z.string().min(1).max(64),
     content: z.string(),
@@ -251,7 +262,7 @@ export const updateSectionTool = defineMcpTool({
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      return await runInOrgTransaction(ctx.event, async (tx) => {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const exists = await tx
           .selectFrom('context_portfolios')
           .select('id')
@@ -304,6 +315,7 @@ export const bulkUpdateSectionsTool = defineMcpTool({
   description: 'Update multiple portfolio sections in a single call. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still updated.',
   scope: 'context.write',
   input: z.object({
+    org: orgInput,
     portfolio_id: z.string().uuid(),
     updates: z.array(z.object({
       section_key: z.string().min(1).max(64),
@@ -313,7 +325,7 @@ export const bulkUpdateSectionsTool = defineMcpTool({
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      return await runInOrgTransaction(ctx.event, async (tx) => {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const exists = await tx
           .selectFrom('context_portfolios')
           .select('id')

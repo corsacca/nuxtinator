@@ -249,40 +249,95 @@ export function decodeFlowOrg(combined: string): { state: string, orgSlug: strin
   return { state, orgSlug: slug }
 }
 
+export type OrgTransactionFn<T> = (tx: Transaction<Database>) => Promise<T>
+
+// Caller-supplied org selection for `runInOrgTransaction`. `org` is a slug
+// taken from the request body (MCP tools expose it as an `org` input) and
+// requires `userId`; `userId` alone turns on membership enforcement for
+// whichever client-controlled source the org came from.
+export interface OrgTransactionOpts {
+  org?: string
+  userId?: string
+}
+
+const ORG_NOT_FOUND = 'This organization does not exist or you don\'t have access.'
+
+// Resolves a client-selected slug to an org id. Without `userId` an unknown
+// slug yields undefined. With `userId`, the org must exist, must not be
+// suspended, and the user must hold a membership; a missing org and a
+// missing membership collapse into the same 404 the tenancy middleware
+// returns so a probe can't tell them apart.
+async function resolveSelectedOrg(slug: string, userId?: string): Promise<string | undefined> {
+  if (!userId) {
+    const row = await adminDb
+      .selectFrom('orgs')
+      .select('id')
+      .where('slug', '=', slug)
+      .executeTakeFirst()
+    return row?.id
+  }
+  const row = await adminDb
+    .selectFrom('orgs')
+    .innerJoin('memberships', 'memberships.org_id', 'orgs.id')
+    .select(['orgs.id', 'orgs.suspended_at'])
+    .where('orgs.slug', '=', slug)
+    .where('memberships.user_id', '=', userId)
+    .executeTakeFirst()
+  if (!row) throw createError({ statusCode: 404, statusMessage: ORG_NOT_FOUND })
+  if (row.suspended_at) throw createError({ statusCode: 423, statusMessage: 'This organization is suspended.' })
+  return row.id
+}
+
 // Open a transaction and run `fn(tx)` inside it with the active org's GUC set.
 // Used by code paths that aren't routed through `defineTenantHandler` but
-// still need to write to RLS-protected tables (notably the OAuth flow's
-// non-`/api/` endpoints, which can't go through the tenancy middleware).
+// still need to write to RLS-protected tables: the OAuth flow's non-`/api/`
+// endpoints, which can't go through the tenancy middleware, and MCP tool
+// handlers, which authenticate with a bearer token instead of a session.
 //
 // Org discovery (in priority order):
-//   1. `event.context.orgSlug` if set by upstream middleware
-//   2. `X-Active-Org` header — bearer-authenticated requests (MCP tools) carry
-//      the header but no session cookie, so the tenancy middleware (which
-//      requires a cookie session) never populates `event.context` for them.
-//      Client-controlled, same trust model as the cookie below: this selects
-//      the org, it does not authorize — authorization is the caller's gate
-//      (MCP: token scope + RBAC).
-//   3. `active-org-slug` cookie
-// If no org is found, opens the txn anyway with no GUC — RLS-protected
-// INSERTs will fail loudly via `current_org_id() → NULL → NOT NULL` constraint.
+//   1. `opts.org` — a slug from the caller's own input
+//   2. `event.context.orgId` / `orgSlug` set by upstream middleware, which has
+//      already verified the session user's membership
+//   3. `X-Active-Org` header — bearer-authenticated requests carry the header
+//      but no session cookie, so the tenancy middleware never populates
+//      `event.context` for them
+//   4. `active-org-slug` cookie
+// Sources 1, 3 and 4 are client-controlled: they select the org, they do not
+// authorize. Callers that know the acting user pass `opts.userId`, which
+// makes any client-selected org subject to a membership check (see
+// `resolveSelectedOrg`) and turns "no org at all" into a 400. Without it, an
+// unknown or missing slug opens the txn with no GUC — RLS-protected INSERTs
+// then fail loudly via `current_org_id() → NULL`.
+export async function runInOrgTransaction<T>(event: H3Event, fn: OrgTransactionFn<T>): Promise<T>
+export async function runInOrgTransaction<T>(event: H3Event, opts: OrgTransactionOpts, fn: OrgTransactionFn<T>): Promise<T>
 export async function runInOrgTransaction<T>(
   event: H3Event,
-  fn: (tx: Transaction<Database>) => Promise<T>
+  optsOrFn: OrgTransactionOpts | OrgTransactionFn<T>,
+  maybeFn?: OrgTransactionFn<T>
 ): Promise<T> {
-  let orgId: string | undefined = event.context.orgId as string | undefined
+  const opts: OrgTransactionOpts = typeof optsOrFn === 'function' ? {} : optsOrFn
+  const fn = (typeof optsOrFn === 'function' ? optsOrFn : maybeFn) as OrgTransactionFn<T>
+  if (opts.org && !opts.userId) {
+    throw new Error('runInOrgTransaction: `org` requires `userId` so membership can be enforced')
+  }
 
-  if (!orgId) {
-    const slug = (event.context.orgSlug as string | undefined)
-      ?? getRequestHeader(event, 'x-active-org')
-      ?? getCookie(event, 'active-org-slug')
-    if (slug) {
-      const row = await adminDb
-        .selectFrom('orgs')
-        .select('id')
-        .where('slug', '=', slug)
-        .executeTakeFirst()
-      orgId = row?.id
+  let orgId: string | undefined
+  let slug: string | undefined
+  if (opts.org) {
+    slug = opts.org
+  } else {
+    orgId = event.context.orgId as string | undefined
+    if (!orgId) {
+      slug = (event.context.orgSlug as string | undefined)
+        ?? getRequestHeader(event, 'x-active-org')
+        ?? getCookie(event, 'active-org-slug')
     }
+  }
+  if (!orgId && slug) {
+    orgId = await resolveSelectedOrg(slug, opts.userId)
+  }
+  if (!orgId && opts.userId) {
+    throw createError({ statusCode: 400, statusMessage: 'No organization selected. Pass `org` or send the X-Active-Org header.' })
   }
 
   return await db.transaction().execute(async (tx) => {

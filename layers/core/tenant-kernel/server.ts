@@ -166,18 +166,33 @@ export function decodeFlowOrg<S>(state: S): { state: S, orgSlug: string | null }
   return { state, orgSlug: null }
 }
 
+export type OrgTransactionFn<T> = (tx: Transaction<Database>) => Promise<T>
+
+// Caller-supplied org selection. Single mode has one tenant, so both fields
+// are accepted for API compatibility with the multi-mode kernel and ignored.
+export interface OrgTransactionOpts {
+  org?: string
+  userId?: string
+}
+
 // Open a transaction and run `fn(tx)` inside it. In single mode, just opens
 // the transaction. In multi mode (overridden by the tenancy layer) this also
-// reads the `active-org-slug` cookie, validates the user's membership, and
+// resolves the org (`opts.org`, else the request's header or cookie),
+// enforces the acting user's membership when `opts.userId` is given, and
 // runs `SET LOCAL app.current_org` before yielding.
 //
 // Used by code paths that aren't routed through `defineTenantHandler` but
-// still need to write to RLS-protected tables (notably the OAuth flow's
-// non-`/api/` endpoints, which can't go through the tenancy middleware).
+// still need to write to RLS-protected tables (the OAuth flow's non-`/api/`
+// endpoints, which can't go through the tenancy middleware, and MCP tool
+// handlers).
+export async function runInOrgTransaction<T>(event: H3Event, fn: OrgTransactionFn<T>): Promise<T>
+export async function runInOrgTransaction<T>(event: H3Event, opts: OrgTransactionOpts, fn: OrgTransactionFn<T>): Promise<T>
 export async function runInOrgTransaction<T>(
   _event: H3Event,
-  fn: (tx: Transaction<Database>) => Promise<T>
+  optsOrFn: OrgTransactionOpts | OrgTransactionFn<T>,
+  maybeFn?: OrgTransactionFn<T>
 ): Promise<T> {
+  const fn = (typeof optsOrFn === 'function' ? optsOrFn : maybeFn) as OrgTransactionFn<T>
   return await db.transaction().execute(fn)
 }
 

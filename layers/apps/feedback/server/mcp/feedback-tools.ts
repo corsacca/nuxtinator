@@ -1,10 +1,12 @@
 // MCP tool definitions for the feedback layer.
 //
-// Read tools use scope `feedback.read`; write tools use `feedback.write`. All
-// tools run inside `runInOrgTransaction(event, ...)` from `#tenant/server`,
-// which sets the `app.current_org` GUC in multi mode (driven by the
-// `X-Active-Org` header on the MCP HTTP request) and is a plain transaction in
-// single mode.
+// Read tools use scope `feedback.read`; write tools use `feedback.write`.
+// Every tool takes an optional `org` slug and runs inside
+// `runInOrgTransaction(event, { org, userId }, ...)` from `#tenant/server`,
+// which in multi mode resolves the org (the `org` input, else the
+// `X-Active-Org` header on the MCP HTTP request), enforces the bearer's
+// membership, and sets the `app.current_org` GUC; in single mode it is a
+// plain transaction.
 //
 // Board vocabulary (columns are global to the deployment, ordered by
 // position): FEEDBACK INBOX holds untriaged intake — new findings, ideas, and
@@ -24,6 +26,11 @@ import { runInOrgTransaction } from '#tenant/server'
 function asAuditExecutor(tx: unknown): Kysely<CoreDatabase> {
   return tx as Kysely<CoreDatabase>
 }
+
+// Org slug selecting which org the tool runs in. Optional so clients pinned
+// to one org via a fixed `X-Active-Org` header keep working unchanged.
+const orgInput = z.string().min(1).max(64).optional()
+  .describe('Org slug to operate in. Defaults to the X-Active-Org header sent by the client.')
 
 function textResult(text: string, structured?: Record<string, unknown>) {
   return {
@@ -61,9 +68,9 @@ export const listProjectsTool = defineMcpTool({
   name: 'feedback_list_projects',
   description: 'List kanban projects (boards) in the active org, plus the global column set with its workflow order. Call this first to get the project_id and column names other feedback tools need.',
   scope: 'feedback.read',
-  input: z.object({}).strict(),
-  handler: async (_input, ctx) => {
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+  input: z.object({ org: orgInput }).strict(),
+  handler: async (input, ctx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       const projects = await tx
         .selectFrom('projects')
         .select(['id', 'name', 'description', 'created_at'])
@@ -92,12 +99,13 @@ export const listCardsTool = defineMcpTool({
   description: 'List cards in the active org, optionally filtered to one project and/or one column (by name, e.g. "TODO"). Cards in TODO are approved and waiting to be worked; cards in ARCHIVE were rejected, deferred, or accepted as-is.',
   scope: 'feedback.read',
   input: z.object({
+    org: orgInput,
     project_id: z.string().uuid().optional(),
     column: z.string().min(1).optional(),
     limit: z.number().int().min(1).max(200).optional()
   }).strict(),
   handler: async (input, ctx) => {
-    return await runInOrgTransaction(ctx.event, async (tx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
       let qb = tx
         .selectFrom('cards as k')
         .leftJoin('columns as c', 'c.id', 'k.column_id')
@@ -141,6 +149,7 @@ export const createCardTool = defineMcpTool({
   description: 'Create a card on a project board in the active org. New findings/ideas belong in the default FEEDBACK INBOX column for human triage — only target another column when explicitly asked. Start the description with a "## What happens" section in plain behavior-first language a teammate can read without opening code (when someone does X, Y goes wrong — instead of Z; no function names or jargon there), then "## Why it matters", then "## Technical detail" with file:line evidence. Put the proposed fix as concrete steps in post_meta.plan (not in the description); use post_meta for machine data too (repo, branch, file, line, category, dedupe_key).',
   scope: 'feedback.write',
   input: z.object({
+    org: orgInput,
     project_id: z.string().uuid(),
     title: z.string().min(1).max(500),
     description: z.string().max(20000).optional(),
@@ -151,7 +160,7 @@ export const createCardTool = defineMcpTool({
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const project = await tx
           .selectFrom('projects')
           .select('id')
@@ -206,12 +215,13 @@ export const moveCardTool = defineMcpTool({
   description: 'Move a card to another column by name. Typical agent flow: pick a card from TODO, move it to DOING while working on it, then to DONE when finished. Leave triage moves (into TODO or ARCHIVE) to humans unless instructed.',
   scope: 'feedback.write',
   input: z.object({
+    org: orgInput,
     card_id: z.string().uuid(),
     column: z.string().min(1)
   }).strict(),
   handler: async (input, ctx) => {
     try {
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const column = await resolveColumn(tx, input.column)
         const updated = await tx
           .updateTable('cards')
@@ -247,6 +257,7 @@ export const updateCardTool = defineMcpTool({
   description: 'Update a card\'s title, description, priority, or post_meta. Use append_description to add a work log (e.g. the commit hash that resolved it) without overwriting the original text. post_meta_merge shallow-merges keys into the existing post_meta.',
   scope: 'feedback.write',
   input: z.object({
+    org: orgInput,
     card_id: z.string().uuid(),
     title: z.string().min(1).max(500).optional(),
     description: z.string().max(20000).optional(),
@@ -259,7 +270,7 @@ export const updateCardTool = defineMcpTool({
   ),
   handler: async (input, ctx) => {
     try {
-      const result = await runInOrgTransaction(ctx.event, async (tx) => {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const card = await tx
           .selectFrom('cards')
           .select(['id', 'description', 'post_meta'])
