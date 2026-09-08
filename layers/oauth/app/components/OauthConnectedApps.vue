@@ -119,6 +119,15 @@ const mcpUrl = computed(() => {
   return `${base.replace(/\/$/, '')}/mcp`
 })
 
+// Local identifier each client registers this server under. Slugified
+// from the host's app title so the snippets name the deployment they
+// point at; `mcp` when no title is configured.
+const mcpServerName = computed(() => {
+  const title = (config.public.appName as string) || ''
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return slug || 'mcp'
+})
+
 interface ClientGuide {
   key: string
   label: string
@@ -137,28 +146,29 @@ interface ClientGuide {
 
 const clientGuides = computed<ClientGuide[]>(() => {
   const url = mcpUrl.value
+  const name = mcpServerName.value
   return [
     {
       key: 'claude-code',
       label: 'Claude Code',
       icon: 'i-lucide-terminal',
       description: 'Native HTTP + OAuth.',
-      aiPrompt: `Add the doxa-cms MCP server at ${url} using HTTP transport, then restart to authenticate.`,
-      manualLocation: 'Run from the project folder where you want it available:',
+      aiPrompt: `Add the ${name} MCP server at ${url} using HTTP transport at user scope so it is available in every project, then restart to authenticate.`,
+      manualLocation: 'Run from any folder; user scope makes it available in every project:',
       manualLanguage: 'bash',
-      manualSnippet: `claude mcp add doxa-cms --transport http ${url}`
+      manualSnippet: `claude mcp add --scope user ${name} --transport http ${url}`
     },
     {
       key: 'claude-desktop',
       label: 'Claude Desktop',
       icon: 'i-lucide-monitor',
       description: 'Stdio-only. Bridges OAuth + HTTP via mcp-remote.',
-      aiPrompt: `Edit my Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json on macOS, %APPDATA%\\Claude\\claude_desktop_config.json on Windows) to add an MCP server named "doxa-cms" that runs \`npx -y mcp-remote ${url}\`.`,
+      aiPrompt: `Edit my Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json on macOS, %APPDATA%\\Claude\\claude_desktop_config.json on Windows) to add an MCP server named "${name}" that runs \`npx -y mcp-remote ${url}\`.`,
       manualLocation: 'Edit ~/Library/Application Support/Claude/claude_desktop_config.json (macOS) or %APPDATA%\\Claude\\claude_desktop_config.json (Windows):',
       manualLanguage: 'json',
       manualSnippet: JSON.stringify({
         mcpServers: {
-          'doxa-cms': {
+          [name]: {
             command: 'npx',
             args: ['-y', 'mcp-remote', url]
           }
@@ -170,22 +180,22 @@ const clientGuides = computed<ClientGuide[]>(() => {
       label: 'Codex',
       icon: 'i-lucide-square-terminal',
       description: 'Stdio-only. Bridges OAuth + HTTP via mcp-remote.',
-      aiPrompt: `Add an MCP server named "doxa-cms" to my ~/.codex/config.toml that runs \`npx -y mcp-remote ${url}\`.`,
+      aiPrompt: `Add an MCP server named "${name}" to my ~/.codex/config.toml that runs \`npx -y mcp-remote ${url}\`.`,
       manualLocation: 'Edit ~/.codex/config.toml:',
       manualLanguage: 'toml',
-      manualSnippet: `[mcp_servers.doxa-cms]\ncommand = "npx"\nargs = ["-y", "mcp-remote", "${url}"]`
+      manualSnippet: `[mcp_servers.${name}]\ncommand = "npx"\nargs = ["-y", "mcp-remote", "${url}"]`
     },
     {
       key: 'cursor',
       label: 'Cursor',
       icon: 'i-lucide-mouse-pointer-2',
       description: 'Native HTTP + OAuth.',
-      aiPrompt: `Add an MCP server named "doxa-cms" pointing at ${url} to my Cursor MCP config (~/.cursor/mcp.json).`,
+      aiPrompt: `Add an MCP server named "${name}" pointing at ${url} to my Cursor MCP config (~/.cursor/mcp.json).`,
       manualLocation: 'Settings → MCP → Add new MCP server, or edit ~/.cursor/mcp.json:',
       manualLanguage: 'json',
       manualSnippet: JSON.stringify({
         mcpServers: {
-          'doxa-cms': {
+          [name]: {
             url
           }
         }
@@ -195,13 +205,13 @@ const clientGuides = computed<ClientGuide[]>(() => {
       key: 'vscode',
       label: 'VS Code',
       icon: 'i-lucide-code-2',
-      description: 'Native HTTP + OAuth via Copilot Chat (1.99+).',
-      aiPrompt: `Add an MCP server named "doxa-cms" of type http pointing at ${url} to .vscode/mcp.json so I can use it in this workspace.`,
-      manualLocation: 'Add to .vscode/mcp.json (workspace) or your user settings:',
+      description: 'Native HTTP + OAuth via Copilot Chat (1.102+).',
+      aiPrompt: `Add an MCP server named "${name}" of type http pointing at ${url} to my user-level VS Code MCP config (Command Palette → "MCP: Open User Configuration") so it is available in every workspace.`,
+      manualLocation: 'Command Palette → "MCP: Open User Configuration", then add to the user-level mcp.json:',
       manualLanguage: 'json',
       manualSnippet: JSON.stringify({
         servers: {
-          'doxa-cms': {
+          [name]: {
             type: 'http',
             url
           }
@@ -213,12 +223,12 @@ const clientGuides = computed<ClientGuide[]>(() => {
       label: 'Gemini CLI',
       icon: 'i-lucide-sparkles',
       description: 'Bridges OAuth + HTTP via mcp-remote.',
-      aiPrompt: `Add an MCP server named "doxa-cms" to my ~/.gemini/settings.json that runs \`npx -y mcp-remote ${url}\`.`,
+      aiPrompt: `Add an MCP server named "${name}" to my ~/.gemini/settings.json that runs \`npx -y mcp-remote ${url}\`.`,
       manualLocation: 'Add to ~/.gemini/settings.json:',
       manualLanguage: 'json',
       manualSnippet: JSON.stringify({
         mcpServers: {
-          'doxa-cms': {
+          [name]: {
             command: 'npx',
             args: ['-y', 'mcp-remote', url]
           }
