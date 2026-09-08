@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { sql } from 'kysely'
 import { db } from '#core/server/utils/database'
-import { getUserPermissions } from '#core/server/utils/rbac'
+import { getUserPermissionsAcrossOrgs } from '#tenant/server'
 import { checkRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
 import { logEvent } from '#core/server/utils/activity-logger'
 import { getOauthConfig } from '../../utils/oauth-config'
@@ -211,7 +211,7 @@ async function handleAuthorizationCodeGrant(event: H3Event, cfg: ReturnType<type
     return tokenError(event, 400, 'invalid_grant', 'User no longer valid')
   }
 
-  const userPerms = await getUserPermissions(claimed.user_id)
+  const userPerms = await getUserPermissionsAcrossOrgs(claimed.user_id)
   const originalScopes = parseScopeString(claimed.scope)
   const grantedScopes = filterScopesByPermissions(originalScopes, userPerms)
   if (grantedScopes.length !== originalScopes.length) {
@@ -428,7 +428,7 @@ async function handleRefreshTokenGrant(event: H3Event, cfg: ReturnType<typeof ge
     return tokenError(event, 400, 'invalid_grant', 'user no longer valid')
   }
 
-  const userPerms = await getUserPermissions(claimed.user_id)
+  const userPerms = await getUserPermissionsAcrossOrgs(claimed.user_id)
   const originalScopes = parseScopeString(claimed.scope)
   const grantedScopes = filterScopesByPermissions(originalScopes, userPerms)
   if (grantedScopes.length !== originalScopes.length) {

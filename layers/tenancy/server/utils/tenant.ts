@@ -22,7 +22,7 @@ import { sql } from 'kysely'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { db } from '#core/server/utils/database'
 import { requireAuth } from '#core/server/utils/auth'
-import { getRolePermissions } from '#core/server/utils/rbac'
+import { getRolePermissions, getUserPermissions } from '#core/server/utils/rbac'
 import { getUserGrantedPermissions } from '#core/server/utils/permission-grants'
 import type { Database } from '#core/server/database/schema'
 import type { Permission } from '#core/app/utils/permissions'
@@ -199,6 +199,73 @@ export async function computePermsForOrg(
     .executeTakeFirst()
   if (!membership) return new Set()
   return await getRolePermissions(client, membership.roles, orgId)
+}
+
+// Per-org effective permissions for a (user, org) pair, read the way
+// `runWithOrgContext` reads them: inside a transaction with the GUC set, so
+// `custom_roles` and `user_permission_grants` are RLS-scoped to that org.
+async function resolveOrgPerms(userId: string, orgId: string): Promise<Set<Permission>> {
+  return await db.transaction().execute(async (tx) => {
+    await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
+    const perms = await computePermsForOrg(tx, userId, orgId)
+    for (const perm of await getUserGrantedPermissions(tx, userId)) {
+      perms.add(perm)
+    }
+    return perms
+  })
+}
+
+// Every permission the user holds anywhere: the host-level set (`users.roles`
+// plus everything when `is_admin`) unioned with the effective set of each org
+// they belong to, suspended orgs excluded. The OAuth layer uses it as the
+// upper bound for consent and token issuance — tokens are not org-bound, the
+// org is chosen per call — and the MCP layer uses it for tools/list visibility.
+export async function getUserPermissionsAcrossOrgs(userId: string): Promise<Set<Permission>> {
+  const perms = await getUserPermissions(userId)
+  const memberships = await adminDb
+    .selectFrom('memberships')
+    .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
+    .select('memberships.org_id')
+    .where('memberships.user_id', '=', userId)
+    .where('orgs.suspended_at', 'is', null)
+    .execute()
+  for (const m of memberships) {
+    for (const perm of await resolveOrgPerms(userId, m.org_id)) perms.add(perm)
+  }
+  return perms
+}
+
+// The user's effective permissions for the org a request targets. Org
+// discovery follows `runInOrgTransaction`: `opts.org`, then the middleware's
+// `event.context`, then the `X-Active-Org` header, then the `active-org-slug`
+// cookie — with the same membership and suspension checks (404 / 423). A
+// request that selects no org gets the across-orgs set, which is what
+// org-less surfaces (a tool that lists the user's orgs) need.
+export async function getUserPermissionsForRequest(
+  event: H3Event,
+  userId: string,
+  opts: { org?: string } = {}
+): Promise<Set<Permission>> {
+  let orgId: string | undefined
+  let slug: string | undefined
+  if (opts.org) {
+    slug = opts.org
+  } else {
+    orgId = event.context.orgId as string | undefined
+    if (!orgId) {
+      slug = (event.context.orgSlug as string | undefined)
+        ?? getRequestHeader(event, 'x-active-org')
+        ?? getCookie(event, 'active-org-slug')
+    }
+  }
+  if (!orgId && slug) {
+    orgId = await resolveSelectedOrg(slug, userId)
+  }
+  if (!orgId) return await getUserPermissionsAcrossOrgs(userId)
+
+  const perms = await getUserPermissions(userId)
+  for (const perm of await resolveOrgPerms(userId, orgId)) perms.add(perm)
+  return perms
 }
 
 // Operator-admin gate. The bit (`users.is_admin`) lives in core; this is the

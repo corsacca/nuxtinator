@@ -106,12 +106,15 @@ export function requireAuth(event: H3Event): { userId: string }
 
 `getAuthUser` returns null if not authenticated; `requireAuth` throws a 401 if not authenticated.
 
-### 3. RBAC utilities at `~~/server/utils/rbac.ts`
+### 3. Permission readers from `#tenant/server`
 
-Must export:
+The layer reads a user's permissions through the tenant kernel, never through `getUserPermissions` directly, so org memberships and per-user grants count in multi-tenant deploys:
 ```ts
-export async function getUserPermissions(userId: string): Promise<Set<Permission>>
+export async function getUserPermissionsAcrossOrgs(userId: string): Promise<Set<Permission>>
+export async function getUserPermissionsForRequest(event: H3Event, userId: string, opts?: { org?: string }): Promise<Set<Permission>>
 ```
+
+Core's single-mode kernel provides both; the tenancy layer overrides them with org-aware versions. Consent and token issuance use the across-orgs union (tokens are not org-bound); `requireBearerScope` uses the per-request set for the org named by `X-Active-Org`.
 
 ### 4. Permission registry at `~~/app/utils/permissions.ts`
 

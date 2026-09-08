@@ -6,7 +6,7 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
-import { getUserPermissions } from '#core/server/utils/rbac'
+import { getUserPermissionsAcrossOrgs, getUserPermissionsForRequest } from '#tenant/server'
 import type { Permission } from '#core/app/utils/permissions'
 // Cross-layer type import to the OAuth layer; see mcp-origin.ts for why we
 // use the `#oauth/*` aliases declared in the OAuth layer's nuxt.config.ts
@@ -62,7 +62,9 @@ export async function buildMcpServer(opts: BuildOpts): Promise<Server> {
   const serverName = (cfg.mcpServerName as string) || 'mcp-server'
   const serverVersion = (cfg.mcpServerVersion as string) || '1.0.0'
 
-  const userPermissions = await getUserPermissions(auth.userId)
+  // The union across every org the user belongs to — the visibility set for
+  // tools/list and resources/list. Each call re-resolves for its own org.
+  const userPermissions = await getUserPermissionsAcrossOrgs(auth.userId)
   const dispatchCtx = { auth, event, userPermissions }
 
   const server = new Server(
@@ -128,38 +130,46 @@ export async function buildMcpServer(opts: BuildOpts): Promise<Server> {
       )
     }
 
-    // Gate 3: RBAC permission
-    if (!userPermissions.has(tool.scope as Permission)) {
-      return authzError(
-        {
-          error: 'insufficient_permission',
-          required: tool.scope,
-          surface: 'rbac',
-          actionable: 'contact_admin'
-        },
-        `Insufficient permission. This tool requires '${tool.scope}'; your account does not currently have it.`
-      )
-    }
-
-    const toolCtx: McpToolContext = { ...dispatchCtx, tool }
-
-    // Rate-limit buckets (default + per-tool).
-    const limited = await checkBuckets(tool, toolCtx)
-    if (limited) {
-      const windowDesc = limited.windowMs >= 60_000
-        ? `${Math.round(limited.windowMs / 60_000)}m`
-        : `${Math.round(limited.windowMs / 1000)}s`
-      return {
-        content: [{
-          type: 'text',
-          text: `Rate limit exceeded: ${limited.bucket} (${limited.count}/${limited.limit} in ${windowDesc}). Retry after ${limited.retryAfterSeconds}s.`
-        }],
-        isError: true
-      }
-    }
-
+    // Gate 3 runs inside the try so the kernel's org-resolution errors (404
+    // unknown org or non-member, 423 suspended) are formatted by `mcpError`
+    // the same way a handler's own would be.
     try {
-      const parsedInput = await validateInput(req.params.arguments ?? {}, tool.input)
+      // Gate 3: RBAC permission, resolved for the org this call targets (the
+      // tool's `org` input, else the request's X-Active-Org header) rather
+      // than the across-orgs union tools/list is filtered by.
+      const args = req.params.arguments ?? {}
+      const org = typeof args.org === 'string' ? args.org : undefined
+      const callPermissions = await getUserPermissionsForRequest(event, auth.userId, { org })
+      if (!callPermissions.has(tool.scope as Permission)) {
+        return authzError(
+          {
+            error: 'insufficient_permission',
+            required: tool.scope,
+            surface: 'rbac',
+            actionable: 'contact_admin'
+          },
+          `Insufficient permission. This tool requires '${tool.scope}'; your account does not currently have it.`
+        )
+      }
+
+      const toolCtx: McpToolContext = { ...dispatchCtx, userPermissions: callPermissions, tool }
+
+      // Rate-limit buckets (default + per-tool).
+      const limited = await checkBuckets(tool, toolCtx)
+      if (limited) {
+        const windowDesc = limited.windowMs >= 60_000
+          ? `${Math.round(limited.windowMs / 60_000)}m`
+          : `${Math.round(limited.windowMs / 1000)}s`
+        return {
+          content: [{
+            type: 'text',
+            text: `Rate limit exceeded: ${limited.bucket} (${limited.count}/${limited.limit} in ${windowDesc}). Retry after ${limited.retryAfterSeconds}s.`
+          }],
+          isError: true
+        }
+      }
+
+      const parsedInput = await validateInput(args, tool.input)
       const result = await tool.handler(parsedInput, toolCtx)
 
       // Server-side output validation when the tool declared an output schema.
@@ -225,10 +235,13 @@ export async function buildMcpServer(opts: BuildOpts): Promise<Server> {
         if (!scopeSet.has(def.scope)) {
           throw new Error(`Insufficient scope. Resource requires '${def.scope}'.`)
         }
-        if (!userPermissions.has(def.scope as Permission)) {
+        // Resources carry no org input; the request's header or cookie
+        // selects the org the permission is checked against.
+        const readPermissions = await getUserPermissionsForRequest(event, auth.userId)
+        if (!readPermissions.has(def.scope as Permission)) {
           throw new Error(`Insufficient permission. Resource requires '${def.scope}'.`)
         }
-        return await def.read(uri, { ...dispatchCtx, resource: def })
+        return await def.read(uri, { ...dispatchCtx, userPermissions: readPermissions, resource: def })
       }
 
       throw new Error(`Resource not found: ${uri}`)

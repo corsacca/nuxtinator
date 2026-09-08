@@ -1,8 +1,7 @@
 import { sql } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { getAuthUser } from '#core/server/utils/auth'
-import { getUserPermissions } from '#core/server/utils/rbac'
-import { runInOrgTransaction } from '#tenant/server'
+import { runInOrgTransaction, getUserPermissionsAcrossOrgs } from '#tenant/server'
 import { checkRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
 import { logEvent } from '#core/server/utils/activity-logger'
 import { getOauthConfig } from '../../utils/oauth-config'
@@ -149,7 +148,7 @@ export default defineEventHandler(async (event) => {
     return
   }
 
-  const userPerms = await getUserPermissions(authUser.userId)
+  const userPerms = await getUserPermissionsAcrossOrgs(authUser.userId)
   const grantedScopes = filterScopesByPermissions(requestedScopes, userPerms)
   if (grantedScopes.length !== requestedScopes.length) {
     logOauthEvent({

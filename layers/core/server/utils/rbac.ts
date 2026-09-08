@@ -112,14 +112,12 @@ export async function validateRoleNames(
   return { valid: unknown.length === 0, unknown }
 }
 
-// `getUserPermissions(userId)` — returns the permission set for a user
-// outside any request context. Used by OAuth scope filters and similar code
-// that needs a coarse upper bound.
-//
-// Single mode: just the union of `users.roles[]` permissions plus admin
-// granting everything if `is_admin=true`.
-// Multi mode: tenancy layer overrides this to return the union across every
-// org the user belongs to.
+// `getUserPermissions(userId)` — the host-level permission set for a user
+// outside any request context: the union of `users.roles[]` permissions, plus
+// every registered permission when `is_admin` is set. Org memberships and
+// per-user grants are not included; the `#tenant/server` kernel's
+// `getUserPermissionsAcrossOrgs` / `getUserPermissionsForRequest` layer those
+// on top and are what the OAuth scope filters and MCP gates read.
 export async function getUserPermissions(userId: string): Promise<Set<Permission>> {
   const user = await db
     .selectFrom('users')

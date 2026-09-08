@@ -161,11 +161,11 @@ A `tools/call` invocation must pass:
 
 1. **Bearer valid** — token + audience + family + client-enabled (transport boundary, via `requireValidBearer`).
 2. **Token scope includes `tool.scope`** — `auth.scopes.includes(tool.scope)`. Failure → `isError` with `structuredContent: { error: 'insufficient_scope', surface: 'token', actionable: 're_authorize' }`.
-3. **User holds `tool.scope` as RBAC permission** — `userPermissions.has(tool.scope)`. Failure → `isError` with `structuredContent: { error: 'insufficient_permission', surface: 'rbac', actionable: 'contact_admin' }`.
+3. **User holds `tool.scope` as RBAC permission in the org the call targets** — resolved per call by the `#tenant/server` kernel's `getUserPermissionsForRequest(event, userId, { org })`, where `org` is the tool's `org` input, else the request's `X-Active-Org` header. Membership roles and direct grants in that org count, as do host-level roles and `is_admin`. Failure → `isError` with `structuredContent: { error: 'insufficient_permission', surface: 'rbac', actionable: 'contact_admin' }`.
 
 Gates 2 and 3 reference the same string but check different surfaces. A user demoted in RBAC mid-session loses access immediately even with a valid token; reauthorization won't help — only an admin granting the permission will.
 
-`tools/list` filters by both gates 2 and 3, so the model only sees tools it can actually call.
+`tools/list` filters by gate 2 and by the union of the user's permissions across every org they belong to (`getUserPermissionsAcrossOrgs`), so the model only sees tools it can call somewhere; the per-org check is gate 3 at call time.
 
 ## Org selection in multi-tenant mode
 

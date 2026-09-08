@@ -7,8 +7,9 @@
 // rows. Cleanup runs orgs → users last so cascade FKs unwind portfolios,
 // sections, comments, etc.
 import type postgres from 'postgres'
-import { randomUUID } from 'node:crypto'
-import { $fetch } from '@nuxt/test-utils/e2e'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { expect } from 'vitest'
+import { $fetch, url as nuxtUrl } from '@nuxt/test-utils/e2e'
 import {
   createTestUser,
   getAuthHeaders,
@@ -166,6 +167,66 @@ export async function seedTestCustomSection(
     VALUES (${id}, ${opts.portfolio_id}, ${opts.key}, ${opts.title}, ${opts.description ?? ''}, ${opts.order ?? 0}, ${opts.created_by})
   `
   return { id }
+}
+
+// --- MCP over the real /mcp transport ---
+
+export interface McpToolResult {
+  content: Array<{ type: string, text: string }>
+  structuredContent?: Record<string, unknown>
+  isError?: boolean
+}
+
+// Mint an oauth client + token family + access token with the same row
+// shapes the token endpoint writes. The token's resource must equal the
+// server's mcpResource, read from its RFC 9728 metadata so the test doesn't
+// depend on the configured site URL. The client id is `test-context-`
+// prefixed; callers delete those rows in their own cleanup.
+export async function issueMcpBearer(
+  sql: ReturnType<typeof postgres>,
+  userId: string,
+  scopes: string[]
+): Promise<string> {
+  const metaRes = await fetch(nuxtUrl('/.well-known/oauth-protected-resource'))
+  const meta = await metaRes.json() as { resource: string }
+  const clientId = `test-context-${randomBytes(8).toString('hex')}`
+  await sql`
+    INSERT INTO oauth_clients (client_id, client_name, redirect_uris)
+    VALUES (${clientId}, 'test-context mcp client', ${['http://localhost/callback']})
+  `
+  const familyId = randomUUID()
+  await sql`
+    INSERT INTO oauth_token_families (family_id, user_id, client_id)
+    VALUES (${familyId}, ${userId}, ${clientId})
+  `
+  const token = `oat_${randomBytes(32).toString('hex')}`
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  await sql`
+    INSERT INTO oauth_access_tokens (token_hash, client_id, user_id, scope, resource, family_id, expires)
+    VALUES (${tokenHash}, ${clientId}, ${userId}, ${scopes.join(' ')}, ${meta.resource}, ${familyId}, now() + interval '1 hour')
+  `
+  return token
+}
+
+// One JSON-RPC tools/call over Streamable HTTP. The stateless transport
+// answers with an SSE frame; unwrap the data line to the tool result.
+export async function callMcpTool(token: string, name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+  const res = await fetch(nuxtUrl('/mcp'), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'accept': 'application/json, text/event-stream',
+      'mcp-protocol-version': '2025-11-25',
+      'authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })
+  })
+  const text = await res.text()
+  expect(res.status, text).toBe(200)
+  const dataLine = text.trim().split('\n').find(l => l.startsWith('data:'))
+  const rpc = JSON.parse(dataLine ? dataLine.slice('data:'.length).trim() : text) as { result?: McpToolResult, error?: unknown }
+  expect(rpc.error, JSON.stringify(rpc.error)).toBeUndefined()
+  return rpc.result!
 }
 
 // Wipe every context_* row owned by data this layer's tests created. The

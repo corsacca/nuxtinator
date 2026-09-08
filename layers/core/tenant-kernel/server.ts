@@ -16,7 +16,7 @@
 //     reach.
 
 import type { H3Event, EventHandler, EventHandlerRequest } from 'h3'
-import type { Transaction } from 'kysely'
+import type { Transaction, Kysely } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions } from '#core/server/utils/rbac'
@@ -46,28 +46,37 @@ export type TenantHandler<T> = (
   ctx: TenantContext
 ) => Promise<T> | T
 
+// The single-mode permission set: `users.roles[]` (plus `admin` when
+// `is_admin`) resolved through `getRolePermissions`, unioned with the user's
+// direct grants. The grants table is global in single mode, so the user_id
+// filter is the whole scope.
+async function resolveSinglePerms(
+  client: Kysely<Database> | Transaction<Database>,
+  userId: string
+): Promise<{ roles: string[], perms: Set<Permission> }> {
+  const userRow = await client
+    .selectFrom('users')
+    .select(['is_admin', 'roles'])
+    .where('id', '=', userId)
+    .executeTakeFirst()
+
+  const roles = [...(userRow?.roles ?? [])]
+  if (userRow?.is_admin && !roles.includes('admin')) roles.push('admin')
+
+  const perms = await getRolePermissions(client, roles, null)
+  for (const perm of await getUserGrantedPermissions(client, userId)) {
+    perms.add(perm)
+  }
+  return { roles, perms }
+}
+
 async function runWithSingleContext<T>(
   event: H3Event,
   fn: TenantHandler<T>
 ): Promise<T> {
   const authUser = requireAuth(event)
   return await db.transaction().execute(async (tx) => {
-    const userRow = await tx
-      .selectFrom('users')
-      .select(['is_admin', 'roles'])
-      .where('id', '=', authUser.userId)
-      .executeTakeFirst()
-
-    const roles = [...(userRow?.roles ?? [])]
-    if (userRow?.is_admin && !roles.includes('admin')) roles.push('admin')
-
-    const perms = await getRolePermissions(tx, roles, null)
-    // Additive per-user grants ride on top of role-derived perms. The table
-    // is global in single mode, so the user_id filter is the whole scope.
-    for (const perm of await getUserGrantedPermissions(tx, authUser.userId)) {
-      perms.add(perm)
-    }
-
+    const { roles, perms } = await resolveSinglePerms(tx, authUser.userId)
     return await fn(tx, {
       userId: authUser.userId,
       orgId: null,
@@ -137,6 +146,26 @@ export function withOrgPermission<T>(
     }
     return await fn(tx, ctx)
   })
+}
+
+// Every permission the user holds anywhere in the deployment, resolved
+// outside a request. The OAuth layer uses it as the upper bound for consent
+// and token issuance; the MCP layer uses it for tools/list visibility. Single
+// mode has one tenant, so this is the same set `defineTenantHandler` computes.
+export async function getUserPermissionsAcrossOrgs(userId: string): Promise<Set<Permission>> {
+  const { perms } = await resolveSinglePerms(db, userId)
+  return perms
+}
+
+// The user's effective permissions for the org a request targets. Single
+// mode has no orgs, so `opts.org` is accepted for API compatibility with the
+// multi-mode kernel and ignored.
+export async function getUserPermissionsForRequest(
+  _event: H3Event,
+  userId: string,
+  _opts: { org?: string } = {}
+): Promise<Set<Permission>> {
+  return await getUserPermissionsAcrossOrgs(userId)
 }
 
 // Operator-admin gate. Same in single and multi modes — the bit on the user

@@ -4,8 +4,6 @@
 // `mcp`, audit row) and the atomicity contract: a call that returns an
 // error has written nothing, for every section the call named.
 import { describe, it, expect, afterEach } from 'vitest'
-import { url as nuxtUrl } from '@nuxt/test-utils/e2e'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
   getHostAdminDb,
   cleanupContextTestData,
@@ -13,72 +11,21 @@ import {
   createContextOrg,
   addTestMembership,
   createTestPortfolio,
-  seedTestSection
+  seedTestSection,
+  issueMcpBearer,
+  callMcpTool
 } from '../helpers'
-
-interface McpToolResult {
-  content: Array<{ type: string, text: string }>
-  structuredContent?: Record<string, unknown>
-  isError?: boolean
-}
 
 const sql = getHostAdminDb()
 
-// Mint an oauth client + token family + access token with the same row
-// shapes the token endpoint writes. The token's resource must equal the
-// server's mcpResource, read from its RFC 9728 metadata so the test doesn't
-// depend on the configured site URL.
-async function issueBearer(userId: string, scopes: string[]): Promise<string> {
-  const metaRes = await fetch(nuxtUrl('/.well-known/oauth-protected-resource'))
-  const meta = await metaRes.json() as { resource: string }
-  const clientId = `test-context-${randomBytes(8).toString('hex')}`
-  await sql`
-    INSERT INTO oauth_clients (client_id, client_name, redirect_uris)
-    VALUES (${clientId}, 'test-context mcp client', ${['http://localhost/callback']})
-  `
-  const familyId = randomUUID()
-  await sql`
-    INSERT INTO oauth_token_families (family_id, user_id, client_id)
-    VALUES (${familyId}, ${userId}, ${clientId})
-  `
-  const token = `oat_${randomBytes(32).toString('hex')}`
-  const tokenHash = createHash('sha256').update(token).digest('hex')
-  await sql`
-    INSERT INTO oauth_access_tokens (token_hash, client_id, user_id, scope, resource, family_id, expires)
-    VALUES (${tokenHash}, ${clientId}, ${userId}, ${scopes.join(' ')}, ${meta.resource}, ${familyId}, now() + interval '1 hour')
-  `
-  return token
-}
-
-// One JSON-RPC tools/call over Streamable HTTP. The stateless transport
-// answers with an SSE frame; unwrap the data line to the tool result.
-async function callTool(token: string, name: string, args: Record<string, unknown>): Promise<McpToolResult> {
-  const res = await fetch(nuxtUrl('/mcp'), {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      accept: 'application/json, text/event-stream',
-      'mcp-protocol-version': '2025-11-25',
-      authorization: `Bearer ${token}`
-    },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } })
-  })
-  const text = await res.text()
-  expect(res.status, text).toBe(200)
-  const dataLine = text.trim().split('\n').find(l => l.startsWith('data:'))
-  const rpc = JSON.parse(dataLine ? dataLine.slice('data:'.length).trim() : text) as { result?: McpToolResult, error?: unknown }
-  expect(rpc.error, JSON.stringify(rpc.error)).toBeUndefined()
-  return rpc.result!
-}
-
-// Org admin with a bearer carrying both context scopes. MCP resolves
-// permissions from the global user record, so the user is a host admin.
+// Org admin with a bearer carrying both context scopes. The user holds no
+// host-level role; every permission comes from the org membership.
 async function setupWriter() {
-  const user = await createContextUser(sql, { is_admin: true })
+  const user = await createContextUser(sql)
   const org = await createContextOrg(sql)
   await addTestMembership(sql, { user_id: user.id, org_id: org.id, roles: ['admin'] })
   const portfolio = await createTestPortfolio(sql, { org_id: org.id, name: 'MCP Writes', created_by: user.id })
-  const token = await issueBearer(user.id, ['context.read', 'context.write'])
+  const token = await issueMcpBearer(sql, user.id, ['context.read', 'context.write'])
   return { user, org, portfolio, token }
 }
 
@@ -101,7 +48,7 @@ describe('MCP update_section / bulk_update_sections', () => {
   it('update_section writes the section, a version stamped mcp, and an audit row', async () => {
     const { user, org, portfolio, token } = await setupWriter()
 
-    const result = await callTool(token, 'update_section', {
+    const result = await callMcpTool(token, 'update_section', {
       org: org.slug,
       portfolio_id: portfolio.id,
       section_key: 'identity',
@@ -133,7 +80,7 @@ describe('MCP update_section / bulk_update_sections', () => {
     await seedTestSection(sql, { portfolio_id: portfolio.id, section_key: 'team', content: 'current', last_edited_by: user.id })
     const before = await sectionRow(portfolio.id, 'team')
 
-    const result = await callTool(token, 'update_section', {
+    const result = await callMcpTool(token, 'update_section', {
       org: org.slug,
       portfolio_id: portfolio.id,
       section_key: 'team',
@@ -151,7 +98,7 @@ describe('MCP update_section / bulk_update_sections', () => {
   it('a failed update_section on a never-written section creates no row', async () => {
     const { org, portfolio, token } = await setupWriter()
 
-    const result = await callTool(token, 'update_section', {
+    const result = await callMcpTool(token, 'update_section', {
       org: org.slug,
       portfolio_id: portfolio.id,
       section_key: 'team',
@@ -168,7 +115,7 @@ describe('MCP update_section / bulk_update_sections', () => {
     await seedTestSection(sql, { portfolio_id: portfolio.id, section_key: 'identity', content: 'before', last_edited_by: user.id })
     const before = await sectionRow(portfolio.id, 'identity')
 
-    const result = await callTool(token, 'bulk_update_sections', {
+    const result = await callMcpTool(token, 'bulk_update_sections', {
       org: org.slug,
       portfolio_id: portfolio.id,
       updates: [
