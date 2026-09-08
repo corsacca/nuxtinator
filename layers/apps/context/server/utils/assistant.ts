@@ -37,6 +37,9 @@ export interface AssistantContext {
   // Human labels of everything the model has read, in load order.
   contextLoaded: string[]
   parseProposals: (reply: string) => ProposalDraft[]
+  // What a tool call would read, for progress display: 'Team', 'Acme › Team'
+  // in the all scope, or 'all of Acme'. Null when it would load nothing.
+  describeToolCall: (name: string, input: Record<string, unknown>) => string | null
 }
 
 interface PortfolioEntry {
@@ -324,6 +327,17 @@ export async function buildAssistantContext(
     return `Error: unknown tool '${name}'.`
   }
 
+  function describeToolCall(name: string, input: Record<string, unknown>): string | null {
+    const entry = resolveEntry(input)
+    if (typeof entry === 'string') return null
+    if (name === 'load_portfolio') return `all of ${entry.portfolio.name}`
+    if (name === 'load_section') {
+      const key = typeof input.section_key === 'string' ? input.section_key.trim() : ''
+      return entry.sections.some(s => s.key === key) ? sectionLabel(scope, entry, key) : null
+    }
+    return null
+  }
+
   function parseProposals(reply: string): ProposalDraft[] {
     const out: ProposalDraft[] = []
     const re = new RegExp(SECTION_UPDATE_PATTERN.source, SECTION_UPDATE_PATTERN.flags)
@@ -347,7 +361,7 @@ export async function buildAssistantContext(
     return out
   }
 
-  return { system, tools, onToolCall, contextLoaded, parseProposals }
+  return { system, tools, onToolCall, contextLoaded, parseProposals, describeToolCall }
 }
 
 const SECTION_UPDATE_PATTERN = /```\s*section-update\s*\r?\n(?:\s*PORTFOLIO:\s*(.+?)\s*\r?\n)?\s*SECTION_KEY:\s*(.+?)\s*\r?\n\s*SECTION_TITLE:\s*(.+?)\s*\r?\n\s*---\s*\r?\n([\s\S]*?)```/g

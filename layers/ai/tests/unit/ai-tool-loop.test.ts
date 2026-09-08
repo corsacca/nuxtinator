@@ -101,3 +101,23 @@ describe('runCompletionLoop', () => {
     expect(got).toEqual({})
   })
 })
+
+describe('runCompletionLoop text discard', () => {
+  it('fires onTextDiscard when a round with text ends in tool calls, and not otherwise', async () => {
+    const { call } = scripted([
+      { text: 'Let me look.', finishReason: 'tool_calls', toolCalls: [{ id: 'c1', name: 'load', arguments: '{}' }] },
+      { text: '', finishReason: 'tool_calls', toolCalls: [{ id: 'c2', name: 'load', arguments: '{}' }] },
+      { text: 'final', finishReason: 'stop', toolCalls: [] }
+    ])
+    let discards = 0
+    const res = await runCompletionLoop(call, {
+      apiMessages: [],
+      tools: [TOOL],
+      onToolCall: async () => 'r',
+      maxToolRounds: 4,
+      onTextDiscard: () => { discards++ }
+    })
+    expect(res.text).toBe('final')
+    expect(discards).toBe(1)
+  })
+})

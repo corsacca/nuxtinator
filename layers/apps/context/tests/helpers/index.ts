@@ -28,6 +28,8 @@ export * from 'layer-tenancy/test-helpers'
 // any tool calls the model "makes") and read back what it was asked.
 
 export interface AiFakeScript {
+  // Text a streaming reply shows before its tool calls and then discards.
+  discardedText?: string
   text?: string
   toolCalls?: Array<{ name: string, input: Record<string, unknown> }>
 }
@@ -39,6 +41,7 @@ export interface AiFakeCall {
   messages: Array<{ role: string, content: string }>
   tools: string[]
   toolResults: Array<{ name: string, input: Record<string, unknown>, result: string }>
+  streamed?: boolean
 }
 
 export async function primeAiFake(script: AiFakeScript): Promise<void> {

@@ -33,6 +33,9 @@ export interface CompletionLoopOptions {
   tools?: AiTool[]
   onToolCall?: AiToolHandler
   maxToolRounds: number
+  // Fires when a round that produced text ends in tool calls: that text is not
+  // part of the reply, so a streaming consumer drops what it showed.
+  onTextDiscard?: () => void
 }
 
 export interface CompletionLoopResult {
@@ -81,6 +84,7 @@ export async function runCompletionLoop(
     if (!allowToolCalls || turn.toolCalls.length === 0) {
       return { text: turn.text, finishReason: turn.finishReason, toolCalls: resolved }
     }
+    if (turn.text) opts.onTextDiscard?.()
 
     messages.push({
       role: 'assistant',

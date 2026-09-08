@@ -101,6 +101,7 @@ campaigns-server Anthropic drafting client onto OpenRouter so any layer can use 
   key/model resolution, key verification, error map) · env config
   [server/utils/ai-config.ts](server/utils/ai-config.ts) · tool loop
   [server/utils/ai-tool-loop.ts](server/utils/ai-tool-loop.ts) (pure, unit-tested)
+  · stream reader [server/utils/ai-stream.ts](server/utils/ai-stream.ts) (pure, unit-tested)
   · VITEST fake [server/utils/ai-test-fake.ts](server/utils/ai-test-fake.ts)
   + control route [server/routes/api/_test/ai.ts](server/routes/api/_test/ai.ts)
   · live model list [server/utils/ai-model-list.ts](server/utils/ai-model-list.ts)
@@ -121,6 +122,7 @@ campaigns-server Anthropic drafting client onto OpenRouter so any layer can use 
   · org page [app/pages/@[orgSlug]/settings/ai.vue](app/pages/@[orgSlug]/settings/ai.vue).
 - Tests: [tests/unit/ai-model-list.test.ts](tests/unit/ai-model-list.test.ts) (parser)
   · [tests/unit/ai-tool-loop.test.ts](tests/unit/ai-tool-loop.test.ts) (pure)
+  · [tests/unit/ai-stream.test.ts](tests/unit/ai-stream.test.ts) (pure)
   · [tests/api/ai-admin.test.ts](tests/api/ai-admin.test.ts) (host endpoints,
   gating, validation, cross-org sharing)
   · [tests/api/ai-org.test.ts](tests/api/ai-org.test.ts) (org key lifecycle,

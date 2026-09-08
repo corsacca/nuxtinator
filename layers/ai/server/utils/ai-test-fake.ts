@@ -25,6 +25,9 @@ export interface AiFakeScript {
   // Parsed tool input `generate()` returns. Default: a schema-shaped stub that
   // fills every declared property with a value of the right JSON type.
   generateInput?: Record<string, unknown>
+  // Text a streaming `complete()` receives before the tool calls and then
+  // discards, exercising a consumer's `onTextDiscard`. Needs `toolCalls`.
+  discardedText?: string
 }
 
 export interface AiFakeToolResult extends AiToolCallRecord {
@@ -39,6 +42,8 @@ export interface AiFakeCall {
   // Names of the tools the caller offered.
   tools: string[]
   toolResults: AiFakeToolResult[]
+  // Whether the caller asked for text as it arrives.
+  streamed?: boolean
 }
 
 interface AiFakeState {
@@ -71,6 +76,13 @@ export function resetAiFake(): void {
 
 // `model` is the id the client resolved for the call's feature; the fake
 // records it so a suite can assert which model a feature ran on.
+// Word-sized fragments, so a streaming consumer's reassembly is exercised.
+function fakeDeltas(text: string): string[] {
+  return text.match(/\S+\s*/g) ?? []
+}
+
+// A streaming call sees the same sequence a real one would: any discarded
+// preface, the tool calls, the discard, then the reply word by word.
 export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Promise<AiCompleteResult> {
   const state = getState()
   const entry: AiFakeCall = {
@@ -79,23 +91,27 @@ export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Pr
     system: opts.system,
     messages: opts.messages,
     tools: (opts.tools ?? []).map(t => t.name),
-    toolResults: []
+    toolResults: [],
+    streamed: !!opts.onTextDelta
   }
+  const scriptedCalls = opts.onToolCall ? state.script.toolCalls ?? [] : []
+  const preface = opts.onTextDelta && scriptedCalls.length ? state.script.discardedText ?? '' : ''
+  for (const delta of fakeDeltas(preface)) opts.onTextDelta!(delta)
+
   const toolCalls: AiToolCallRecord[] = []
-  if (opts.onToolCall) {
-    for (const tc of state.script.toolCalls ?? []) {
-      const result = await opts.onToolCall(tc.name, tc.input)
-      entry.toolResults.push({ ...tc, result })
-      toolCalls.push(tc)
-    }
+  for (const tc of scriptedCalls) {
+    const result = await opts.onToolCall!(tc.name, tc.input)
+    entry.toolResults.push({ ...tc, result })
+    toolCalls.push(tc)
+  }
+  if (preface) opts.onTextDiscard?.()
+
+  const text = state.script.text ?? `[[stub:${model}]]`
+  if (opts.onTextDelta) {
+    for (const delta of fakeDeltas(text)) opts.onTextDelta(delta)
   }
   state.log.push(entry)
-  return {
-    text: state.script.text ?? `[[stub:${model}]]`,
-    model,
-    finishReason: 'stop',
-    toolCalls
-  }
+  return { text, model, finishReason: 'stop', toolCalls }
 }
 
 export function aiFakeGenerate<T>(opts: AiGenerateOptions, model: string): AiGenerateResult<T> {

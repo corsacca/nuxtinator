@@ -70,6 +70,12 @@ export interface AiCompleteOptions {
   tools?: AiTool[]
   onToolCall?: AiToolHandler
   maxToolRounds?: number
+  // Streaming. With `onTextDelta` the provider call streams and reply text
+  // arrives in fragments as the model writes it. Text from a round that ends
+  // in tool calls is not part of the reply; `onTextDiscard` fires so a consumer
+  // can drop what it already showed.
+  onTextDelta?: (delta: string) => void
+  onTextDiscard?: () => void
 }
 
 export interface AiCompleteResult {

@@ -177,7 +177,11 @@ export async function insertMessage(tx: Tx, input: InsertMessageInput): Promise<
       // `::text::jsonb` so the driver binds a JSON document, not a quoted
       // string scalar.
       proposals: sql`${JSON.stringify(input.proposals ?? [])}::text::jsonb`,
-      context_loaded: sql`${JSON.stringify(input.contextLoaded ?? [])}::text::jsonb`
+      context_loaded: sql`${JSON.stringify(input.contextLoaded ?? [])}::text::jsonb`,
+      // Wall-clock time rather than the column default: both turns of an
+      // exchange are inserted in one transaction, where `now()` is the same
+      // for each, and the list orders by this column.
+      created_at: sql`clock_timestamp()`
     })
     .returning(MESSAGE_COLUMNS)
     .executeTakeFirstOrThrow()

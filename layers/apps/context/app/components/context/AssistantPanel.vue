@@ -5,10 +5,12 @@ import type {
   AssistantConversation,
   AssistantProposal
 } from '../../composables/useContextAssistant'
+import { useContextAssistantTurn } from '../../composables/useContextAssistantTurn'
 
 const {
   open, scope, conversationId, routeSlug, routeKey, availableScopes, target, targetKey
 } = useContextAssistant()
+const { turn, inFlight, display, start: startTurn, clear: clearTurn } = useContextAssistantTurn()
 
 const SCOPE_LABELS: Record<AssistantScopeKind, string> = {
   section: 'Section',
@@ -20,7 +22,9 @@ const conversations = ref<AssistantConversation[]>([])
 const messages = ref<AssistantMessage[]>([])
 const canApply = ref(false)
 const loading = ref(false)
-const sending = ref(false)
+// Creating the conversation precedes the turn; both lock the composer.
+const creating = ref(false)
+const sending = computed(() => creating.value || inFlight.value)
 const decidingKey = ref<string | null>(null)
 const error = ref<string | null>(null)
 const draft = ref('')
@@ -127,29 +131,59 @@ async function send(event?: Event) {
   event?.preventDefault?.()
   const text = draft.value.trim()
   if (!text || sending.value) return
-  sending.value = true
   error.value = null
   draft.value = ''
   scrollToBottom()
-  try {
-    const id = await ensureConversation()
-    const url: string = `/api/context/assistant/conversations/${id}/messages`
-    const data = await $fetch<{ user_message: AssistantMessage, assistant_message: AssistantMessage, can_apply: boolean }>(url, {
-      method: 'POST',
-      body: { message: text }
+  creating.value = true
+  const id = await ensureConversation()
+    .catch((e) => {
+      error.value = errorMessage(e)
+      draft.value = text
+      return null
     })
-    messages.value.push(data.user_message, data.assistant_message)
-    canApply.value = data.can_apply
-    const conv = conversations.value.find(c => c.id === id)
-    if (conv && !conv.title) conv.title = text.length > 80 ? `${text.slice(0, 77)}…` : text
-    scrollToBottom()
-  } catch (e) {
-    error.value = errorMessage(e)
-    draft.value = text
-  } finally {
-    sending.value = false
-  }
+    .finally(() => {
+      creating.value = false
+    })
+  if (!id) return
+  // Settles when the turn does; the watchers below apply the outcome, so the
+  // panel need not stay mounted for the duration.
+  await startTurn(id, text)
 }
+
+function titleFor(text: string): string {
+  return text.length > 80 ? `${text.slice(0, 77)}…` : text
+}
+
+// The turn rendered inline: the one running for the open conversation.
+const activeTurn = computed(() =>
+  turn.value && inFlight.value && turn.value.conversationId === conversationId.value ? turn.value : null
+)
+
+watch(() => turn.value?.result, (result) => {
+  if (!result || !turn.value) return
+  if (turn.value.conversationId === conversationId.value) {
+    // The list may already hold the turn if it was reloaded while it ran.
+    for (const m of [result.user_message, result.assistant_message]) {
+      if (!messages.value.some(x => x.id === m.id)) messages.value.push(m)
+    }
+    canApply.value = result.can_apply
+    const conv = conversations.value.find(c => c.id === conversationId.value)
+    if (conv && !conv.title) conv.title = titleFor(turn.value.userText)
+    scrollToBottom()
+  }
+  clearTurn()
+}, { immediate: true })
+
+watch(() => turn.value?.error, (err) => {
+  if (!err || !turn.value) return
+  error.value = err
+  // A dropped connection is not a failed turn — the server finishes it — so
+  // the text is offered for resending only when the turn actually failed.
+  if (!turn.value.lost && !draft.value) draft.value = turn.value.userText
+  clearTurn()
+}, { immediate: true })
+
+watch(() => turn.value?.text.length, () => scrollToBottom())
 
 async function decide(message: AssistantMessage, index: number, action: 'apply' | 'reject') {
   const key = `${message.id}:${index}`
@@ -293,7 +327,30 @@ const emptyHint = computed(() => {
           </div>
         </div>
 
-        <div v-if="sending" class="flex justify-start">
+        <template v-if="activeTurn">
+          <div class="flex justify-end">
+            <div class="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm bg-(--ui-primary) text-(--ui-bg) rounded-tr-sm whitespace-pre-wrap">
+              {{ activeTurn.userText }}
+            </div>
+          </div>
+          <div class="flex justify-start">
+            <div class="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm bg-(--ui-bg-elevated) border border-(--ui-border) rounded-tl-sm">
+              <UChatShimmer v-if="!display || (!display.visible && display.drafting.length === 0)" :text="activeTurn.status" />
+              <template v-else>
+                <ContextAssistantMarkdown v-if="display.visible" :content="display.visible" />
+                <div
+                  v-for="(title, i) in display.drafting"
+                  :key="i"
+                  class="mt-2 flex items-center gap-1.5 text-xs text-(--ui-text-dimmed)"
+                >
+                  <UIcon name="i-lucide-pen-line" class="size-3 animate-pulse" />
+                  {{ title ? `Drafting an update to ${title}…` : 'Drafting an update…' }}
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+        <div v-else-if="sending" class="flex justify-start">
           <div class="bg-(--ui-bg-elevated) border border-(--ui-border) rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm">
             <UChatShimmer text="Thinking…" />
           </div>

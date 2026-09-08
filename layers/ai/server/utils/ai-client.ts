@@ -12,7 +12,8 @@ import type {
 import { getOpenRouterConfig, getHostApiKey } from './ai-config'
 import { getModelList, supportsTemperature } from './ai-model-list'
 import { getOrgApiKey, getEffectiveApiKey, resolveFeatureModel } from './ai-settings'
-import { runCompletionLoop, type ProviderCall } from './ai-tool-loop'
+import { runCompletionLoop, type ProviderCall, type ProviderToolCall, type ProviderTurn } from './ai-tool-loop'
+import { readCompletionStream, type StreamedTurn } from './ai-stream'
 import { aiFakeComplete, aiFakeGenerate } from './ai-test-fake'
 
 // OpenRouter client. OpenRouter is OpenAI-compatible, so this is a plain fetch
@@ -20,7 +21,8 @@ import { aiFakeComplete, aiFakeGenerate } from './ai-test-fake'
 // bundling caveats. `complete()` returns assistant text, resolving any tool
 // calls the model makes through the caller's handler (see ai-tool-loop.ts);
 // `generate()` forces a single tool call and returns its parsed arguments as
-// structured output.
+// structured output. Given `onTextDelta`, `complete()` streams each round and
+// hands reply text over as it arrives (ai-stream.ts reassembles the turn).
 //
 // Both take the caller's `tx` and a feature key and resolve the key and model
 // themselves (ai-settings.ts): the org's own key and choices when it has them,
@@ -137,7 +139,7 @@ function buildBody(
   return { ...body, ...extra }
 }
 
-async function callOpenRouter(apiKey: string, body: Record<string, unknown>): Promise<any> {
+async function openRouterRequest(apiKey: string, body: Record<string, unknown>): Promise<Response> {
   const cfg = getOpenRouterConfig()
 
   let res: Response
@@ -179,9 +181,44 @@ async function callOpenRouter(apiKey: string, body: Record<string, unknown>): Pr
     throw createError({ statusCode: 500, statusMessage: 'AI request was rejected — check the server logs.' })
   }
 
+  return res
+}
+
+async function callOpenRouter(apiKey: string, body: Record<string, unknown>): Promise<any> {
+  const res = await openRouterRequest(apiKey, body)
   const data = await res.json()
   logUsage(String(body.model), data?.usage)
   return data
+}
+
+// The same request with `stream: true`, reassembled from the SSE body while
+// text fragments go to `onTextDelta`.
+async function streamOpenRouter(
+  apiKey: string,
+  body: Record<string, unknown>,
+  onTextDelta: (delta: string) => void
+): Promise<StreamedTurn> {
+  const res = await openRouterRequest(apiKey, { ...body, stream: true })
+  if (!res.body) {
+    throw createError({ statusCode: 502, statusMessage: 'The AI provider returned an empty stream. Try again.' })
+  }
+  const turn = await readCompletionStream(textChunks(res.body), onTextDelta)
+  logUsage(String(body.model), turn.usage)
+  return turn
+}
+
+async function* textChunks(body: ReadableStream<Uint8Array>): AsyncIterable<string> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      yield decoder.decode(value, { stream: true })
+    }
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 // One line per round trip so prompt-cache hits can be verified from the server
@@ -196,31 +233,45 @@ function logUsage(model: string, usage: any): void {
   )
 }
 
-// One chat-completions round trip in the shape the tool loop consumes.
-function providerCall(apiKey: string, model: string, maxTokens: number, temperature: number | undefined): ProviderCall {
+// A `length` finish means the answer was cut off; both transports map it to
+// the same retryable error.
+function finishTurn(text: string, finishReason: string, toolCalls: ProviderToolCall[]): ProviderTurn {
+  if (finishReason === 'length') {
+    throw createError({ statusCode: 502, statusMessage: 'The AI response was cut off. Try again.' })
+  }
+  return { text: text.trim(), finishReason, toolCalls }
+}
+
+// One chat-completions round trip in the shape the tool loop consumes,
+// streamed when the caller wants text as it arrives.
+function providerCall(
+  apiKey: string,
+  model: string,
+  maxTokens: number,
+  temperature: number | undefined,
+  onTextDelta: ((delta: string) => void) | undefined
+): ProviderCall {
   return async (apiMessages, apiTools, allowToolCalls) => {
-    const data = await callOpenRouter(
-      apiKey,
-      buildBody(model, apiMessages, maxTokens, temperature, {
-        ...(apiTools ? { tools: apiTools } : {}),
-        ...(apiTools && !allowToolCalls ? { tool_choice: 'none' } : {})
-      })
-    )
-    const choice = data.choices?.[0]
-    const finishReason: string = choice?.finish_reason ?? 'stop'
-    if (finishReason === 'length') {
-      throw createError({ statusCode: 502, statusMessage: 'The AI response was cut off. Try again.' })
+    const body = buildBody(model, apiMessages, maxTokens, temperature, {
+      ...(apiTools ? { tools: apiTools } : {}),
+      ...(apiTools && !allowToolCalls ? { tool_choice: 'none' } : {})
+    })
+    if (onTextDelta) {
+      const turn = await streamOpenRouter(apiKey, body, onTextDelta)
+      return finishTurn(turn.text, turn.finishReason, turn.toolCalls)
     }
+    const data = await callOpenRouter(apiKey, body)
+    const choice = data.choices?.[0]
     const rawCalls: any[] = Array.isArray(choice?.message?.tool_calls) ? choice.message.tool_calls : []
-    return {
-      text: String(choice?.message?.content ?? '').trim(),
-      finishReason,
-      toolCalls: rawCalls.map(tc => ({
+    return finishTurn(
+      String(choice?.message?.content ?? ''),
+      choice?.finish_reason ?? 'stop',
+      rawCalls.map(tc => ({
         id: String(tc.id ?? ''),
         name: String(tc.function?.name ?? ''),
         arguments: String(tc.function?.arguments ?? '')
       }))
-    }
+    )
   }
 }
 
@@ -229,12 +280,13 @@ export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResul
   if (process.env.VITEST) return aiFakeComplete(opts, model)
 
   const result = await runCompletionLoop(
-    providerCall(apiKey, model, opts.maxTokens ?? 2048, opts.temperature),
+    providerCall(apiKey, model, opts.maxTokens ?? 2048, opts.temperature, opts.onTextDelta),
     {
       apiMessages: toApiMessages(opts.system, opts.messages),
       tools: opts.tools,
       onToolCall: opts.onToolCall,
-      maxToolRounds: opts.maxToolRounds ?? 4
+      maxToolRounds: opts.maxToolRounds ?? 4,
+      onTextDiscard: opts.onTextDiscard
     }
   )
   return { ...result, model }

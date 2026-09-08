@@ -14,7 +14,9 @@ OpenRouter key and override those choices.
   - `complete({ tx, feature, … })` — chat completion → assistant text. Pass
     `tools` plus an `onToolCall` handler and the model may call them; each
     result is fed back and the loop ends on a text answer (or a forced one after
-    `maxToolRounds`).
+    `maxToolRounds`). Pass `onTextDelta` and the call streams: reply text
+    arrives in fragments as it is written, and `onTextDiscard` fires when a
+    round's text is superseded by tool calls so a consumer drops what it showed.
   - `generate({ tx, feature, tool, … })` — force a single tool call, return its
     parsed arguments as structured output (the pattern for AI-drafting,
     extraction, classification).
@@ -107,6 +109,10 @@ await primeAiFake({ text: 'Here is the answer.', toolCalls: [{ name: 'load_secti
 const log = await getAiFakeLog()   // what the model was asked, and each tool result
 await resetAiFake()
 ```
+
+A streaming `complete()` gets the scripted text from the fake word by word.
+Script `discardedText` to have it stream a preface before its tool calls and
+then discard it, which exercises a consumer's `onTextDiscard`.
 
 ## Notes
 
