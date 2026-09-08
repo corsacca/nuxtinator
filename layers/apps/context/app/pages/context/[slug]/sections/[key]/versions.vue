@@ -28,25 +28,34 @@ const selectedIndex = computed(() => {
 })
 const selected = computed(() => versions.value[selectedIndex.value] ?? null)
 const previous = computed(() => versions.value[selectedIndex.value + 1] ?? null)
-const restoringId = ref<string | null>(null)
+const restoreOpen = ref(false)
+const restoreTargetId = ref<string | null>(null)
+const restoring = ref(false)
 const sidebarOpen = ref(false)
 
 function label(idx: number): string {
   return idx === 0 ? 'Current' : `Version ${versions.value.length - idx}`
 }
 
-async function restore(id: string) {
-  if (!confirm('Restore this version? This will create a new version at the head.')) return
-  restoringId.value = id
+function askRestore(id: string) {
+  restoreTargetId.value = id
+  restoreOpen.value = true
+}
+
+async function restore() {
+  const id = restoreTargetId.value
+  if (!id) return
+  restoring.value = true
   try {
     await $fetch(
       `/api/context/portfolios/${slug.value}/sections/${key.value}/versions/${id}/restore`,
       { method: 'POST' }
     )
+    restoreOpen.value = false
     await refresh()
     selectedId.value = null
   } finally {
-    restoringId.value = null
+    restoring.value = false
   }
 }
 </script>
@@ -138,8 +147,7 @@ async function restore(id: string) {
                 v-if="selectedIndex > 0"
                 variant="outline"
                 size="sm"
-                :loading="restoringId === selected.id"
-                @click="restore(selected.id)"
+                @click="askRestore(selected.id)"
               >
                 Restore
               </UButton>
@@ -153,5 +161,15 @@ async function restore(id: string) {
         </div>
       </div>
     </section>
+
+    <ContextConfirmModal
+      v-model:open="restoreOpen"
+      title="Restore this version?"
+      description="The restored content becomes the current version; the history is kept."
+      confirm-label="Restore"
+      color="primary"
+      :loading="restoring"
+      @confirm="restore"
+    />
   </div>
 </template>

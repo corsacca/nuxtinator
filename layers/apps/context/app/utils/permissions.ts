@@ -38,8 +38,8 @@ export const CONTEXT_PERMISSION_META: Record<string, { title: string, descriptio
     description: 'Delete portfolios and their content.'
   },
   'context.section.custom': {
-    title: 'Manage custom sections',
-    description: 'Add, edit, and remove custom section definitions on a portfolio.'
+    title: 'Manage sections',
+    description: 'Add, edit, and remove sections on a portfolio.'
   },
   'context.assistant.chat': {
     title: 'Chat with assistant',

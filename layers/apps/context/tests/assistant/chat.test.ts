@@ -336,3 +336,27 @@ describe('assistant conversations', () => {
     expect(badPortfolio.statusCode).toBe(404)
   })
 })
+
+describe('assistant and deleted sections', () => {
+  const sql = getHostAdminDb()
+  beforeEach(async () => { await resetAiFake() })
+  afterEach(async () => { await cleanupContextTestData(sql) })
+
+  it('portfolio scope preloads only sections the portfolio still has', async () => {
+    const { org, auth, user } = await createContextOrgWith(sql, ['admin'])
+    const opts = withOrgHeader(auth, org.slug)
+    const p = await createTestPortfolio(sql, { org_id: org.id, name: 'Pruned', created_by: user.id })
+    await seedTestSection(sql, { portfolio_id: p.id, section_key: 'identity', content: 'Identity text stays' })
+    await seedTestSection(sql, { portfolio_id: p.id, section_key: 'team', content: 'Team text is orphaned' })
+    await $fetch(`/api/context/portfolios/${p.slug}/sections/team`, { method: 'DELETE', ...opts })
+    await primeAiFake({ text: 'Sure.' })
+
+    const conv = await startConversation(opts, { portfolio: p.slug })
+    const turn = await sendMessage(opts, conv.id, 'What do you know?')
+    expect(turn.assistant_message.context_loaded).toEqual(['Identity'])
+
+    const call = (await getAiFakeLog()).at(-1)!
+    expect(systemText(call)).toContain('Identity text stays')
+    expect(systemText(call)).not.toContain('Team text is orphaned')
+  })
+})

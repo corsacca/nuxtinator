@@ -19,7 +19,7 @@ interface SectionMeta {
   description: string
   order: number
   is_custom: boolean
-  custom_id: string | null
+  id: string
   word_count: number
   has_content: boolean
   last_edited_at: string | null
@@ -102,7 +102,7 @@ const completedCount = computed(() => sections.value.filter(s => s.has_content &
               </div>
             </div>
           </NuxtLink>
-          <ContextCustomSectionsManager :slug="slug" class="pt-4" @changed="refresh" />
+          <ContextSectionsManager :slug="slug" :list="false" class="pt-4" @changed="refresh" />
         </div>
       </div>
     </section>

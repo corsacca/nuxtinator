@@ -20,6 +20,8 @@ import {
   type TestOrg
 } from 'layer-tenancy/test-helpers'
 
+import { CONTEXT_SECTIONS } from '../../server/utils/section-catalog'
+
 export * from 'layer-tenancy/test-helpers'
 
 // --- The AI fake ---
@@ -119,7 +121,8 @@ export async function addContextMember(
 // Seed a portfolio directly via the host-admin pool (BYPASSRLS). Multi-tenant
 // retrofit adds `org_id NOT NULL DEFAULT current_org_id()` — but the GUC isn't
 // set outside `defineTenantHandler`'s txn, so the seed must supply org_id
-// explicitly to satisfy NOT NULL.
+// explicitly to satisfy NOT NULL. Seeds the built-in section rows too
+// (`builtin_sections` narrows the set; [] = none), as the create route does.
 export interface TestPortfolio {
   id: string
   slug: string
@@ -128,7 +131,7 @@ export interface TestPortfolio {
 
 export async function createTestPortfolio(
   sql: ReturnType<typeof postgres>,
-  opts: { org_id: string, slug?: string, name?: string, created_by?: string }
+  opts: { org_id: string, slug?: string, name?: string, created_by?: string, builtin_sections?: string[] }
 ): Promise<TestPortfolio> {
   const id = randomUUID()
   const slug = opts.slug ?? `test-context-${randomUUID().slice(0, 8)}`
@@ -137,6 +140,13 @@ export async function createTestPortfolio(
     INSERT INTO context_portfolios (id, slug, name, org_id)
     VALUES (${id}, ${slug}, ${name}, ${opts.org_id})
   `
+  const keys = opts.builtin_sections ?? CONTEXT_SECTIONS.map(s => s.key)
+  for (const key of keys) {
+    await sql`
+      INSERT INTO context_section_definitions (portfolio_id, key, created_by)
+      VALUES (${id}, ${key}, ${opts.created_by ?? null})
+    `
+  }
   return { id, slug, name }
 }
 
@@ -162,7 +172,7 @@ export async function seedTestCustomSection(
 ): Promise<{ id: string }> {
   const id = randomUUID()
   await sql`
-    INSERT INTO context_custom_section_definitions
+    INSERT INTO context_section_definitions
       (id, portfolio_id, key, title, description, "order", created_by)
     VALUES (${id}, ${opts.portfolio_id}, ${opts.key}, ${opts.title}, ${opts.description ?? ''}, ${opts.order ?? 0}, ${opts.created_by})
   `
@@ -263,7 +273,7 @@ export async function cleanupContextTestData(sql: ReturnType<typeof postgres>): 
     WHERE last_edited_by IN (SELECT id FROM users WHERE email LIKE 'test-%@example.com')
   `
   await sql`
-    DELETE FROM context_custom_section_definitions
+    DELETE FROM context_section_definitions
     WHERE created_by IN (SELECT id FROM users WHERE email LIKE 'test-%@example.com')
   `
   // Portfolios: by slug prefix and by membership in a test org. CASCADE

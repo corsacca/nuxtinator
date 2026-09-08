@@ -8,7 +8,7 @@ const TABLES = [
   'context_portfolios',
   'context_sections',
   'context_section_versions',
-  'context_custom_section_definitions',
+  'context_section_definitions',
   'context_section_comments',
   'context_section_comment_replies',
   'context_assistant_conversations',
@@ -33,6 +33,17 @@ describe('schema migrations', () => {
     expect(names).toContain('name')
     expect(names).toContain('color')
     expect(names).toContain('icon_url')
+  })
+
+  it('context_section_definitions stores built-in rows without a title', async () => {
+    const rows = await sql<{ column_name: string, is_nullable: string }[]>`
+      SELECT column_name, is_nullable FROM information_schema.columns
+      WHERE table_name = 'context_section_definitions'
+    `
+    const byName = new Map(rows.map(r => [r.column_name, r.is_nullable]))
+    expect(byName.get('key')).toBe('NO')
+    expect(byName.get('title')).toBe('YES')
+    expect(byName.get('created_by')).toBe('YES')
   })
 
   it('context_section_versions has a source column', async () => {

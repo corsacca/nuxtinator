@@ -32,14 +32,17 @@ export interface ContextSectionVersionsTable {
   source: ContextSectionVersionSource | null
 }
 
-export interface ContextCustomSectionDefinitionsTable {
+// One row per section a portfolio has. A built-in row stores only its key
+// (title/description/order resolve from the catalog); a custom row stores
+// its own. `created_by` is null for rows backfilled by migration.
+export interface ContextSectionDefinitionsTable {
   id: Generated<string>
   portfolio_id: string
   key: string
-  title: string
-  description: Generated<string>
-  order: Generated<number>
-  created_by: string
+  title: string | null
+  description: string | null
+  order: number | null
+  created_by: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
@@ -107,7 +110,7 @@ declare global {
     context_portfolios: ContextPortfoliosTable
     context_sections: ContextSectionsTable
     context_section_versions: ContextSectionVersionsTable
-    context_custom_section_definitions: ContextCustomSectionDefinitionsTable
+    context_section_definitions: ContextSectionDefinitionsTable
     context_section_comments: ContextSectionCommentsTable
     context_section_comment_replies: ContextSectionCommentRepliesTable
     context_assistant_conversations: ContextAssistantConversationsTable

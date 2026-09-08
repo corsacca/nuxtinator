@@ -7,6 +7,7 @@
 
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
+import { CONTEXT_SECTIONS, CONTEXT_SECTION_KEYS } from './section-catalog'
 
 export interface PortfolioRow {
   id: string
@@ -63,6 +64,51 @@ export function slugifyPortfolioName(name: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 40)
   return base.length >= 2 ? base : 'portfolio'
+}
+
+export interface CreatePortfolioInput {
+  name: string
+  color?: string | null
+  slug?: string
+  // Built-in section keys the portfolio starts with. Omitted = every catalog
+  // section; [] = none. Sections can be added or removed afterwards.
+  builtin_sections?: string[]
+}
+
+// Inserts the portfolio and one definition row per chosen built-in section.
+// The catalog is the template applied here; it is not consulted again for
+// existing portfolios.
+export async function createPortfolio(
+  tx: Transaction<Database>,
+  input: CreatePortfolioInput,
+  userId: string
+): Promise<PortfolioRow> {
+  const keys = input.builtin_sections === undefined
+    ? CONTEXT_SECTIONS.map(s => s.key)
+    : [...new Set(input.builtin_sections)]
+  const unknown = keys.filter(k => !CONTEXT_SECTION_KEYS.has(k))
+  if (unknown.length > 0) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Unknown built-in section(s): ${unknown.join(', ')}. Valid keys: ${[...CONTEXT_SECTION_KEYS].join(', ')}.`
+    })
+  }
+
+  const slug = await ensureUniqueSlug(tx, input.slug ?? slugifyPortfolioName(input.name))
+  const inserted = await tx
+    .insertInto('context_portfolios')
+    .values({ slug, name: input.name, color: input.color ?? null })
+    .returning(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
+    .executeTakeFirstOrThrow()
+
+  if (keys.length > 0) {
+    await tx
+      .insertInto('context_section_definitions')
+      .values(keys.map(key => ({ portfolio_id: inserted.id, key, created_by: userId })))
+      .execute()
+  }
+
+  return inserted as PortfolioRow
 }
 
 export async function ensureUniqueSlug(

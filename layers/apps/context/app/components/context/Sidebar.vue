@@ -1,13 +1,19 @@
 <script setup lang="ts">
 const open = defineModel<boolean>('open', { default: false })
+const createOpen = ref(false)
 
 const route = useRoute()
 watch(() => route.path, () => { open.value = false })
+
+function startCreate() {
+  open.value = false
+  createOpen.value = true
+}
 </script>
 
 <template>
   <SidebarPanel class="hidden lg:flex w-64 shrink-0">
-    <ContextSidebarBody />
+    <ContextSidebarBody @create="startCreate" />
   </SidebarPanel>
 
   <USlideover
@@ -31,10 +37,12 @@ watch(() => route.path, () => { open.value = false })
             />
           </div>
         </template>
-        <ContextSidebarBody @navigated="open = false" />
+        <ContextSidebarBody @navigated="open = false" @create="startCreate" />
       </SidebarPanel>
     </template>
   </USlideover>
+
+  <ContextCreatePortfolioModal v-model:open="createOpen" />
 
   <ContextAssistantLauncher />
 </template>

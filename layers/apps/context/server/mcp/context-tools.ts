@@ -3,7 +3,7 @@
 // Scopes track the equivalent HTTP routes' permissions: reads use
 // `context.read`; section-content writes use `context.write`; creating a
 // portfolio requires the portfolio-create permission; adding or removing a
-// custom section definition requires the custom-section permission.
+// section definition requires the section permission.
 // All tools except `list_orgs` take an optional `org` slug and run inside
 // `runInOrgTransaction(event, { org, userId }, ...)` from `#tenant/server`,
 // which in multi mode resolves the org (the `org` input, else the
@@ -27,9 +27,11 @@ import { defineMcpTool, mcpError, mcpLog, type McpToolContext } from '#mcp-layer
 import type { Database as CoreDatabase } from '#core/server/database/schema'
 import { runInOrgTransaction } from '#tenant/server'
 import { getPortfolioSections } from '../utils/section-settings'
-import { loadSection, saveSectionContent, isKnownSectionKey } from '../utils/section-helpers'
-import { slugifyPortfolioName, ensureUniqueSlug, getPortfolioById } from '../utils/portfolio-helpers'
-import { CONTEXT_SECTION_KEYS, slugifySectionTitle } from '../utils/section-catalog'
+import { loadSection, saveSectionContent, isKnownSectionKey, addSection, deleteSection } from '../utils/section-helpers'
+import { createPortfolio, getPortfolioById } from '../utils/portfolio-helpers'
+import { CONTEXT_SECTIONS } from '../utils/section-catalog'
+
+const BUILTIN_KEY_LIST = CONTEXT_SECTIONS.map(s => s.key).join(', ')
 
 function asAuditExecutor(tx: unknown): Kysely<CoreDatabase> {
   return tx as Kysely<CoreDatabase>
@@ -385,25 +387,19 @@ export const bulkUpdateSectionsTool = defineMcpTool({
 
 export const createPortfolioTool = defineMcpTool({
   name: 'create_portfolio',
-  description: 'Create a portfolio in the active organization. The slug is derived from the name unless one is given, and a colliding slug is auto-suffixed (-2, -3) — read the returned slug and id rather than assuming them. The portfolio starts with the built-in sections and no content; write content with update_section.',
+  description: `Create a portfolio in the active organization. The slug is derived from the name unless one is given, and a colliding slug is auto-suffixed (-2, -3) — read the returned slug and id rather than assuming them. \`builtin_sections\` picks which built-in sections the portfolio starts with (omit for all, [] for none; keys: ${BUILTIN_KEY_LIST}). Sections start with no content; write content with update_section.`,
   scope: 'context.portfolio.create',
   input: z.object({
     org: orgInput,
     name: z.string().trim().min(1).max(120),
     color: z.string().trim().max(20).nullable().optional(),
-    slug: z.string().trim().regex(/^[a-z][a-z0-9-]{1,39}$/).optional()
+    slug: z.string().trim().regex(/^[a-z][a-z0-9-]{1,39}$/).optional(),
+    builtin_sections: z.array(z.string().min(1).max(64)).max(50).optional()
   }).strict(),
   handler: async (input, ctx) => {
     try {
       return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
-        const requestedSlug = input.slug ?? slugifyPortfolioName(input.name)
-        const slug = await ensureUniqueSlug(tx, requestedSlug)
-
-        const portfolio = await tx
-          .insertInto('context_portfolios')
-          .values({ slug, name: input.name, color: input.color ?? null })
-          .returning(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
-          .executeTakeFirstOrThrow()
+        const portfolio = await createPortfolio(tx, input, ctx.auth.userId)
 
         await mcpLog('CREATE', 'context_portfolios', portfolio.id, ctx, {
           slug: portfolio.slug,
@@ -418,59 +414,41 @@ export const createPortfolioTool = defineMcpTool({
 
 export const createSectionTool = defineMcpTool({
   name: 'create_section',
-  description: 'Add a custom section to a portfolio. The section key is slugified from the title; the built-in section keys are reserved and a title that collides with one is rejected. Creates the section definition only — write its content afterwards with update_section.',
+  description: `Add a section to a portfolio. Pass \`key\` to add a built-in section from the catalog (keys: ${BUILTIN_KEY_LIST}) — this is also how a deleted built-in is brought back, with its earlier content. Or pass \`title\` (plus optional description/order) to create a custom section; its key is slugified from the title and may not collide with a built-in key. Creates the definition only — write content afterwards with update_section.`,
   scope: 'context.section.custom',
   input: z.object({
     org: orgInput,
     portfolio_id: z.string().uuid(),
-    title: z.string().trim().min(1).max(120),
+    key: z.string().min(1).max(64).optional(),
+    title: z.string().trim().min(1).max(120).optional(),
     description: z.string().trim().max(500).optional(),
     order: z.number().int().min(0).optional()
-  }).strict(),
+  }).strict().refine(d => (d.key !== undefined) !== (d.title !== undefined), {
+    message: 'Pass exactly one of key (built-in) or title (custom).'
+  }),
   handler: async (input, ctx) => {
     try {
       return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const portfolio = await getPortfolioById(tx, input.portfolio_id)
         if (!portfolio) throw createError({ statusCode: 404, statusMessage: 'Portfolio not found.' })
 
-        const key = slugifySectionTitle(input.title)
-        if (!key) {
-          throw createError({ statusCode: 400, statusMessage: 'Title must contain at least one alphanumeric character.' })
-        }
-        if (CONTEXT_SECTION_KEYS.has(key)) {
-          throw createError({ statusCode: 409, statusMessage: `Key "${key}" collides with a built-in section.` })
-        }
-        const existing = await tx
-          .selectFrom('context_custom_section_definitions')
-          .select('id')
-          .where('portfolio_id', '=', input.portfolio_id)
-          .where('key', '=', key)
-          .executeTakeFirst()
-        if (existing) {
-          throw createError({ statusCode: 409, statusMessage: `Custom section "${key}" already exists in this portfolio.` })
-        }
+        const section = await addSection(
+          tx,
+          input.portfolio_id,
+          input.key !== undefined
+            ? { key: input.key }
+            : { title: input.title!, description: input.description, order: input.order },
+          ctx.auth.userId
+        )
 
-        const section = await tx
-          .insertInto('context_custom_section_definitions')
-          .values({
-            portfolio_id: input.portfolio_id,
-            key,
-            title: input.title,
-            description: input.description ?? '',
-            order: input.order ?? 0,
-            created_by: ctx.auth.userId
-          })
-          .returning(['id', 'key', 'title', 'description', 'order'])
-          .executeTakeFirstOrThrow()
-
-        await mcpLog('CREATE', 'context_custom_section_definitions', section.id, ctx, {
+        await mcpLog('CREATE', 'context_section_definitions', section.id, ctx, {
           portfolio_id: input.portfolio_id,
-          key,
-          title: input.title
+          key: section.key,
+          title: section.title
         }, asAuditExecutor(tx))
 
         return textResult(
-          `Created section "${section.title}" (key: ${section.key}). Write its content with update_section.`,
+          `Added section "${section.title}" (key: ${section.key}). Write its content with update_section.`,
           { portfolio_id: input.portfolio_id, section }
         )
       })
@@ -480,7 +458,7 @@ export const createSectionTool = defineMcpTool({
 
 export const deleteSectionTool = defineMcpTool({
   name: 'delete_section',
-  description: 'Remove a custom section from a portfolio. Only custom sections can be removed — the built-in sections are permanent. Any content saved under the key stays in the database but is no longer listed or readable; creating a section with the same title again restores it.',
+  description: 'Remove a section from a portfolio, built-in or custom. Any content saved under the key stays in the database but is no longer listed or readable; adding the section again (create_section with the same key or title) restores it.',
   scope: 'context.section.custom',
   destructive: true,
   input: z.object({
@@ -494,43 +472,21 @@ export const deleteSectionTool = defineMcpTool({
         const portfolio = await getPortfolioById(tx, input.portfolio_id)
         if (!portfolio) throw createError({ statusCode: 404, statusMessage: 'Portfolio not found.' })
 
-        if (CONTEXT_SECTION_KEYS.has(input.section_key)) {
-          throw createError({
-            statusCode: 400,
-            statusMessage: `"${input.section_key}" is a built-in section and cannot be deleted. Only custom sections can be removed.`
-          })
-        }
+        const deleted = await deleteSection(tx, input.portfolio_id, input.section_key)
 
-        const definition = await tx
-          .selectFrom('context_custom_section_definitions')
-          .select(['id', 'key'])
-          .where('portfolio_id', '=', input.portfolio_id)
-          .where('key', '=', input.section_key)
-          .executeTakeFirst()
-        if (!definition) throw createError({ statusCode: 404, statusMessage: 'Custom section not found.' })
-
-        const content = await loadSection(tx, input.portfolio_id, input.section_key)
-        const contentRetained = (content?.content ?? '').length > 0
-
-        await tx
-          .deleteFrom('context_custom_section_definitions')
-          .where('id', '=', definition.id)
-          .execute()
-
-        await mcpLog('DELETE', 'context_custom_section_definitions', definition.id, ctx, {
+        await mcpLog('DELETE', 'context_section_definitions', deleted.id, ctx, {
           portfolio_id: input.portfolio_id,
-          key: definition.key
+          key: input.section_key
         }, asAuditExecutor(tx))
 
         return textResult(
-          contentRetained
-            ? `Deleted section "${definition.key}". Its content is retained but hidden until a section with the same key is created again.`
-            : `Deleted section "${definition.key}".`,
+          deleted.content_retained
+            ? `Deleted section "${input.section_key}". Its content is retained but hidden until the section is added again.`
+            : `Deleted section "${input.section_key}".`,
           {
-            key: definition.key,
+            key: input.section_key,
             status: 'deleted' as const,
-            id: definition.id,
-            content_retained: contentRetained
+            ...deleted
           }
         )
       })

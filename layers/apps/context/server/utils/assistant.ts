@@ -249,11 +249,12 @@ export async function buildAssistantContext(
   // Preload per scope. Only sections with content count as loaded, so an
   // empty section stays loadable (and reports as empty when asked for).
   for (const entry of entries) {
+    const visible = new Set(entry.sections.map(s => s.key))
     const keys = scope.kind === 'portfolio'
-      ? [...entry.content.keys()]
+      ? [...visible]
       : scope.kind === 'section' ? [scope.sectionKey] : []
     for (const key of keys) {
-      if (entry.content.has(key)) {
+      if (visible.has(key) && entry.content.has(key)) {
         entry.loaded.add(key)
         contextLoaded.push(sectionLabel(scope, entry, key))
       }

@@ -24,8 +24,12 @@ const { data, refresh } = await useAsyncData(
 const editing = ref(false)
 const draft = ref(data.value?.content ?? '')
 const saving = ref(false)
+const removeOpen = ref(false)
+const removing = ref(false)
 const error = ref<string | null>(null)
 const sidebarOpen = ref(false)
+const { hasPermission } = usePermissions()
+const canManageSections = computed(() => hasPermission('context.section.custom'))
 
 watch(data, (next) => {
   if (next && !editing.value) draft.value = next.content
@@ -45,6 +49,21 @@ function cancelEdit() {
   draft.value = data.value?.content ?? ''
   editing.value = false
   error.value = null
+}
+
+async function removeSection() {
+  removing.value = true
+  error.value = null
+  try {
+    await $fetch(`/api/context/portfolios/${slug.value}/sections/${key.value}`, { method: 'DELETE' })
+    removeOpen.value = false
+    await refreshNuxtData([`context-sidebar-sections-${slug.value}`, `context-sections-${slug.value}`])
+    await navigateTo(`/context/${slug.value}`)
+  } catch (e) {
+    error.value = (e as { statusMessage?: string }).statusMessage ?? 'Remove failed.'
+  } finally {
+    removing.value = false
+  }
 }
 
 async function save() {
@@ -91,6 +110,15 @@ async function save() {
         <UButton variant="outline" icon="i-lucide-history" size="sm" :to="`/context/${slug}/sections/${key}/versions`">
           History
         </UButton>
+        <UButton
+          v-if="canManageSections && !editing"
+          variant="outline"
+          color="error"
+          icon="i-lucide-trash"
+          size="sm"
+          aria-label="Remove section"
+          @click="removeOpen = true"
+        />
         <template v-if="editing">
           <UButton variant="ghost" size="sm" @click="cancelEdit">
             Cancel
@@ -134,5 +162,14 @@ async function save() {
         <span v-if="error" class="text-(--ui-error)">{{ error }}</span>
       </footer>
     </section>
+
+    <ContextConfirmModal
+      v-model:open="removeOpen"
+      :title="`Remove ${data?.title ?? key}?`"
+      description="Its content is kept and comes back if you add the section again."
+      confirm-label="Remove"
+      :loading="removing"
+      @confirm="removeSection"
+    />
   </div>
 </template>

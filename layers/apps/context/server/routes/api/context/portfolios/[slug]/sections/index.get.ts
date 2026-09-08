@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
           description: d.description,
           order: d.order,
           is_custom: d.is_custom,
-          custom_id: d.custom_id,
+          id: d.id,
           word_count: wordCount,
           has_content: content.trim().length > 0,
           last_edited_at: r?.last_edited_at ?? null,
