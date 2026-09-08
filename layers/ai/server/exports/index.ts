@@ -1,6 +1,6 @@
-// The `#ai/server` alias surface. Re-exports the OpenRouter client, model
-// catalog, host-level model resolution, and the feature registry for consumer
-// layers. Mirrors the exact surface of core's `#ai/server` fallback
+// The `#ai/server` alias surface. Re-exports the OpenRouter client, the live
+// model list, org/host model + key resolution, and the feature registry for
+// consumer layers. Mirrors the exact surface of core's `#ai/server` fallback
 // (ai-fallback/ai.ts) so consumers see one interface whether or not this layer
 // is loaded.
 //
@@ -11,16 +11,18 @@
 
 export * from '#core/ai-fallback/types'
 
-export { isAiConfigured, complete, generate } from '../utils/ai-client'
+export { isAiConfigured, complete, generate, validateApiKey } from '../utils/ai-client'
+export type { AiKeyCheck } from '../utils/ai-client'
+
+export { getHostApiKey } from '../utils/ai-config'
 
 export {
-  AI_MODEL_CATALOG,
-  AI_DEFAULT_MODEL,
-  getModelCatalog,
-  getCatalogEntry,
+  getModelList,
+  getModelInfo,
+  isKnownModel,
   supportsTemperature,
   supportsCaching
-} from '../utils/ai-models'
+} from '../utils/ai-model-list'
 
 export {
   registerAiFeature,
@@ -30,12 +32,21 @@ export {
 export {
   AI_SETTINGS_NAMESPACE,
   AI_SETTING_ENABLED_MODELS,
-  AI_SETTING_CUSTOM_MODELS,
+  AI_SETTING_DEFAULT_MODEL,
   AI_SETTING_FEATURE_MODELS,
+  AI_SETTING_API_KEY,
   sanitizeModelIdList,
+  sanitizeModelId,
   sanitizeFeatureModels,
-  modelInfo,
-  getEnabledModels,
-  getEnabledModelIds,
-  getFeatureModel
+  getOrgApiKey,
+  setOrgApiKey,
+  hasOrgApiKey,
+  getEffectiveApiKey,
+  modelInfoOrPlaceholder,
+  getHostEnabledModelIds,
+  getAllowedModelIds,
+  getAllowedModels,
+  resolveDefaultModel,
+  resolveFeatureModel
 } from '../utils/ai-settings'
+export type { AiOrgKey, AiOrgKeyStatus } from '../utils/ai-settings'

@@ -69,11 +69,13 @@ export function resetAiFake(): void {
   s.log = []
 }
 
-export async function aiFakeComplete(opts: AiCompleteOptions): Promise<AiCompleteResult> {
+// `model` is the id the client resolved for the call's feature; the fake
+// records it so a suite can assert which model a feature ran on.
+export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Promise<AiCompleteResult> {
   const state = getState()
   const entry: AiFakeCall = {
     kind: 'complete',
-    model: opts.model,
+    model,
     system: opts.system,
     messages: opts.messages,
     tools: (opts.tools ?? []).map(t => t.name),
@@ -89,25 +91,25 @@ export async function aiFakeComplete(opts: AiCompleteOptions): Promise<AiComplet
   }
   state.log.push(entry)
   return {
-    text: state.script.text ?? `[[stub:${opts.model}]]`,
-    model: opts.model,
+    text: state.script.text ?? `[[stub:${model}]]`,
+    model,
     finishReason: 'stop',
     toolCalls
   }
 }
 
-export function aiFakeGenerate<T>(opts: AiGenerateOptions): AiGenerateResult<T> {
+export function aiFakeGenerate<T>(opts: AiGenerateOptions, model: string): AiGenerateResult<T> {
   const state = getState()
   state.log.push({
     kind: 'generate',
-    model: opts.model,
+    model,
     system: opts.system,
     messages: opts.messages,
     tools: [opts.tool.name],
     toolResults: []
   })
   const input = (state.script.generateInput ?? stubToolInput(opts)) as T
-  return { input, model: opts.model, finishReason: 'tool_calls' }
+  return { input, model, finishReason: 'tool_calls' }
 }
 
 // Deterministic schema-shaped stub: fills each declared property with a value

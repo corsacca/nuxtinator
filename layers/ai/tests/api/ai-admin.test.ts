@@ -1,26 +1,27 @@
-// AI admin config endpoints: operator-admin gating, the catalog + enabled-set
-// read, and enable / custom-model / feature-model write round-trips (including
-// the sanitize-on-write behaviour). Runs against the booted host with the VITEST
-// stub, so no API key is needed.
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+// Host AI config endpoints: operator-admin gating, the enabled-set / default /
+// per-feature read, write validation against the enabled set, and the
+// host-level sharing across orgs. Runs against the booted host with the VITEST
+// stub (fixed model list, no key needed).
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { $fetch } from '@nuxt/test-utils/e2e'
-import { getHostAdminDb, createAiOrg, cleanupAiTestData } from '../helpers'
+import { getHostAdminDb, createAiOrg, cleanupAiTestData, clearAiHostConfig, AI_TEST_MODEL_IDS } from '../helpers'
 
-interface AiModel {
+interface AiEnabled {
   id: string
-  label: string
-  supportsTemperature: boolean
+  name: string
+  available: boolean
   supportsCaching: boolean
-  custom: boolean
-  enabled: boolean
 }
 interface AiConfig {
-  configured: boolean
-  models: AiModel[]
-  features: { key: string, label: string, model: string }[]
+  hostKeyConfigured: boolean
+  modelListAvailable: boolean
+  enabled: AiEnabled[]
+  defaultModel: string
+  features: { key: string, label: string, model: string, effectiveModel: string }[]
 }
 
 const sql = getHostAdminDb()
+const [ALPHA, BETA, GAMMA] = AI_TEST_MODEL_IDS
 
 async function getConfig(opts: object): Promise<AiConfig> {
   return $fetch<AiConfig>('/api/ai/admin/config', { ...opts })
@@ -32,6 +33,9 @@ async function putConfig(opts: object, body: Record<string, unknown>): Promise<u
 describe('ai admin config', () => {
   beforeAll(async () => {
     await cleanupAiTestData(sql)
+  })
+  beforeEach(async () => {
+    await clearAiHostConfig(sql)
   })
   afterAll(async () => {
     await cleanupAiTestData(sql)
@@ -45,77 +49,103 @@ describe('ai admin config', () => {
   it('answers without an active org (the /admin/ai page sends none)', async () => {
     const { auth } = await createAiOrg(sql)
     const config = await getConfig(auth)
-    expect(config.configured).toBe(true)
-    expect(config.models.length).toBeGreaterThan(0)
+    expect(config.modelListAvailable).toBe(true)
   })
 
-  it('reports configured (VITEST) and the default-enabled catalog', async () => {
+  it('starts with nothing enabled and no default', async () => {
     const { opts } = await createAiOrg(sql)
     const config = await getConfig(opts)
-    expect(config.configured).toBe(true)
-    const sonnet = config.models.find(m => m.id === 'anthropic/claude-sonnet-4.5')
-    expect(sonnet).toBeDefined()
-    expect(sonnet!.enabled).toBe(true)
-    // A default-disabled catalog model is present but off.
-    const gpt = config.models.find(m => m.id === 'openai/gpt-4.1')
-    expect(gpt).toBeDefined()
-    expect(gpt!.enabled).toBe(false)
+    expect(config.enabled).toEqual([])
+    expect(config.defaultModel).toBe('')
+    for (const f of config.features) expect(f.effectiveModel).toBe('')
   })
 
-  it('enables a model and reflects it on read', async () => {
-    const { opts } = await createAiOrg(sql)
-    await putConfig(opts, { enabled_models: ['anthropic/claude-sonnet-4.5', 'openai/gpt-4.1'] })
-    const config = await getConfig(opts)
-    expect(config.models.find(m => m.id === 'openai/gpt-4.1')!.enabled).toBe(true)
-    // The Haiku default is no longer in the enabled set (whole-set replace).
-    expect(config.models.find(m => m.id === 'anthropic/claude-3.5-haiku')!.enabled).toBe(false)
+  it('serves the live model list to any authenticated user', async () => {
+    const { opts } = await createAiOrg(sql, { admin: false })
+    const { models } = await $fetch<{ models: { id: string, name: string }[] }>('/api/ai/models', { ...opts })
+    expect(models.map(m => m.id)).toEqual(expect.arrayContaining(AI_TEST_MODEL_IDS))
   })
 
-  it('sanitizes the enabled set on write (dedupes, drops non-strings and unknown ids)', async () => {
+  it('enables models and reflects them with live info', async () => {
     const { opts } = await createAiOrg(sql)
-    await putConfig(opts, {
-      enabled_models: ['anthropic/claude-sonnet-4.5', 'anthropic/claude-sonnet-4.5', 42, 'not/a-real-model']
-    })
+    await putConfig(opts, { enabled_models: [ALPHA, BETA] })
     const config = await getConfig(opts)
-    const enabled = config.models.filter(m => m.enabled).map(m => m.id)
-    // The dup collapses, the number is dropped, and the unknown id is narrowed
-    // out (not in catalog, not a registered custom id).
-    expect(enabled).toEqual(['anthropic/claude-sonnet-4.5'])
+    expect(config.enabled.map(m => m.id)).toEqual([ALPHA, BETA])
+    const alpha = config.enabled.find(m => m.id === ALPHA)!
+    expect(alpha.name).toBe('Test Alpha')
+    expect(alpha.available).toBe(true)
+    expect(alpha.supportsCaching).toBe(true)
   })
 
-  it('adds a custom model id and enables it', async () => {
+  it('sanitizes the enabled set on write (dedupes, drops non-strings and unlisted ids)', async () => {
     const { opts } = await createAiOrg(sql)
-    await putConfig(opts, {
-      custom_models: ['anthropic/claude-opus-4.1'],
-      enabled_models: ['anthropic/claude-sonnet-4.5', 'anthropic/claude-opus-4.1']
-    })
+    await putConfig(opts, { enabled_models: [ALPHA, ALPHA, 42, 'not/a-real-model'] })
     const config = await getConfig(opts)
-    const custom = config.models.find(m => m.id === 'anthropic/claude-opus-4.1')
-    expect(custom).toBeDefined()
-    expect(custom!.custom).toBe(true)
-    expect(custom!.enabled).toBe(true)
+    expect(config.enabled.map(m => m.id)).toEqual([ALPHA])
+  })
+
+  it('requires the default model to be enabled', async () => {
+    const { opts } = await createAiOrg(sql)
+    await putConfig(opts, { enabled_models: [ALPHA] })
+    await expect(putConfig(opts, { default_model: BETA })).rejects.toMatchObject({ statusCode: 400 })
+    await putConfig(opts, { default_model: ALPHA })
+    expect((await getConfig(opts)).defaultModel).toBe(ALPHA)
+    // '' clears it.
+    await putConfig(opts, { default_model: '' })
+    expect((await getConfig(opts)).defaultModel).toBe('')
+  })
+
+  it('requires feature models to be enabled and resolves features through the default', async () => {
+    const { opts } = await createAiOrg(sql)
+    await putConfig(opts, { enabled_models: [ALPHA, BETA], default_model: ALPHA })
+    const before = await getConfig(opts)
+    // Every registered feature falls back to the host default.
+    for (const f of before.features) {
+      expect(f.model).toBe('')
+      expect(f.effectiveModel).toBe(ALPHA)
+    }
+    if (before.features.length === 0) return
+
+    const feature = before.features[0]!.key
+    await expect(putConfig(opts, { feature_models: { [feature]: GAMMA } })).rejects.toMatchObject({ statusCode: 400 })
+    await putConfig(opts, { feature_models: { [feature]: BETA } })
+    const after = await getConfig(opts)
+    const chosen = after.features.find(f => f.key === feature)!
+    expect(chosen.model).toBe(BETA)
+    expect(chosen.effectiveModel).toBe(BETA)
   })
 
   it('shares one config across orgs (host-level)', async () => {
     const a = await createAiOrg(sql)
     const b = await createAiOrg(sql)
-    await putConfig(a.opts, { enabled_models: ['openai/gpt-4.1'] })
+    await putConfig(a.opts, { enabled_models: [BETA], default_model: BETA })
     const configB = await getConfig(b.opts)
-    // B sees A's override: the enabled set is deployment-wide.
-    expect(configB.models.find(m => m.id === 'openai/gpt-4.1')!.enabled).toBe(true)
-    expect(configB.models.find(m => m.id === 'anthropic/claude-sonnet-4.5')!.enabled).toBe(false)
+    expect(configB.enabled.map(m => m.id)).toEqual([BETA])
+    expect(configB.defaultModel).toBe(BETA)
   })
 })
 
 describe('ai status', () => {
-  it('reports configured + enabled model availability', async () => {
+  beforeEach(async () => {
+    await clearAiHostConfig(sql)
+  })
+
+  it('reports no usable model until the host enables one and picks a default', async () => {
     const { opts } = await createAiOrg(sql)
-    const status = await $fetch<{ configured: boolean, hasEnabledModel: boolean, featureAvailable: boolean }>(
+    const before = await $fetch<{ configured: boolean, hasEnabledModel: boolean, featureAvailable: boolean }>(
       '/api/ai/status',
       { ...opts }
     )
-    expect(status.configured).toBe(true)
-    expect(status.hasEnabledModel).toBe(true)
-    expect(status.featureAvailable).toBe(true)
+    expect(before.configured).toBe(true)
+    expect(before.hasEnabledModel).toBe(false)
+    expect(before.featureAvailable).toBe(false)
+
+    await putConfig(opts, { enabled_models: [ALPHA], default_model: ALPHA })
+    const after = await $fetch<{ configured: boolean, hasEnabledModel: boolean, featureAvailable: boolean }>(
+      '/api/ai/status',
+      { ...opts }
+    )
+    expect(after.hasEnabledModel).toBe(true)
+    expect(after.featureAvailable).toBe(true)
   })
 })

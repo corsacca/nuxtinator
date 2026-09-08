@@ -3,12 +3,15 @@ import type {
   AiCompleteOptions,
   AiCompleteResult,
   AiContent,
+  AiDbClient,
   AiGenerateOptions,
   AiGenerateResult,
   AiMessage,
   AiTextPart
 } from '#core/ai-fallback/types'
-import { supportsTemperature } from './ai-models'
+import { getOpenRouterConfig, getHostApiKey } from './ai-config'
+import { getModelList, supportsTemperature } from './ai-model-list'
+import { getOrgApiKey, getEffectiveApiKey, resolveFeatureModel } from './ai-settings'
 import { runCompletionLoop, type ProviderCall } from './ai-tool-loop'
 import { aiFakeComplete, aiFakeGenerate } from './ai-test-fake'
 
@@ -19,35 +22,80 @@ import { aiFakeComplete, aiFakeGenerate } from './ai-test-fake'
 // `generate()` forces a single tool call and returns its parsed arguments as
 // structured output.
 //
-// Under VITEST both route to the primeable fake in ai-test-fake.ts instead of
-// the network.
+// Both take the caller's `tx` and a feature key and resolve the key and model
+// themselves (ai-settings.ts): the org's own key and choices when it has them,
+// the host's otherwise. Under VITEST both route to the primeable fake in
+// ai-test-fake.ts instead of the network.
 //
 // Error contract (consumers branch on these): 503 = not configured; 502 =
 // transient upstream (retry); 500 = auth/other misconfig (check server logs).
 // The raw provider message is never forwarded to the client.
 
-interface OpenRouterConfig {
-  apiKey: string
-  baseUrl: string
-  referer: string
-  title: string
-}
+// Under VITEST a feature with no configured model still runs against the fake.
+const AI_TEST_FALLBACK_MODEL = 'test/alpha'
 
-function getConfig(): OpenRouterConfig {
-  const c = useRuntimeConfig()
-  return {
-    apiKey: (c.openrouterApiKey as string) || process.env.OPENROUTER_API_KEY || '',
-    baseUrl: ((c.openrouterBaseUrl as string) || 'https://openrouter.ai/api/v1').replace(/\/$/, ''),
-    referer: (c.aiHttpReferer as string) || '',
-    title: (c.aiAppTitle as string) || ''
-  }
-}
-
-// Whether live generation is possible. Under VITEST it's always "configured" so
+// Whether live generation is possible for the active org: its own key, or the
+// host's env key when it has none. Under VITEST it's always "configured" so
 // suites run without a key — the network boundary is stubbed below.
-export function isAiConfigured(): boolean {
+export async function isAiConfigured(tx: AiDbClient): Promise<boolean> {
   if (process.env.VITEST) return true
-  return !!getConfig().apiKey
+  const org = await getOrgApiKey(tx)
+  if (org.status === 'ok') return true
+  if (org.status === 'undecryptable') return false
+  return !!getHostApiKey()
+}
+
+interface ResolvedRun {
+  apiKey: string
+  model: string
+}
+
+async function resolveRun(tx: AiDbClient, feature: string): Promise<ResolvedRun> {
+  // Warm the list so the synchronous capability lookups in buildBody see it.
+  await getModelList()
+  const model = await resolveFeatureModel(tx, feature)
+  if (process.env.VITEST) return { apiKey: 'test', model: model || AI_TEST_FALLBACK_MODEL }
+  const apiKey = await getEffectiveApiKey(tx)
+  if (!apiKey) {
+    throw createError({ statusCode: 503, statusMessage: 'AI is not configured (no API key for this organization or the host).' })
+  }
+  if (!model) {
+    throw createError({ statusCode: 503, statusMessage: 'No AI model is enabled for this feature.' })
+  }
+  return { apiKey, model }
+}
+
+export interface AiKeyCheck {
+  ok: boolean
+  // OpenRouter's label for the key, when it reports one.
+  label: string
+  // Human-readable reason when not ok.
+  message: string
+}
+
+// Verify a key against OpenRouter's key-info endpoint before storing it.
+// Under VITEST any non-empty key other than the literal 'invalid' passes.
+export async function validateApiKey(key: string): Promise<AiKeyCheck> {
+  if (process.env.VITEST) {
+    return key && key !== 'invalid'
+      ? { ok: true, label: 'test', message: '' }
+      : { ok: false, label: '', message: 'OpenRouter rejected this key.' }
+  }
+  const cfg = getOpenRouterConfig()
+  let res: Response
+  try {
+    res = await fetch(`${cfg.baseUrl}/auth/key`, { headers: { Authorization: `Bearer ${key}` } })
+  } catch {
+    return { ok: false, label: '', message: 'Could not reach OpenRouter to verify the key. Try again in a moment.' }
+  }
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, label: '', message: 'OpenRouter rejected this key.' }
+  }
+  if (!res.ok) {
+    return { ok: false, label: '', message: `OpenRouter answered ${res.status} while verifying the key. Try again in a moment.` }
+  }
+  const data = await res.json().catch(() => ({})) as { data?: { label?: unknown } }
+  return { ok: true, label: typeof data?.data?.label === 'string' ? data.data.label : '', message: '' }
 }
 
 // Our content model → OpenAI-compatible content. A parts array becomes the
@@ -89,18 +137,15 @@ function buildBody(
   return { ...body, ...extra }
 }
 
-async function callOpenRouter(body: Record<string, unknown>): Promise<any> {
-  const cfg = getConfig()
-  if (!cfg.apiKey) {
-    throw createError({ statusCode: 503, statusMessage: 'AI is not configured (OPENROUTER_API_KEY missing).' })
-  }
+async function callOpenRouter(apiKey: string, body: Record<string, unknown>): Promise<any> {
+  const cfg = getOpenRouterConfig()
 
   let res: Response
   try {
     res = await fetch(`${cfg.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${cfg.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         ...(cfg.referer ? { 'HTTP-Referer': cfg.referer } : {}),
         ...(cfg.title ? { 'X-Title': cfg.title } : {})
@@ -152,9 +197,10 @@ function logUsage(model: string, usage: any): void {
 }
 
 // One chat-completions round trip in the shape the tool loop consumes.
-function providerCall(model: string, maxTokens: number, temperature: number | undefined): ProviderCall {
+function providerCall(apiKey: string, model: string, maxTokens: number, temperature: number | undefined): ProviderCall {
   return async (apiMessages, apiTools, allowToolCalls) => {
     const data = await callOpenRouter(
+      apiKey,
       buildBody(model, apiMessages, maxTokens, temperature, {
         ...(apiTools ? { tools: apiTools } : {}),
         ...(apiTools && !allowToolCalls ? { tool_choice: 'none' } : {})
@@ -179,10 +225,11 @@ function providerCall(model: string, maxTokens: number, temperature: number | un
 }
 
 export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResult> {
-  if (process.env.VITEST) return aiFakeComplete(opts)
+  const { apiKey, model } = await resolveRun(opts.tx, opts.feature)
+  if (process.env.VITEST) return aiFakeComplete(opts, model)
 
   const result = await runCompletionLoop(
-    providerCall(opts.model, opts.maxTokens ?? 2048, opts.temperature),
+    providerCall(apiKey, model, opts.maxTokens ?? 2048, opts.temperature),
     {
       apiMessages: toApiMessages(opts.system, opts.messages),
       tools: opts.tools,
@@ -190,7 +237,7 @@ export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResul
       maxToolRounds: opts.maxToolRounds ?? 4
     }
   )
-  return { ...result, model: opts.model }
+  return { ...result, model }
 }
 
 // Force the model to call `opts.tool` and return its parsed arguments. A
@@ -199,9 +246,10 @@ export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResul
 export async function generate<T = Record<string, unknown>>(
   opts: AiGenerateOptions
 ): Promise<AiGenerateResult<T>> {
-  if (process.env.VITEST) return aiFakeGenerate<T>(opts)
+  const { apiKey, model } = await resolveRun(opts.tx, opts.feature)
+  if (process.env.VITEST) return aiFakeGenerate<T>(opts, model)
 
-  const body = buildBody(opts.model, toApiMessages(opts.system, opts.messages), opts.maxTokens ?? 8192, opts.temperature, {
+  const body = buildBody(model, toApiMessages(opts.system, opts.messages), opts.maxTokens ?? 8192, opts.temperature, {
     tools: [
       {
         type: 'function',
@@ -215,7 +263,7 @@ export async function generate<T = Record<string, unknown>>(
     tool_choice: { type: 'function', function: { name: opts.tool.name } }
   })
 
-  const data = await callOpenRouter(body)
+  const data = await callOpenRouter(apiKey, body)
   const choice = data.choices?.[0]
   const finishReason: string = choice?.finish_reason ?? 'stop'
   if (finishReason === 'length') {
@@ -238,5 +286,5 @@ export async function generate<T = Record<string, unknown>>(
   } catch {
     throw createError({ statusCode: 502, statusMessage: 'The AI returned an unparseable result. Try again.' })
   }
-  return { input, model: opts.model, finishReason }
+  return { input, model, finishReason }
 }

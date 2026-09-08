@@ -4,7 +4,7 @@
 // updates are parsed only for users who could apply them.
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
-import { isAiConfigured, complete, getFeatureModel } from '#ai/server'
+import { isAiConfigured, complete } from '#ai/server'
 import {
   getOwnedConversationOr404,
   listMessages,
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
     if (!parsed.success) {
       throw createError({ statusCode: 400, statusMessage: 'Invalid body', data: parsed.error.flatten() })
     }
-    if (!isAiConfigured()) {
+    if (!(await isAiConfigured(tx))) {
       throw createError({ statusCode: 503, statusMessage: 'The assistant is not configured.' })
     }
 
@@ -53,9 +53,9 @@ export default defineEventHandler(async (event) => {
       content: parsed.data.message
     })
 
-    const model = await getFeatureModel(tx, CONTEXT_ASSISTANT_FEATURE)
     const result = await complete({
-      model,
+      tx,
+      feature: CONTEXT_ASSISTANT_FEATURE,
       system: assistant.system,
       messages: [...history, { role: 'user', content: parsed.data.message }],
       tools: assistant.tools,

@@ -1,11 +1,12 @@
 // AI-layer test helpers. Re-exports tenancy + core helpers and adds an
-// operator-admin-in-a-fresh-org bootstrap (the AI admin endpoints gate on
-// requireOperatorAdmin; the org gives the caller an ordinary tenant context)
-// plus prefix-scoped cleanup.
+// operator-admin-in-a-fresh-org bootstrap (the host AI endpoints gate on
+// requireOperatorAdmin; the org gives the caller an ordinary tenant context),
+// a plain-member bootstrap for the org.settings.write gate, and prefix-scoped
+// cleanup.
 //
 // All seeded data is prefixed `test-ai-` (users, org slugs) so cleanup stays
-// scoped. AI config is host-level (`core_host_settings`, namespace `ai`) and
-// shared by every test, so cleanup wipes that namespace too.
+// scoped. Host config is deployment-global (`core_host_settings`, namespace
+// `ai`) and shared by every test, so suites clear it between tests.
 import type postgres from 'postgres'
 import { $fetch } from '@nuxt/test-utils/e2e'
 import { randomUUID } from 'node:crypto'
@@ -21,6 +22,10 @@ import {
 } from 'layer-tenancy/test-helpers'
 
 export * from 'layer-tenancy/test-helpers'
+
+// The ids of the fixed model list the booted host serves under VITEST
+// (server/utils/ai-model-list.ts AI_TEST_MODELS): alpha, beta, gamma.
+export const AI_TEST_MODEL_IDS = ['test/alpha', 'test/beta', 'test/gamma'] as const
 
 // An operator-admin user (users.is_admin) in a fresh org with membership, plus
 // X-Active-Org opts so calls look like normal in-org traffic. Pass
@@ -43,8 +48,28 @@ export async function createAiOrg(
   return { org, user, auth, opts: withOrgHeader(auth, org.slug) }
 }
 
-export async function cleanupAiTestData(sql: ReturnType<typeof postgres>): Promise<void> {
+// A plain member of an existing org (no org.settings.* permissions).
+export async function createAiOrgMember(
+  sql: ReturnType<typeof postgres>,
+  org: TestOrg
+): Promise<{ user: TestUser, auth: AuthHeaders, opts: ReturnType<typeof withOrgHeader> }> {
+  const user = await createTestUser(sql, {
+    email: `test-ai-${randomUUID().slice(0, 8)}@example.com`,
+    is_admin: false
+  })
+  await addTestMembership(sql, { user_id: user.id, org_id: org.id, roles: ['member'] })
+  const auth = getAuthHeaders(user)
+  return { user, auth, opts: withOrgHeader(auth, org.slug) }
+}
+
+export async function clearAiHostConfig(sql: ReturnType<typeof postgres>): Promise<void> {
   await sql`DELETE FROM core_host_settings WHERE namespace = 'ai'`
+}
+
+export async function cleanupAiTestData(sql: ReturnType<typeof postgres>): Promise<void> {
+  await clearAiHostConfig(sql)
+  await sql`DELETE FROM core_settings WHERE namespace = 'ai' AND org_id IN (SELECT id FROM orgs WHERE slug LIKE 'test-ai-%')`
+  await sql`DELETE FROM activity_logs WHERE org_id IN (SELECT id FROM orgs WHERE slug LIKE 'test-ai-%')`
   await sql`DELETE FROM orgs WHERE slug LIKE 'test-ai-%'`
   await sql`DELETE FROM users WHERE email LIKE 'test-ai-%'`
 }

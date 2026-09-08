@@ -51,7 +51,14 @@ export interface AiToolCallRecord {
 }
 
 export interface AiCompleteOptions {
-  model: string
+  // The caller's transaction. Generation runs on behalf of whichever org the
+  // transaction is scoped to: the org's own API key and model choices are read
+  // through it, falling back to the host's key and choices when the org has
+  // none. Required so no call path can spend the host key by omission.
+  tx: AiDbClient
+  // The registered feature key (see `registerAiFeature`), which resolves to
+  // the model an admin picked for it.
+  feature: string
   system?: AiContent
   messages: AiMessage[]
   maxTokens?: number
@@ -74,7 +81,8 @@ export interface AiCompleteResult {
 }
 
 export interface AiGenerateOptions {
-  model: string
+  tx: AiDbClient
+  feature: string
   system?: AiContent
   messages: AiMessage[]
   // The one tool the model is forced to call; its parsed arguments are returned
@@ -90,28 +98,23 @@ export interface AiGenerateResult<T = Record<string, unknown>> {
   finishReason: string
 }
 
-// One entry in the code-owned model catalog.
-export interface AiModelCatalogEntry {
+// One model as OpenRouter lists it, reduced to what the pickers and the client
+// need. The list is fetched live (and cached) — nothing model-specific lives in
+// code.
+export interface AiModelInfo {
   // OpenRouter model slug, e.g. 'anthropic/claude-sonnet-4.5'.
   id: string
-  label: string
-  // Whether the model accepts sampling params (temperature). Some newer models
-  // reject them with a hard error; guard per model rather than always sending.
+  name: string
+  // USD per million tokens; null when OpenRouter reports no price.
+  promptPrice: number | null
+  completionPrice: number | null
+  contextLength: number | null
+  // Whether the model accepts sampling params (temperature). Some models
+  // reject them with a hard error; the client sends them only when reported.
   supportsTemperature: boolean
-  // Whether the model honours Anthropic prompt caching via `cache_control`.
+  // Whether the model honours prompt caching via `cache_control` (OpenRouter
+  // reports cache pricing only for models that do).
   supportsCaching: boolean
-  // Whether this entry is enabled before any admin override.
-  defaultEnabled: boolean
-}
-
-// A model as surfaced to admin / per-feature selectors: catalog metadata plus
-// whether it came from the code catalog or was added by an admin as a custom id.
-export interface AiModelInfo {
-  id: string
-  label: string
-  supportsTemperature: boolean
-  supportsCaching: boolean
-  custom: boolean
 }
 
 // A capability a consumer layer wants an admin-selectable model for (e.g. inbox

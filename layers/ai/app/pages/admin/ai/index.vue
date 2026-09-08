@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { AiAdminConfig, AiAdminModel } from '#ai'
+import type { AiAdminConfig, AiEnabledModel, AiModelInfo } from '#ai'
+import { modelMeta } from '../../../utils/ai-model-meta'
 
 definePageMeta({
   layout: 'admin',
@@ -9,22 +10,23 @@ definePageMeta({
 const toast = useToast()
 
 const { data, pending, refresh } = await useFetch<AiAdminConfig>('/api/ai/admin/config', {
-  default: () => ({ configured: false, models: [], features: [] })
+  default: () => ({ hostKeyConfigured: false, modelListAvailable: false, enabled: [], defaultModel: '', features: [] })
+})
+const { data: list } = await useFetch<{ models: AiModelInfo[] }>('/api/ai/models', {
+  default: () => ({ models: [] })
 })
 
-const configured = computed(() => data.value?.configured ?? false)
-const models = computed(() => data.value?.models ?? [])
+const enabled = computed(() => data.value?.enabled ?? [])
 const features = computed(() => data.value?.features ?? [])
-const enabledModels = computed(() => models.value.filter(m => m.enabled))
+const enabledIds = computed(() => enabled.value.map(m => m.id))
 
-// Model options for the per-feature selectors — only enabled models are
-// selectable (the server refuses a disabled model anyway).
-const featureModelItems = computed(() =>
-  enabledModels.value.map(m => ({ value: m.id, label: m.label }))
+// Models still addable: everything OpenRouter lists that isn't enabled yet.
+const addable = computed(() =>
+  (list.value?.models ?? []).filter(m => !enabledIds.value.includes(m.id))
 )
 
 const saving = ref(false)
-const newCustomId = ref('')
+const pendingAdd = ref('')
 
 async function put(body: Record<string, unknown>): Promise<boolean> {
   saving.value = true
@@ -44,49 +46,48 @@ async function put(body: Record<string, unknown>): Promise<boolean> {
   }
 }
 
-async function toggleModel(model: AiAdminModel, enabled: boolean) {
-  const next = enabled
-    ? [...enabledModels.value.map(m => m.id), model.id]
-    : enabledModels.value.map(m => m.id).filter(id => id !== model.id)
-  if (await put({ enabled_models: next })) {
-    toast.add({ title: enabled ? `Enabled ${model.label}` : `Disabled ${model.label}`, color: 'success' })
+async function addModel(id: string) {
+  pendingAdd.value = ''
+  if (!id || enabledIds.value.includes(id)) return
+  if (await put({ enabled_models: [...enabledIds.value, id] })) {
+    toast.add({ title: `Enabled ${id}`, color: 'success' })
   }
 }
 
-async function addCustomModel() {
-  const id = newCustomId.value.trim()
-  if (!id) return
-  const custom = models.value.filter(m => m.custom).map(m => m.id)
-  if (custom.includes(id) || models.value.some(m => m.id === id)) {
-    toast.add({ title: 'That model is already listed', color: 'warning' })
-    return
+async function removeModel(model: AiEnabledModel) {
+  const next = enabledIds.value.filter(id => id !== model.id)
+  // Drop the default and any feature choice that pointed at it.
+  const featureMap: Record<string, string> = {}
+  for (const f of features.value) {
+    if (f.model && f.model !== model.id) featureMap[f.key] = f.model
   }
-  // Add it as a custom id and enable it in one write.
-  const ok = await put({
-    custom_models: [...custom, id],
-    enabled_models: [...enabledModels.value.map(m => m.id), id]
-  })
-  if (ok) {
-    newCustomId.value = ''
-    toast.add({ title: `Added ${id}`, color: 'success' })
+  const body: Record<string, unknown> = { enabled_models: next, feature_models: featureMap }
+  if (data.value?.defaultModel === model.id) body.default_model = ''
+  if (await put(body)) {
+    toast.add({ title: `Disabled ${model.name}`, color: 'success' })
   }
 }
 
-async function removeCustomModel(model: AiAdminModel) {
-  const custom = models.value.filter(m => m.custom && m.id !== model.id).map(m => m.id)
-  const enabled = enabledModels.value.map(m => m.id).filter(id => id !== model.id)
-  if (await put({ custom_models: custom, enabled_models: enabled })) {
-    toast.add({ title: `Removed ${model.id}`, color: 'success' })
+async function setDefaultModel(id: string) {
+  if (await put({ default_model: id })) {
+    toast.add({ title: id ? 'Default model updated' : 'Default model cleared', color: 'success' })
   }
 }
 
-async function setFeatureModel(featureKey: string, modelId: string) {
+async function setFeatureModel(featureKey: string, id: string) {
   const map: Record<string, string> = {}
-  for (const f of features.value) map[f.key] = f.model
-  map[featureKey] = modelId
+  for (const f of features.value) {
+    if (f.model) map[f.key] = f.model
+  }
+  if (id) map[featureKey] = id
+  else delete map[featureKey]
   if (await put({ feature_models: map })) {
     toast.add({ title: 'Feature model updated', color: 'success' })
   }
+}
+
+function nameOf(id: string): string {
+  return enabled.value.find(m => m.id === id)?.name ?? id
 }
 </script>
 
@@ -97,48 +98,61 @@ async function setFeatureModel(featureKey: string, modelId: string) {
         AI
       </h1>
       <p class="text-sm text-(--ui-text-muted)">
-        Choose which models are available and which model powers each AI feature.
-        Models are called through OpenRouter with the deployment's
-        <code>OPENROUTER_API_KEY</code>.
+        Choose which OpenRouter models the host's key may run, the default
+        model, and the model behind each AI feature. Organizations inherit
+        these choices and can override them in their own settings.
       </p>
     </header>
 
     <UAlert
-      v-if="!configured"
+      v-if="!data?.hostKeyConfigured"
       color="warning"
       variant="subtle"
       icon="i-lucide-triangle-alert"
-      title="AI is not configured"
-      description="Set OPENROUTER_API_KEY in the environment to enable live generation. Model selection is saved regardless, but requests will return a 503 until a key is present."
+      title="No host API key"
+      description="Set OPENROUTER_API_KEY in the environment to give organizations without their own key a fallback. Model choices are saved regardless."
+    />
+
+    <UAlert
+      v-if="!data?.modelListAvailable"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-cloud-off"
+      title="Model list unavailable"
+      description="OpenRouter's model list could not be loaded. Existing choices still work; adding models will be possible once it loads."
     />
 
     <section class="space-y-3">
       <div>
         <h2 class="text-lg font-semibold">
-          Models
+          Enabled models
         </h2>
         <p class="text-sm text-(--ui-text-muted)">
-          Enable the models this deployment may use. Add a custom OpenRouter model
-          id to adopt a new model without a code change.
+          The models the host key may spend on. Organizations using the host
+          key pick from this set; organizations with their own key may pick any
+          OpenRouter model.
         </p>
       </div>
 
-      <ul class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-md">
+      <ul
+        v-if="enabled.length"
+        class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-md"
+      >
         <li
-          v-for="model in models"
+          v-for="model in enabled"
           :key="model.id"
           class="flex items-center justify-between gap-3 p-4"
         >
           <div class="min-w-0">
             <div class="font-medium flex items-center gap-2 flex-wrap">
-              {{ model.label }}
+              {{ model.name }}
               <UBadge
-                v-if="model.custom"
-                color="neutral"
+                v-if="!model.available"
+                color="warning"
                 variant="subtle"
                 size="sm"
               >
-                Custom
+                No longer available
               </UBadge>
               <UBadge
                 v-if="model.supportsCaching"
@@ -153,42 +167,61 @@ async function setFeatureModel(featureKey: string, modelId: string) {
             <div class="text-xs text-(--ui-text-muted) font-mono">
               {{ model.id }}
             </div>
+            <div
+              v-if="model.available"
+              class="text-xs text-(--ui-text-muted)"
+            >
+              {{ modelMeta(model) }}
+            </div>
           </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <UButton
-              v-if="model.custom"
-              icon="i-lucide-trash-2"
-              color="error"
-              variant="ghost"
-              size="sm"
-              :disabled="saving"
-              @click="removeCustomModel(model)"
-            />
-            <USwitch
-              :model-value="model.enabled"
-              :disabled="saving"
-              size="lg"
-              @update:model-value="(v: boolean) => toggleModel(model, v)"
-            />
-          </div>
+          <UButton
+            icon="i-lucide-trash-2"
+            color="error"
+            variant="ghost"
+            size="sm"
+            :disabled="saving"
+            aria-label="Disable model"
+            @click="removeModel(model)"
+          />
         </li>
       </ul>
+      <div
+        v-else-if="!pending"
+        class="text-sm text-(--ui-text-muted)"
+      >
+        No models are enabled yet. AI features stay off until at least one
+        model is enabled and a default is chosen.
+      </div>
 
-      <div class="flex items-center gap-2">
-        <UInput
-          v-model="newCustomId"
-          placeholder="provider/model-id (e.g. anthropic/claude-opus-4.1)"
-          class="flex-1 font-mono"
-          :disabled="saving"
-          @keydown.enter="addCustomModel"
+      <div class="max-w-md">
+        <AiModelSelect
+          :model-value="pendingAdd"
+          :items="addable"
+          placeholder="Add a model…"
+          :disabled="saving || !addable.length"
+          @update:model-value="addModel"
         />
-        <UButton
-          icon="i-lucide-plus"
-          :disabled="saving || !newCustomId.trim()"
-          @click="addCustomModel"
-        >
-          Add model
-        </UButton>
+      </div>
+    </section>
+
+    <section class="space-y-3">
+      <div>
+        <h2 class="text-lg font-semibold">
+          Default model
+        </h2>
+        <p class="text-sm text-(--ui-text-muted)">
+          Used by any feature without its own choice.
+        </p>
+      </div>
+      <div class="max-w-md">
+        <AiModelSelect
+          :model-value="data?.defaultModel ?? ''"
+          :items="enabled"
+          clearable
+          clear-label="None"
+          :disabled="saving || !enabled.length"
+          @update:model-value="setDefaultModel"
+        />
       </div>
     </section>
 
@@ -201,7 +234,7 @@ async function setFeatureModel(featureKey: string, modelId: string) {
           Feature models
         </h2>
         <p class="text-sm text-(--ui-text-muted)">
-          Pick which enabled model powers each AI feature.
+          Pick which enabled model powers each AI feature, or leave it on the default.
         </p>
       </div>
 
@@ -209,7 +242,7 @@ async function setFeatureModel(featureKey: string, modelId: string) {
         <li
           v-for="feature in features"
           :key="feature.key"
-          class="flex items-center justify-between gap-3 p-4"
+          class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4"
         >
           <div class="min-w-0">
             <div class="font-medium">
@@ -221,19 +254,25 @@ async function setFeatureModel(featureKey: string, modelId: string) {
             >
               {{ feature.description }}
             </div>
+            <div class="text-xs text-(--ui-text-muted) mt-1">
+              <template v-if="feature.effectiveModel">
+                Runs on {{ nameOf(feature.effectiveModel) }}
+              </template>
+              <template v-else>
+                No model resolves — enable a model and choose a default.
+              </template>
+            </div>
           </div>
-          <USelectMenu
-            :model-value="feature.model"
-            :items="featureModelItems"
-            value-key="value"
-            label-key="label"
-            :search="false"
-            :disabled="saving || !enabledModels.length"
-            variant="outline"
-            size="sm"
-            class="w-64 shrink-0"
-            @update:model-value="(v: string) => setFeatureModel(feature.key, v)"
-          />
+          <div class="w-full sm:w-72 shrink-0">
+            <AiModelSelect
+              :model-value="feature.model"
+              :items="enabled"
+              clearable
+              clear-label="Use default"
+              :disabled="saving || !enabled.length"
+              @update:model-value="(v: string) => setFeatureModel(feature.key, v)"
+            />
+          </div>
         </li>
       </ul>
     </section>

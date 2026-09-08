@@ -1,5 +1,5 @@
 // Default `#ai/server` implementation when the `@nuxtinator/ai` layer is not
-// loaded. `isAiConfigured()` reports false so consumers gate their AI features
+// loaded. `isAiConfigured(tx)` reports false so consumers gate their AI features
 // off and never reach the throwing calls; anything that does generate throws
 // helpfully. Mirrors email-fallback/email.ts.
 //
@@ -15,7 +15,6 @@ import type {
   AiFeature,
   AiGenerateOptions,
   AiGenerateResult,
-  AiModelCatalogEntry,
   AiModelInfo
 } from './types'
 
@@ -31,7 +30,7 @@ function notConfigured(): never {
   })
 }
 
-export function isAiConfigured(): boolean {
+export async function isAiConfigured(_tx: AiDbClient): Promise<boolean> {
   return false
 }
 
@@ -54,21 +53,21 @@ export function getAiFeatures(): AiFeature[] {
   return []
 }
 
-export function getModelCatalog(): AiModelCatalogEntry[] {
+export async function getModelList(): Promise<AiModelInfo[]> {
   return []
 }
 
-export async function getEnabledModels(_tx: AiDbClient): Promise<AiModelInfo[]> {
+export async function getAllowedModelIds(_tx: AiDbClient): Promise<string[]> {
   return []
 }
 
-export async function getEnabledModelIds(_tx: AiDbClient): Promise<string[]> {
-  return []
-}
-
-// No configured model. Consumers must check `isAiConfigured()` before using the
+// No configured model. Consumers must check `isAiConfigured(tx)` before using the
 // result — the empty string is never a valid model id.
-export async function getFeatureModel(_tx: AiDbClient, _feature: string): Promise<string> {
+export async function resolveDefaultModel(_tx: AiDbClient): Promise<string> {
+  return ''
+}
+
+export async function resolveFeatureModel(_tx: AiDbClient, _feature: string): Promise<string> {
   return ''
 }
 

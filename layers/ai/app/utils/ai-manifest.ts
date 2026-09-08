@@ -1,28 +1,47 @@
 // The `#ai` client alias — types safe to import in Vue components / composables
-// (the admin AI model page). Server-only helpers live behind `#ai/server`.
+// (the admin and org AI pages, the model picker). Server-only helpers live
+// behind `#ai/server`.
 
-// One model as the admin page renders it: catalog/custom metadata plus its
-// current enabled state and which features have selected it.
-export interface AiAdminModel {
-  id: string
-  label: string
-  supportsTemperature: boolean
-  supportsCaching: boolean
-  custom: boolean
-  enabled: boolean
+import type { AiModelInfo } from '#core/ai-fallback/types'
+
+export type { AiModelInfo }
+
+// A host-enabled model as the admin page renders it. `available` is false when
+// OpenRouter no longer lists the id (the entry is a placeholder built from the
+// stored id alone).
+export interface AiEnabledModel extends AiModelInfo {
+  available: boolean
 }
 
-export interface AiAdminFeature {
+export interface AiFeatureConfig {
   key: string
   label: string
   description?: string
-  // The model id currently selected for this feature (resolved effective value).
+  // The explicit choice at this scope ('' = unset, fall through).
   model: string
+  // What the feature actually resolves to after fallbacks ('' = nothing).
+  effectiveModel: string
 }
 
 // Full payload of GET /api/ai/admin/config.
 export interface AiAdminConfig {
-  configured: boolean
-  models: AiAdminModel[]
-  features: AiAdminFeature[]
+  hostKeyConfigured: boolean
+  modelListAvailable: boolean
+  enabled: AiEnabledModel[]
+  defaultModel: string
+  features: AiFeatureConfig[]
+}
+
+export type AiOrgKeyStatus = 'none' | 'ok' | 'undecryptable'
+
+// Full payload of GET /api/ai/org/config.
+export interface AiOrgConfig {
+  key: { status: AiOrgKeyStatus, last4: string }
+  hostKeyConfigured: boolean
+  usingOwnKey: boolean
+  modelListAvailable: boolean
+  allowedModels: AiModelInfo[]
+  defaultModel: string
+  effectiveDefaultModel: string
+  features: AiFeatureConfig[]
 }

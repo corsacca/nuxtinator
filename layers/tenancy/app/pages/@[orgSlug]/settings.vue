@@ -9,6 +9,13 @@ const route = useRoute()
 const orgSlug = computed(() => route.params.orgSlug as string)
 const mobileOpen = ref(false)
 
+// Sections optional layers registered for the org settings shell (see core's
+// org-settings-section-registry), already permission-filtered server-side.
+const { data: registered } = await useFetch<{ sections: { title: string, icon: string, to: string }[] }>(
+  () => `/api/o/${orgSlug.value}/_settings-sections`,
+  { watch: [orgSlug], default: () => ({ sections: [] }) }
+)
+
 const navItems = computed<SidebarNavItem[]>(() => {
   const base = `/@${orgSlug.value}/settings`
   return [
@@ -16,7 +23,8 @@ const navItems = computed<SidebarNavItem[]>(() => {
     { to: `${base}/members`, label: 'Members', icon: 'i-lucide-users' },
     { to: `${base}/roles`, label: 'Roles', icon: 'i-lucide-shield' },
     { to: `${base}/apps`, label: 'Apps', icon: 'i-lucide-grid-2x2' },
-    { to: `${base}/audit`, label: 'Activity', icon: 'i-lucide-history' }
+    { to: `${base}/audit`, label: 'Activity', icon: 'i-lucide-history' },
+    ...(registered.value?.sections ?? []).map(s => ({ to: s.to, label: s.title, icon: s.icon }))
   ]
 })
 
