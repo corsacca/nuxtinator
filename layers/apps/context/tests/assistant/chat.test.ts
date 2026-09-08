@@ -21,6 +21,13 @@ import {
   sectionUpdateBlock
 } from '../helpers'
 
+// The prompt is sent as text parts; join them for assertions.
+function systemText(call: { system?: unknown }): string {
+  const s = call.system
+  if (typeof s === 'string') return s
+  return Array.isArray(s) ? s.map(p => String(p.text)).join('') : ''
+}
+
 interface Conversation {
   id: string
   portfolio_id: string | null
@@ -114,8 +121,8 @@ describe('assistant conversations', () => {
     const log = await getAiFakeLog()
     const call = log.at(-1)!
     expect(call.kind).toBe('complete')
-    expect(call.system).toContain('Old identity text')
-    expect(call.system).toContain('Acme Portfolio')
+    expect(systemText(call)).toContain('Old identity text')
+    expect(systemText(call)).toContain('Acme Portfolio')
     expect(call.tools).toEqual([])
     expect(call.messages.at(-1)).toEqual({ role: 'user', content: 'Update identity' })
 
@@ -198,9 +205,9 @@ describe('assistant conversations', () => {
     const turn = await sendMessage(opts, conv.id, 'Who is on the team?')
 
     const call = (await getAiFakeLog()).at(-1)!
-    expect(call.system).toContain('IDENTITY BODY')
-    expect(call.system).not.toContain('TEAM BODY')
-    expect(call.system).toContain('focused on the "Identity" section')
+    expect(systemText(call)).toContain('IDENTITY BODY')
+    expect(systemText(call)).not.toContain('TEAM BODY')
+    expect(systemText(call)).toContain('focused on the "Identity" section')
     expect(call.tools).toEqual(['load_section', 'load_portfolio'])
     expect(call.toolResults[0]!.result).toContain('TEAM BODY')
     expect(call.toolResults[1]!.result).toContain('already loaded')
@@ -225,10 +232,10 @@ describe('assistant conversations', () => {
     const turn = await sendMessage(opts, conv.id, 'Refresh the Beta team')
 
     const call = (await getAiFakeLog()).at(-1)!
-    expect(call.system).toContain(`slug: \`${a.slug}\``)
-    expect(call.system).toContain(`slug: \`${b.slug}\``)
-    expect(call.system).not.toContain('ALPHA TEAM')
-    expect(call.system).not.toContain('BETA TEAM')
+    expect(systemText(call)).toContain(`slug: \`${a.slug}\``)
+    expect(systemText(call)).toContain(`slug: \`${b.slug}\``)
+    expect(systemText(call)).not.toContain('ALPHA TEAM')
+    expect(systemText(call)).not.toContain('BETA TEAM')
     expect(call.tools).toEqual(['load_section', 'load_portfolio'])
     expect(call.toolResults[0]!.result).toContain('BETA TEAM')
     expect(turn.assistant_message.context_loaded).toEqual(['Beta Org › Team'])
@@ -278,7 +285,7 @@ describe('assistant conversations', () => {
     const turn = await sendMessage(opts, conv.id, 'Change identity')
     expect(turn.can_apply).toBe(false)
     expect(turn.assistant_message.proposals).toEqual([])
-    expect((await getAiFakeLog()).at(-1)!.system).toContain('view-only')
+    expect(systemText((await getAiFakeLog()).at(-1)!)).toContain('view-only')
   })
 
   it('conversations are private to their owner and listed per scope', async () => {

@@ -12,7 +12,7 @@
 
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import type { AiTool, AiToolHandler, AiMessage } from '#ai/server'
+import type { AiTool, AiToolHandler, AiMessage, AiTextPart } from '#ai/server'
 import type { PortfolioRow } from './portfolio-helpers'
 import { getPortfolioSections, type MergedSection } from './section-settings'
 import type { ContextAssistantProposal } from '../database/schema'
@@ -31,7 +31,7 @@ export type AssistantScope =
 export type ProposalDraft = Omit<ContextAssistantProposal, 'status'>
 
 export interface AssistantContext {
-  system: string
+  system: AiTextPart[]
   tools: AiTool[]
   onToolCall: AiToolHandler
   // Human labels of everything the model has read, in load order.
@@ -66,9 +66,15 @@ export function scopeFromConversation(
 }
 
 export function historyToMessages(messages: MessageRow[]): AiMessage[] {
-  return messages
-    .slice(-HISTORY_LIMIT)
-    .map(m => ({ role: m.role, content: m.content }))
+  const recent = messages.slice(-HISTORY_LIMIT)
+  // The newest stored turn carries a cache breakpoint so the next turn reads
+  // the whole history from cache rather than only the system prompt. An empty
+  // turn (a reply that was only update blocks) stays a plain string, since an
+  // empty text block is rejected upstream.
+  return recent.map((m, i): AiMessage => ({
+    role: m.role,
+    content: i === recent.length - 1 && m.content ? [{ type: 'text', text: m.content, cache: true }] : m.content
+  }))
 }
 
 function wordCount(text: string): number {
@@ -254,16 +260,23 @@ export async function buildAssistantContext(
   const caps = toolCapsFor(scope)
   const tools: AiTool[] = caps.loadSection > 0 ? [LOAD_SECTION_TOOL, LOAD_PORTFOLIO_TOOL] : []
 
-  const system = [
-    'You are an AI assistant for Context Portfolio, helping users manage organizational knowledge.',
-    scopeIntro(scope, entries),
-    CAPABILITIES,
-    `## Loading additional context:\n${loadingNotice(scope, caps)}`,
-    `${UPDATE_FORMAT}\n\n${portfolioLineNotice(scope)}`,
-    userCanEdit ? EDIT_NOTICE_CAN_EDIT : EDIT_NOTICE_VIEWER,
-    `## Available sections:\n${sectionIndex(scope, entries)}`,
-    `## Loaded context:\n${renderLoaded(scope, entries)}`
-  ].join('\n\n')
+  // One cacheable part: the prompt is byte-stable across the tool rounds of a
+  // turn and across turns until a section changes, so caching-capable models
+  // read it from cache after the first call.
+  const system: AiTextPart[] = [{
+    type: 'text',
+    text: [
+      'You are an AI assistant for Context Portfolio, helping users manage organizational knowledge.',
+      scopeIntro(scope, entries),
+      CAPABILITIES,
+      `## Loading additional context:\n${loadingNotice(scope, caps)}`,
+      `${UPDATE_FORMAT}\n\n${portfolioLineNotice(scope)}`,
+      userCanEdit ? EDIT_NOTICE_CAN_EDIT : EDIT_NOTICE_VIEWER,
+      `## Available sections:\n${sectionIndex(scope, entries)}`,
+      `## Loaded context:\n${renderLoaded(scope, entries)}`
+    ].join('\n\n'),
+    cache: true
+  }]
 
   let sectionLoads = 0
   let portfolioLoads = 0

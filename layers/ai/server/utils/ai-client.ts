@@ -134,14 +134,31 @@ async function callOpenRouter(body: Record<string, unknown>): Promise<any> {
     throw createError({ statusCode: 500, statusMessage: 'AI request was rejected — check the server logs.' })
   }
 
-  return res.json()
+  const data = await res.json()
+  logUsage(String(body.model), data?.usage)
+  return data
+}
+
+// One line per round trip so prompt-cache hits can be verified from the server
+// log; OpenRouter reports cache reads and writes under prompt_tokens_details.
+function logUsage(model: string, usage: any): void {
+  if (!usage || typeof usage !== 'object') return
+  const details = usage.prompt_tokens_details ?? {}
+  const cost = typeof usage.cost === 'number' ? ` cost=$${usage.cost.toFixed(4)}` : ''
+  console.info(
+    `[ai] ${model} prompt=${usage.prompt_tokens ?? 0} cached=${details.cached_tokens ?? 0}`
+    + ` cache_write=${details.cache_write_tokens ?? 0} completion=${usage.completion_tokens ?? 0}${cost}`
+  )
 }
 
 // One chat-completions round trip in the shape the tool loop consumes.
 function providerCall(model: string, maxTokens: number, temperature: number | undefined): ProviderCall {
-  return async (apiMessages, apiTools) => {
+  return async (apiMessages, apiTools, allowToolCalls) => {
     const data = await callOpenRouter(
-      buildBody(model, apiMessages, maxTokens, temperature, apiTools ? { tools: apiTools } : {})
+      buildBody(model, apiMessages, maxTokens, temperature, {
+        ...(apiTools ? { tools: apiTools } : {}),
+        ...(apiTools && !allowToolCalls ? { tool_choice: 'none' } : {})
+      })
     )
     const choice = data.choices?.[0]
     const finishReason: string = choice?.finish_reason ?? 'stop'

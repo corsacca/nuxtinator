@@ -6,11 +6,11 @@ import { runCompletionLoop, type ProviderCall, type ProviderTurn } from '../../s
 
 const TOOL = { name: 'load', description: 'Load a thing', parameters: { type: 'object', properties: {} } }
 
-function scripted(turns: ProviderTurn[]): { call: ProviderCall, seen: Array<{ messages: unknown[], tools: unknown[] | undefined }> } {
-  const seen: Array<{ messages: unknown[], tools: unknown[] | undefined }> = []
+function scripted(turns: ProviderTurn[]): { call: ProviderCall, seen: Array<{ messages: unknown[], tools: unknown[] | undefined, allowCalls: boolean }> } {
+  const seen: Array<{ messages: unknown[], tools: unknown[] | undefined, allowCalls: boolean }> = []
   let i = 0
-  const call: ProviderCall = async (messages, tools) => {
-    seen.push({ messages: [...messages], tools })
+  const call: ProviderCall = async (messages, tools, allowCalls) => {
+    seen.push({ messages: [...messages], tools, allowCalls })
     const turn = turns[Math.min(i, turns.length - 1)]!
     i++
     return turn
@@ -58,7 +58,7 @@ describe('runCompletionLoop', () => {
     expect(second[2]).toEqual({ role: 'tool', tool_call_id: 'c1', content: 'RESULT' })
   })
 
-  it('offers no tools once the round cap is reached so the model must answer in text', async () => {
+  it('keeps the tools but forbids calling them once the round cap is reached', async () => {
     const toolTurn: ProviderTurn = {
       text: '',
       finishReason: 'tool_calls',
@@ -73,7 +73,8 @@ describe('runCompletionLoop', () => {
     })
     expect(res.text).toBe('forced')
     expect(res.toolCalls).toHaveLength(2)
-    expect(seen.map(s => s.tools === undefined)).toEqual([false, false, true])
+    expect(seen.every(s => s.tools !== undefined)).toBe(true)
+    expect(seen.map(s => s.allowCalls)).toEqual([true, true, false])
   })
 
   it('offers no tools when no handler is given', async () => {

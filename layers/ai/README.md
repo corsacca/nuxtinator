@@ -94,4 +94,8 @@ await resetAiFake()
 - **Sampling params are guarded per model.** Some models reject `temperature`;
   the client only sends it to models the catalog marks `supportsTemperature`.
 - **Prompt caching** rides through to Anthropic models via `cache_control`; keep
-  your grounding prefix byte-stable so caching-capable models hit it.
+  your grounding prefix byte-stable so caching-capable models hit it. The tool
+  loop sends the tool definitions on every round (past `maxToolRounds` it adds
+  `tool_choice: 'none'` rather than dropping them) because the definitions lead
+  the cached prefix. Each round trip logs `[ai] <model> prompt=… cached=…
+  cache_write=…` so hits can be checked in the server log.

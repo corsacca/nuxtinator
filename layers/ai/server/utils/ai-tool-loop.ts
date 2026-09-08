@@ -18,9 +18,15 @@ export interface ProviderTurn {
   toolCalls: ProviderToolCall[]
 }
 
-// One provider round trip: the full message list so far plus the tool
-// definitions to offer (undefined = offer none).
-export type ProviderCall = (apiMessages: unknown[], apiTools: unknown[] | undefined) => Promise<ProviderTurn>
+// One provider round trip: the full message list so far, the tool definitions
+// to send (undefined = none), and whether the model may call them. Sending the
+// definitions with calls forbidden keeps the request's cached prefix intact —
+// tool definitions lead it — while still forcing a text answer.
+export type ProviderCall = (
+  apiMessages: unknown[],
+  apiTools: unknown[] | undefined,
+  allowToolCalls: boolean
+) => Promise<ProviderTurn>
 
 export interface CompletionLoopOptions {
   apiMessages: unknown[]
@@ -67,12 +73,12 @@ export async function runCompletionLoop(
   const resolved: AiToolCallRecord[] = []
 
   for (let round = 0; ; round++) {
-    // Past the round cap the model is called without tools, which forces a
-    // text answer instead of another round of loading.
-    const offerTools = apiTools !== undefined && round < opts.maxToolRounds
-    const turn = await call(messages, offerTools ? apiTools : undefined)
+    // Past the round cap the tools stay in the request but may not be called,
+    // which forces a text answer instead of another round of loading.
+    const allowToolCalls = apiTools !== undefined && round < opts.maxToolRounds
+    const turn = await call(messages, apiTools, allowToolCalls)
 
-    if (!offerTools || turn.toolCalls.length === 0) {
+    if (!allowToolCalls || turn.toolCalls.length === 0) {
       return { text: turn.text, finishReason: turn.finishReason, toolCalls: resolved }
     }
 
