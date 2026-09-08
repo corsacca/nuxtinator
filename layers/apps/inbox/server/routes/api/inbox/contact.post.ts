@@ -2,11 +2,12 @@
 // No session, no CORS: the request is authorized by an API key (X-API-Key or a
 // Bearer token) that ALSO identifies which org the submission belongs to. The
 // submission becomes a source='contact_form' conversation with the message as
-// its first inbound message; staff are notified and an auto-ack is sent. The
-// submission is never lost to a notification/courtesy failure — those are
-// best-effort and swallowed.
+// its first inbound message; staff are notified and an auto-ack is sent. An
+// unverified address gets a confirmation link in that ack (a form proves
+// nothing about ownership; a click does). The submission is never lost to a
+// notification/courtesy failure — those are best-effort and swallowed.
 import { z } from 'zod'
-import { claimChannel, grantConsent } from '#crm/server'
+import { claimChannel, grantConsent, issueChannelVerificationToken } from '#crm/server'
 
 const Body = z.object({
   email: z.string().email(),
@@ -62,6 +63,9 @@ export default defineEventHandler(async (event) => {
         userAgent
       })
     }
+    // Reissued on every unverified submission so the freshest ack always
+    // carries a live link; the token is redeemed at /api/inbox/verify/:token.
+    const verificationToken = channel.verified ? null : await issueChannelVerificationToken(tx, channel.id)
     const conversation = await inboxCreateConversation(tx, {
       channelId: channel.id,
       subject,
@@ -97,7 +101,8 @@ export default defineEventHandler(async (event) => {
       replyToken: conversation.reply_token,
       contactAddress: settings.contactAddress,
       brandFromName: settings.brandFromName,
-      autoAck: settings.autoAckEnabled
+      autoAck: settings.autoAckEnabled,
+      verificationToken
     }
   })
 
@@ -131,7 +136,8 @@ export default defineEventHandler(async (event) => {
       subject,
       replyToken: created.replyToken,
       contactAddress: created.contactAddress,
-      brandName: created.brandFromName
+      brandName: created.brandFromName,
+      verificationUrl: created.verificationToken ? inboxBuildVerificationUrl(created.verificationToken) : null
     }).catch(err => console.warn('[inbox] contact-form auto-ack failed:', err))
   }
 

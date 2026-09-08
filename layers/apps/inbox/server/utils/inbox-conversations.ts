@@ -381,3 +381,67 @@ export async function inboxReopenFromSpam(tx: Tx, channelId: string): Promise<nu
     .executeTakeFirst()
   return Number(result.numUpdatedRows ?? 0)
 }
+
+// Close pending conversations quiet for longer than `quietDays`. Pending means
+// "we replied, awaiting theirs" — a contact reply reopens even a closed
+// thread, so timing out is safe. Held (needs-review) rows are an alarm that
+// must not expire, and a NULL last_message_at means nothing was ever sent
+// (drafts don't touch it); both are left alone. Returns the closed ids.
+export async function inboxAutoCloseStalePending(tx: Tx, quietDays: number): Promise<string[]> {
+  const rows = await tx
+    .updateTable('inbox_conversations')
+    .set({ status: 'closed', updated_at: new Date() })
+    .where('status', '=', 'pending')
+    .where('needs_review', '=', false)
+    .where('last_message_at', 'is not', null)
+    .where('last_message_at', '<', sql<Date>`now() - (${quietDays} * interval '1 day')`)
+    .returning('id')
+    .execute()
+  return rows.map(r => r.id)
+}
+
+// Bulk triage over a set of ids. Each helper returns the ids it actually
+// changed (missing ids — and ones RLS hides — are skipped) so callers can log
+// per conversation. Spam is never entered or left here: that transition is
+// the sender-blocklist toggle and stays a deliberate per-conversation action.
+export async function inboxBulkUpdateStatus(
+  tx: Tx,
+  ids: string[],
+  status: Exclude<InboxConversationStatusValue, 'spam'>
+): Promise<{ id: string, from: string }[]> {
+  if (ids.length === 0) return []
+  const current = await tx
+    .selectFrom('inbox_conversations')
+    .select(['id', 'status'])
+    .where('id', 'in', ids)
+    .where('status', '!=', 'spam')
+    .where('status', '!=', status)
+    .execute()
+  if (current.length === 0) return []
+  await tx
+    .updateTable('inbox_conversations')
+    .set({ status, updated_at: new Date() })
+    .where('id', 'in', current.map(c => c.id))
+    .execute()
+  return current.map(c => ({ id: c.id, from: c.status }))
+}
+
+export async function inboxBulkAssign(tx: Tx, ids: string[], userId: string | null): Promise<string[]> {
+  if (ids.length === 0) return []
+  const rows = await tx
+    .updateTable('inbox_conversations')
+    .set({ assigned_user_id: userId, updated_at: new Date() })
+    .where('id', 'in', ids)
+    .returning('id')
+    .execute()
+  return rows.map(r => r.id)
+}
+
+export async function inboxBulkClearNeedsReview(tx: Tx, ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  await tx
+    .updateTable('inbox_conversations')
+    .set({ needs_review: false, updated_at: new Date() })
+    .where('id', 'in', ids)
+    .execute()
+}

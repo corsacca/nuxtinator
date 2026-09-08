@@ -103,12 +103,10 @@ async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend |
     await inboxMarkMessageFailed(tx, msg.id, 'Conversation missing')
     return null
   }
-  const channel = await tx
-    .selectFrom('crm_channels')
-    .select(['id', 'value'])
-    .where('id', '=', conversation.channel_id)
-    .executeTakeFirst()
-  const toEmail = msg.to_email || channel?.value || null
+  // The same resolver the detail endpoint shows as the reply recipient, so
+  // what staff see in the composer is exactly where the mail goes.
+  const target = await inboxResolveReplyTarget(tx, conversation, msg.to_email)
+  const toEmail = target.email
   if (!toEmail) {
     await inboxMarkMessageFailed(tx, msg.id, 'No recipient')
     return null
@@ -116,7 +114,7 @@ async function prepareSend(tx: Tx, msg: InboxMessageRow): Promise<PreparedSend |
   // Deliverability gate only — deliberately NOT canSend(): consent must not
   // block 1:1 conversational replies; a bounce stops sends, a marketing
   // unsubscribe doesn't.
-  if (channel && await isSuppressed(tx, channel.id)) {
+  if (target.channelId && await isSuppressed(tx, target.channelId)) {
     await inboxMarkMessageFailed(tx, msg.id, 'Recipient suppressed')
     return null
   }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Per-org inbox configuration (org-admin only): inbound mail domain, shared
-// contact address, auto-ack, the contact-form API key, who is emailed about
-// unassigned mail, and the AI grounding source URLs. Values are org-scoped
+// contact address, auto-ack, the auto-close threshold, the contact-form API
+// key, who is emailed about unassigned mail, and the AI grounding source URLs. Values are org-scoped
 // overrides on top of code defaults —
 // clearing a field falls back to the deployment default at read time.
 definePageMeta({ middleware: 'auth' })
@@ -16,6 +16,7 @@ interface InboxAdminSettings {
   contactFormApiKey: string
   groundingSourceUrls: string[]
   notifyUserIds: string[]
+  autoCloseDays: number
 }
 
 const toast = useToast()
@@ -106,7 +107,8 @@ async function save() {
         autoAckEnabled: form.value.autoAckEnabled,
         contactFormApiKey: form.value.contactFormApiKey,
         groundingSourceUrls: urlsText.value.split('\n').map(s => s.trim()).filter(Boolean),
-        notifyUserIds: form.value.notifyUserIds
+        notifyUserIds: form.value.notifyUserIds,
+        autoCloseDays: form.value.autoCloseDays
       }
     })
     form.value = updated
@@ -191,6 +193,13 @@ function generateApiKey() {
           description="Send a courtesy 'we received your message' to authenticated senders opening a new conversation."
         >
           <USwitch v-model="form.autoAckEnabled" />
+        </UFormField>
+
+        <UFormField
+          label="Auto-close quiet conversations after (days)"
+          description="A pending conversation (replied, awaiting the contact) with no reply for this many days is closed by the nightly sweep. 0 leaves them open until closed by hand. A new message reopens a closed conversation either way."
+        >
+          <UInputNumber v-model="form.autoCloseDays" :min="0" :max="365" class="w-40" />
         </UFormField>
 
         <UFormField

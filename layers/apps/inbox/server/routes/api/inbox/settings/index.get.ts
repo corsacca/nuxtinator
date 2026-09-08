@@ -16,7 +16,8 @@ export default defineEventHandler(async (event) => {
       autoAckEnabled: s.autoAckEnabled,
       contactFormApiKey: s.contactFormApiKey,
       groundingSourceUrls: s.groundingSourceUrls,
-      notifyUserIds: s.notifyUserIds
+      notifyUserIds: s.notifyUserIds,
+      autoCloseDays: s.autoCloseDays
     }
   })
 })

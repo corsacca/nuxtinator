@@ -36,7 +36,10 @@ export type {
 export { normalizeChannelValue, channelFingerprint } from '../utils/normalize'
 export type { NormalizedChannelValue } from '../utils/normalize'
 
-export { claimChannel, findChannel, linkChannel, unlinkChannel, setPrimary, markChannelVerified } from '../utils/channels'
+export {
+  claimChannel, findChannel, linkChannel, unlinkChannel, setPrimary, markChannelVerified,
+  issueChannelVerificationToken, consumeChannelVerificationToken
+} from '../utils/channels'
 export type { CrmChannelRow, CrmChannelLinkRow, LinkChannelOpts } from '../utils/channels'
 
 export { hydrateRecords, getRecord, applyFieldPatch, deleteRecord } from '../utils/record-storage'

@@ -14,6 +14,18 @@ export const INBOX_SETTING_AUTO_ACK = 'auto_ack_enabled'
 export const INBOX_SETTING_CONTACT_FORM_API_KEY = 'contact_form_api_key'
 export const INBOX_SETTING_GROUNDING_SOURCE_URLS = 'grounding_source_urls'
 export const INBOX_SETTING_NOTIFY_USER_IDS = 'notify_user_ids'
+export const INBOX_SETTING_AUTO_CLOSE_DAYS = 'auto_close_days'
+
+export const INBOX_AUTO_CLOSE_DAYS_DEFAULT = 14
+export const INBOX_AUTO_CLOSE_DAYS_MAX = 365
+
+// Coerce a stored quiet threshold into whole days. 0 disables the sweep;
+// anything non-numeric falls back to the code default, out-of-range clamps.
+export function sanitizeAutoCloseDays(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return INBOX_AUTO_CLOSE_DAYS_DEFAULT
+  return Math.min(Math.max(Math.trunc(n), 0), INBOX_AUTO_CLOSE_DAYS_MAX)
+}
 
 // Coerce a stored notify list into deduped user-id strings, preserving order.
 export function sanitizeInboxNotifyUserIds(value: unknown): string[] {
@@ -63,17 +75,21 @@ export interface InboxSettings {
   // Everyone with inbox access still gets the bell; only these users get mail.
   // Empty = bell only, so a busy inbox never mass-mails the whole team.
   notifyUserIds: string[]
+  // Days a pending conversation may sit without a contact reply before the
+  // daily sweep closes it. 0 = never auto-close.
+  autoCloseDays: number
 }
 
 export async function getInboxSettings(tx: DbClient): Promise<InboxSettings> {
-  const [inboundDomain, contactAddress, brandFromName, autoAckEnabled, contactFormApiKey, groundingSourceUrls, notifyUserIds] = await Promise.all([
+  const [inboundDomain, contactAddress, brandFromName, autoAckEnabled, contactFormApiKey, groundingSourceUrls, notifyUserIds, autoCloseDays] = await Promise.all([
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_INBOUND_DOMAIN),
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_ADDRESS),
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_BRAND_FROM_NAME),
     getSetting<boolean>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_AUTO_ACK),
     getSetting<string>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_FORM_API_KEY),
     getSetting<string[]>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_GROUNDING_SOURCE_URLS),
-    getSetting<string[]>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_NOTIFY_USER_IDS)
+    getSetting<string[]>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_NOTIFY_USER_IDS),
+    getSetting<number>(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_AUTO_CLOSE_DAYS)
   ])
   return {
     inboundDomain: String(inboundDomain || '').toLowerCase(),
@@ -82,6 +98,7 @@ export async function getInboxSettings(tx: DbClient): Promise<InboxSettings> {
     autoAckEnabled: autoAckEnabled !== false,
     contactFormApiKey: String(contactFormApiKey || ''),
     groundingSourceUrls: sanitizeGroundingUrls(groundingSourceUrls),
-    notifyUserIds: sanitizeInboxNotifyUserIds(notifyUserIds)
+    notifyUserIds: sanitizeInboxNotifyUserIds(notifyUserIds),
+    autoCloseDays: sanitizeAutoCloseDays(autoCloseDays)
   }
 }

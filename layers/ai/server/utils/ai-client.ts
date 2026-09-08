@@ -15,6 +15,7 @@ import { getOrgApiKey, getEffectiveApiKey, resolveFeatureModel } from './ai-sett
 import { runCompletionLoop, type ProviderCall, type ProviderToolCall, type ProviderTurn } from './ai-tool-loop'
 import { readCompletionStream, type StreamedTurn } from './ai-stream'
 import { aiFakeComplete, aiFakeGenerate } from './ai-test-fake'
+import { withAiRetries } from './ai-retry'
 
 // OpenRouter client. OpenRouter is OpenAI-compatible, so this is a plain fetch
 // to `${baseUrl}/chat/completions` — no SDK, sidestepping the `@anthropic-ai/sdk`
@@ -31,7 +32,8 @@ import { aiFakeComplete, aiFakeGenerate } from './ai-test-fake'
 //
 // Error contract (consumers branch on these): 503 = not configured; 502 =
 // transient upstream (retry); 500 = auth/other misconfig (check server logs).
-// The raw provider message is never forwarded to the client.
+// Non-streaming round trips retry 502s themselves (ai-retry.ts) before one
+// surfaces. The raw provider message is never forwarded to the client.
 
 // Under VITEST a feature with no configured model still runs against the fake.
 const AI_TEST_FALLBACK_MODEL = 'test/alpha'
@@ -184,11 +186,22 @@ async function openRouterRequest(apiKey: string, body: Record<string, unknown>):
   return res
 }
 
+// One whole non-streaming round trip, retried on transient failure. A
+// provider that fails part-way answers 200 with an error body, so a success
+// status alone does not mean there is a usable result.
 async function callOpenRouter(apiKey: string, body: Record<string, unknown>): Promise<any> {
-  const res = await openRouterRequest(apiKey, body)
-  const data = await res.json()
-  logUsage(String(body.model), data?.usage)
-  return data
+  return await withAiRetries(async () => {
+    const res = await openRouterRequest(apiKey, body)
+    const data = await res.json()
+    if (data?.error) {
+      if (!process.env.VITEST) {
+        console.error(`[ai] OpenRouter upstream error (HTTP ${res.status}): ${JSON.stringify(data.error).slice(0, 500)}`)
+      }
+      throw createError({ statusCode: 502, statusMessage: 'The AI provider reported an upstream error. Try again in a moment.' })
+    }
+    logUsage(String(body.model), data?.usage)
+    return data
+  })
 }
 
 // The same request with `stream: true`, reassembled from the SSE body while
@@ -324,7 +337,8 @@ export async function generate<T = Record<string, unknown>>(
       statusMessage: 'The AI response was cut off before finishing. Try again.'
     })
   }
-  if (finishReason === 'content_filter') {
+  // A model that declines is reported as either reason depending on the provider.
+  if (finishReason === 'content_filter' || finishReason === 'refusal') {
     throw createError({ statusCode: 502, statusMessage: 'The AI provider refused the request.' })
   }
 

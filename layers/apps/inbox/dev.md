@@ -202,11 +202,29 @@ equivalent docs tree; per-org reference URLs cover the need).
   all gated on `GET /api/ai/status`. 9 tests (`tests/api/ai-draft.test.ts`). Live generation
   needs `OPENROUTER_API_KEY` (tests use the layer's VITEST stub).
 
+- **Upstream parity sweep (Doxa commits 2026-08-26 → 2026-09-07):** nightly
+  auto-close of quiet pending threads (`inbox-autoclose.ts` + a `...43` advisory-lock
+  cron; per-org `auto_close_days`, 0 = off; held rows and never-sent rows exempt; each
+  close logged as a system `inbox_status_changed`; `POST /api/_test/inbox-autoclose`
+  drives it under VITEST) · one reply-target resolver (`inbox-reply-target.ts`) shared
+  by the send sweep and the detail payload's `replyStatus` (verified + active
+  suppression), with Unverified / Not-receiving badges in the header and on a composer
+  To line, and Send disabled while a suppression stands · `POST /conversations/bulk`
+  (status / assignee / add-tags over ≤100 ids, spam excluded both ways, per-row activity
+  log) behind hover-revealed row checkboxes and a sticky bulk bar · the auto-ack carries
+  an address-confirmation link for unverified contact-form senders (token on the once
+  dormant `crm_channels.verification_token_*` columns via the CRM kernel's
+  `issueChannelVerificationToken` / `consumeChannelVerificationToken`; redeemed at the
+  session-less `GET /api/inbox/verify/:token`, which scans org scopes like the API-key
+  routing) · a confirmed close returns the pane to the folder · wide HTML mail scrolls
+  inside its bubble · the AI layer retries transient (502) round trips with backoff and
+  treats a 200 carrying an error body, and a `refusal` finish, as failures.
+
 ## Deferred (planned, not built)
 
 - **Smaller deferred items rolled out of earlier phases:** per-user notification
-  preferences (a core-level prefs change, Phase 7) · double-opt-in consent verification
-  (reissue-and-overwrite on the dormant `crm_channels.verification_token_*` columns,
-  Phase 9) · `bounce_count` history column + contact-record "Not receiving" badge
+  preferences (a core-level prefs change, Phase 7) · double-opt-in *consent* verification
+  (the address-confirmation link proves ownership only; marketing consent still stands
+  on the checkbox alone, Phase 9) · `bounce_count` history column + contact-record "Not receiving" badge
   (Phase 8, both need CRM-side changes) · staff reply-by-email signed addresses · i18n +
   localized courtesy mail (Phase 11, deferred to core-first i18n).

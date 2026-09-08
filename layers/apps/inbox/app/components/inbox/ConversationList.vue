@@ -27,6 +27,16 @@ function rowTags(slugs: string[]): InboxTag[] {
 
 const status = defineModel<string>('status', { required: true })
 const q = defineModel<string>('q', { required: true })
+// Bulk selection — the checked ids. Parent-owned: the bulk bar acts on them
+// and clears them when the list context changes.
+const selectedIds = defineModel<Set<string>>('selectedIds', { default: () => new Set<string>() })
+
+function toggleSelected(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
 
 const emit = defineEmits<{ select: [id: string] }>()
 
@@ -75,45 +85,61 @@ const statusTabs = computed(() => [
         variant="naked"
         class="mt-10"
       />
-      <button
+      <div
         v-for="c in items"
         :key="c.id"
-        type="button"
-        class="w-full text-left px-3 py-2.5 border-b border-(--ui-border) transition-colors"
+        class="group flex items-start gap-2 px-3 py-2.5 border-b border-(--ui-border) transition-colors"
         :class="selectedId === c.id ? 'bg-(--ui-bg-accented)' : 'hover:bg-(--ui-bg-accented)/50'"
-        @click="emit('select', c.id)"
       >
-        <div class="flex items-center gap-2">
-          <UTooltip v-if="INBOX_SOURCE_META[c.source]" :text="INBOX_SOURCE_META[c.source]!.label">
-            <UIcon :name="INBOX_SOURCE_META[c.source]!.icon" class="size-3.5 shrink-0 text-(--ui-text-dimmed)" />
-          </UTooltip>
-          <span class="font-medium text-sm truncate flex-1 text-(--ui-text-highlighted)">
-            {{ c.counterpartyName || c.channelValue }}
-          </span>
-          <span class="text-xs text-(--ui-text-dimmed) shrink-0">{{ inboxRelativeTime(c.lastMessageAt || c.createdAt) }}</span>
-        </div>
-        <div class="text-sm truncate text-(--ui-text-muted)">{{ c.subject || '(no subject)' }}</div>
-        <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-          <UBadge
-            :label="INBOX_STATUS_META[c.status]?.label ?? c.status"
-            :color="INBOX_STATUS_META[c.status]?.color ?? 'neutral'"
-            size="sm"
-            variant="subtle"
+        <!-- The checkbox stays hidden until the row is hovered or a selection
+             is underway; touch screens have no hover, so it always shows there. -->
+        <span
+          class="pt-0.5 shrink-0 transition-opacity [@media(hover:none)]:opacity-100"
+          :class="selectedIds.size ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'"
+        >
+          <UCheckbox
+            :model-value="selectedIds.has(c.id)"
+            aria-label="Select conversation"
+            @update:model-value="toggleSelected(c.id)"
           />
-          <UBadge v-if="c.needsReview" label="Review" color="warning" size="sm" variant="subtle" icon="i-lucide-shield-alert" />
-          <UBadge v-if="c.messageCount === 0" label="No message" color="error" size="sm" variant="subtle" />
-          <UBadge
-            v-for="t in rowTags(c.tags)"
-            :key="t.slug"
-            :label="t.name"
-            :color="t.color"
-            size="sm"
-            variant="subtle"
-          />
-          <span v-if="c.assigneeName" class="text-xs text-(--ui-text-dimmed) truncate ml-auto">{{ c.assigneeName }}</span>
-        </div>
-        <p v-if="c.snippet" class="text-xs text-(--ui-text-dimmed) truncate mt-1">{{ c.snippet }}</p>
-      </button>
+        </span>
+        <button
+          type="button"
+          class="flex-1 min-w-0 text-left"
+          @click="emit('select', c.id)"
+        >
+          <div class="flex items-center gap-2">
+            <UTooltip v-if="INBOX_SOURCE_META[c.source]" :text="INBOX_SOURCE_META[c.source]!.label">
+              <UIcon :name="INBOX_SOURCE_META[c.source]!.icon" class="size-3.5 shrink-0 text-(--ui-text-dimmed)" />
+            </UTooltip>
+            <span class="font-medium text-sm truncate flex-1 text-(--ui-text-highlighted)">
+              {{ c.counterpartyName || c.channelValue }}
+            </span>
+            <span class="text-xs text-(--ui-text-dimmed) shrink-0">{{ inboxRelativeTime(c.lastMessageAt || c.createdAt) }}</span>
+          </div>
+          <div class="text-sm truncate text-(--ui-text-muted)">{{ c.subject || '(no subject)' }}</div>
+          <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+            <UBadge
+              :label="INBOX_STATUS_META[c.status]?.label ?? c.status"
+              :color="INBOX_STATUS_META[c.status]?.color ?? 'neutral'"
+              size="sm"
+              variant="subtle"
+            />
+            <UBadge v-if="c.needsReview" label="Review" color="warning" size="sm" variant="subtle" icon="i-lucide-shield-alert" />
+            <UBadge v-if="c.messageCount === 0" label="No message" color="error" size="sm" variant="subtle" />
+            <UBadge
+              v-for="t in rowTags(c.tags)"
+              :key="t.slug"
+              :label="t.name"
+              :color="t.color"
+              size="sm"
+              variant="subtle"
+            />
+            <span v-if="c.assigneeName" class="text-xs text-(--ui-text-dimmed) truncate ml-auto">{{ c.assigneeName }}</span>
+          </div>
+          <p v-if="c.snippet" class="text-xs text-(--ui-text-dimmed) truncate mt-1">{{ c.snippet }}</p>
+        </button>
+      </div>
     </div>
   </div>
 </template>

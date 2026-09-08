@@ -51,6 +51,9 @@ export default defineNuxtConfig({
     // observable quickly.
     inboxSendSweepSeconds: process.env.INBOX_SEND_SWEEP_SECONDS || '20',
     // Cron for the daily AI grounding sync (UTC). Default 03:00.
-    inboxGroundingSyncCron: process.env.INBOX_GROUNDING_SYNC_CRON || '0 3 * * *'
+    inboxGroundingSyncCron: process.env.INBOX_GROUNDING_SYNC_CRON || '0 3 * * *',
+    // Cron for the daily auto-close of quiet pending conversations (UTC).
+    // Default 04:00; the per-org quiet threshold lives in inbox settings.
+    inboxAutoCloseCron: process.env.INBOX_AUTO_CLOSE_CRON || '0 4 * * *'
   }
 })

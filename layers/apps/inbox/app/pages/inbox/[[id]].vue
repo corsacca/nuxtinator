@@ -18,7 +18,7 @@ const selectedId = computed(() => {
   return id || null
 })
 
-const { items, total, counts, tagCounts, pending, error, scope, status, q, tag, refresh } = useInboxConversations()
+const { items, total, counts, tagCounts, pending, error, scope, status, q, tag, refresh, applyBulk } = useInboxConversations()
 const { thread, error: threadError, refresh: refreshThread, patch, reply, saveDraft, deleteDraft, saveAiDraft, uploadAttachment, removeAttachment, uploadInlineImage, createContact } = useInboxThread(selectedId)
 const { users: assignees } = useInboxAssignees()
 const { palette, createTag, deleteTag, setConversationTags } = useInboxTags()
@@ -104,9 +104,86 @@ async function onPatch(body: { status?: string, assignedUserId?: string | null, 
     } else if (wasSpam && body.status) {
       toast.add({ title: 'Removed from spam', icon: 'i-lucide-shield-check', color: 'success' })
     }
+    // A confirmed close leaves the thread: it has dropped out of the working
+    // list, so the pane returns to the folder instead of a resolved thread.
+    if (body.status === 'closed') {
+      router.push(withQuery(inboxPath('/inbox')))
+    }
   } catch (err) {
     toast.add({ title: 'Update failed', description: err instanceof Error ? err.message : undefined, color: 'error' })
   }
+}
+
+// Bulk triage: rows checked in the list, acted on by the bar beneath it. The
+// selection is dropped whenever the list context changes (the checked rows
+// may no longer be visible) and after an action applies.
+const selectedIds = ref<Set<string>>(new Set())
+const bulkBusy = ref(false)
+const confirmBulkClose = ref(false)
+watch([scope, status, tag, q], () => { selectedIds.value = new Set() })
+
+const allVisibleSelected = computed(() =>
+  items.value.length > 0 && items.value.every(c => selectedIds.value.has(c.id))
+)
+function selectAllVisible() {
+  selectedIds.value = new Set(items.value.map(c => c.id))
+}
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+// reka-ui selects reject '' as an item value — the unassigned sentinel is a
+// real string swapped back to null on change.
+const UNASSIGNED = '__none__'
+// Spam is not offered: it blocklists the sender and stays a per-thread call.
+const bulkStatusItems = [
+  { label: 'Open', value: 'open' },
+  { label: 'Pending', value: 'pending' },
+  { label: 'Closed', value: 'closed' }
+]
+const bulkAssigneeItems = computed(() => [
+  { label: 'Unassigned', value: UNASSIGNED },
+  ...assignees.value.map(a => ({ label: a.displayName, value: a.id }))
+])
+const bulkTagItems = computed(() => palette.value.map(t => ({ label: t.name, value: t.slug })))
+// The bar's triggers are narrow, so each dropdown sizes to its items instead
+// of inheriting the trigger width.
+const bulkMenuUi = { content: 'w-auto min-w-(--reka-combobox-trigger-width) max-w-64' }
+
+async function onBulk(action: { status?: string, assignedUserId?: string | null, addTags?: string[] }) {
+  const ids = [...selectedIds.value]
+  if (!ids.length) return
+  bulkBusy.value = true
+  try {
+    const updated = await applyBulk(ids, action)
+    toast.add({ title: `${updated} conversation${updated === 1 ? '' : 's'} updated`, icon: 'i-lucide-check', color: 'success' })
+    clearSelection()
+    // The open thread may be in the batch — refresh it alongside the list.
+    const tasks: Promise<unknown>[] = [refresh()]
+    if (selectedId.value && ids.includes(selectedId.value)) tasks.push(refreshThread())
+    await Promise.all(tasks)
+  } catch (err) {
+    toast.add({ title: 'Bulk update failed', description: inboxErrorMessage(err), color: 'error' })
+  } finally {
+    bulkBusy.value = false
+  }
+}
+function onBulkStatus(value: unknown) {
+  if (typeof value !== 'string') return
+  // Closing also clears review flags — worth a confirm, as on a single thread.
+  if (value === 'closed') {
+    confirmBulkClose.value = true
+    return
+  }
+  onBulk({ status: value })
+}
+function onBulkAssign(value: unknown) {
+  if (typeof value !== 'string') return
+  onBulk({ assignedUserId: value === UNASSIGNED ? null : value })
+}
+function onBulkAddTag(value: unknown) {
+  if (typeof value !== 'string') return
+  onBulk({ addTags: [value] })
 }
 
 async function onReply(body: string, draftId?: string, fromIdentity?: 'personal' | 'contact') {
@@ -339,6 +416,7 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
           <InboxConversationList
             v-model:status="status"
             v-model:q="q"
+            v-model:selected-ids="selectedIds"
             :items="items"
             :counts="counts"
             :pending="pending"
@@ -348,6 +426,63 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
             class="flex-1 min-h-0"
             @select="open"
           />
+          <div
+            v-if="selectedIds.size"
+            class="w-full lg:w-96 shrink-0 flex items-center flex-wrap gap-2 px-3 py-2 border-t border-r border-(--ui-border) bg-(--ui-bg)"
+          >
+            <span class="text-xs font-semibold whitespace-nowrap">{{ selectedIds.size }} selected</span>
+            <UButton
+              v-if="!allVisibleSelected"
+              :label="`Select all ${items.length}`"
+              size="xs"
+              variant="link"
+              color="neutral"
+              @click="selectAllVisible"
+            />
+            <div class="flex-1" />
+            <USelectMenu
+              :model-value="undefined"
+              :items="bulkStatusItems"
+              value-key="value"
+              size="xs"
+              placeholder="Set status"
+              :disabled="bulkBusy"
+              :ui="bulkMenuUi"
+              class="min-w-28"
+              @update:model-value="onBulkStatus"
+            />
+            <USelectMenu
+              :model-value="undefined"
+              :items="bulkAssigneeItems"
+              value-key="value"
+              size="xs"
+              placeholder="Assign"
+              :disabled="bulkBusy"
+              :ui="bulkMenuUi"
+              class="min-w-28"
+              @update:model-value="onBulkAssign"
+            />
+            <USelectMenu
+              v-if="bulkTagItems.length"
+              :model-value="undefined"
+              :items="bulkTagItems"
+              value-key="value"
+              size="xs"
+              placeholder="Add tag"
+              :disabled="bulkBusy"
+              :ui="bulkMenuUi"
+              class="min-w-28"
+              @update:model-value="onBulkAddTag"
+            />
+            <UButton
+              icon="i-lucide-x"
+              size="xs"
+              variant="ghost"
+              color="neutral"
+              aria-label="Clear selection"
+              @click="clearSelection"
+            />
+          </div>
         </div>
 
         <template v-if="selectedId">
@@ -405,6 +540,24 @@ async function onSaveIdentity(patch: { alias?: string | null, signature?: string
     <UAlert v-if="error" color="error" variant="subtle" :title="error" class="absolute bottom-4 right-4 w-80" />
 
     <InboxComposeModal v-model:open="showCompose" @created="onComposeCreated" />
+
+    <UModal v-model:open="confirmBulkClose" title="Close conversations?">
+      <template #body>
+        <p class="text-sm text-(--ui-text-muted)">
+          Closing marks {{ selectedIds.size }} conversation{{ selectedIds.size === 1 ? '' : 's' }} resolved and
+          clears their review flags. A new message from a contact reopens its conversation.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton label="Cancel" variant="ghost" color="neutral" @click="confirmBulkClose = false" />
+          <UButton
+            label="Close conversations"
+            @click="confirmBulkClose = false; onBulk({ status: 'closed' })"
+          />
+        </div>
+      </template>
+    </UModal>
 
     <InboxCannedManager
       v-if="canManageCanned"

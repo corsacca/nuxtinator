@@ -100,6 +100,19 @@ const showSignaturePreview = ref(false)
 // saving stay open — the text is preserved either way.
 const hasSendAddress = computed(() => !!props.me?.contactAddress)
 
+// Deliverability of the reply target: badges in the header and on the
+// composer's To line, and the reason a send is blocked. The sweep fails any
+// reply to a suppressed address, so Send is disabled rather than queueing a
+// message that can only end up 'failed'.
+const replyStatus = computed(() => props.thread.replyStatus)
+const suppressionMeta = computed(() => {
+  const s = replyStatus.value.suppression
+  if (!s) return null
+  const meta = INBOX_SUPPRESSION_REASON_META[s.reason] ?? { label: s.reason, color: 'neutral' as const }
+  return { ...meta, detail: s.detail, since: new Date(s.since).toLocaleDateString() }
+})
+const canDeliver = computed(() => !!replyStatus.value.email && !replyStatus.value.suppression)
+
 watch(() => props.thread.conversation.id, () => {
   replyBody.value = ''
   currentDraftId.value = null
@@ -237,7 +250,7 @@ const statusValue = computed({
 // (v-model) and clears them only after the send request succeeds, so a failed
 // send keeps the typed text for retry.
 function submitReply() {
-  if (props.sending || !hasSendAddress.value) return
+  if (props.sending || !hasSendAddress.value || !canDeliver.value) return
   const body = replyBody.value.trim()
   if (!body || body === '<p></p>') return
   emit('reply', replyBody.value, currentDraftId.value ?? undefined, props.me?.personalFrom ? fromIdentity.value : undefined)
@@ -312,8 +325,14 @@ const appliedTags = computed(() =>
           size="sm"
           variant="subtle"
         />
-        <UTooltip v-if="thread.channel?.verified" text="Address ownership verified by authenticated inbound mail">
+        <UTooltip v-if="thread.channel?.verified" text="Address ownership verified — authenticated inbound mail or a confirmed link">
           <UBadge label="Verified" color="success" size="sm" variant="subtle" icon="i-lucide-badge-check" />
+        </UTooltip>
+        <UTooltip v-else-if="thread.channel" text="Ownership not yet proven — no authenticated mail or confirmation click from this address">
+          <UBadge label="Unverified" color="warning" size="sm" variant="subtle" icon="i-lucide-badge-alert" />
+        </UTooltip>
+        <UTooltip v-if="suppressionMeta" :text="`${suppressionMeta.label} · since ${suppressionMeta.since}`">
+          <UBadge label="Not receiving" color="error" size="sm" variant="solid" icon="i-lucide-mail-x" />
         </UTooltip>
         <UBadge v-if="thread.channel?.blocked" label="Blocked sender" color="error" size="sm" variant="subtle" />
         <template v-if="thread.contacts.length">
@@ -407,6 +426,38 @@ const appliedTags = computed(() =>
           <UButton icon="i-lucide-x" color="neutral" variant="subtle" aria-label="Discard draft" @click="onDeleteDraft(d)" />
         </UButtonGroup>
       </div>
+      <div class="flex items-center gap-2 text-xs flex-wrap">
+        <span class="text-(--ui-text-muted) shrink-0">To:</span>
+        <span v-if="replyStatus.email" class="truncate">{{ replyStatus.email }}</span>
+        <span v-else class="text-(--ui-text-dimmed)">no address</span>
+        <template v-if="replyStatus.email">
+          <UBadge
+            :label="replyStatus.verified ? 'Verified' : 'Unverified'"
+            :color="replyStatus.verified ? 'success' : 'warning'"
+            size="sm"
+            variant="subtle"
+          />
+          <UTooltip v-if="suppressionMeta" :text="`${suppressionMeta.label} · since ${suppressionMeta.since}`">
+            <UBadge label="Not receiving" color="error" size="sm" variant="solid" icon="i-lucide-mail-x" />
+          </UTooltip>
+        </template>
+      </div>
+      <UAlert
+        v-if="suppressionMeta"
+        icon="i-lucide-mail-x"
+        color="error"
+        variant="subtle"
+        title="Replies can't be delivered to this address"
+        :description="`It is suppressed (${suppressionMeta.label.toLowerCase()}${suppressionMeta.detail ? ': ' + suppressionMeta.detail : ''}). A reply would fail at send time; an admin can clear the suppression under Suppressions if it was a false positive.`"
+      />
+      <UAlert
+        v-else-if="!replyStatus.email"
+        icon="i-lucide-mail-question"
+        color="warning"
+        variant="subtle"
+        title="No address to reply to"
+        description="This conversation's address record is missing, so a reply has no recipient."
+      />
       <div v-if="me?.personalFrom" class="flex items-center gap-2 text-xs">
         <span class="text-(--ui-text-muted) shrink-0">From:</span>
         <USelect v-model="fromIdentity" :items="fromOptions" size="xs" class="w-64" />
@@ -554,7 +605,7 @@ const appliedTags = computed(() =>
             icon="i-lucide-send"
             size="sm"
             :loading="props.sending"
-            :disabled="props.sending || !hasSendAddress"
+            :disabled="props.sending || !hasSendAddress || !canDeliver"
             @click="submitReply"
           />
         </div>

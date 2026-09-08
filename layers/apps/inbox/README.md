@@ -23,7 +23,14 @@ in production and Mailpit (`localhost:1025`, UI on `:8025`) in development.
   sends); Mailgun unsubscribes flip the channel's marketing consent; contact
   chips + create-contact-from-conversation on every thread.
 - **Triage UI**: 3-pane inbox (scope folders / list / thread) with search,
-  status strip, assignment, review queue, and a rich-text composer.
+  status strip, assignment, review queue, bulk actions (close / assign / tag a
+  checked set), and a rich-text composer whose To line shows whether the reply
+  address is verified or suppressed (sending is blocked while a suppression
+  stands).
+- **Housekeeping**: a nightly sweep closes pending conversations quiet for
+  longer than the org's threshold (default 14 days, 0 disables; held threads
+  never expire); contact-form senders get an address-confirmation link in the
+  auto-ack, redeemed at `/api/inbox/verify/:token`.
 
 ## Environment
 
@@ -34,9 +41,12 @@ in production and Mailpit (`localhost:1025`, UI on `:8025`) in development.
 | `INBOX_DOMAIN` | yes | Domain inbound mail is addressed to (single-tenant default; per-org override via settings) |
 | `INBOX_CONTACT_ADDRESS` | yes | Shared From identity + base of `contact+<token>` reply addresses |
 | `INBOX_SEND_SWEEP_SECONDS` | no | Send sweep cadence (default 20) |
+| `INBOX_AUTO_CLOSE_CRON` | no | UTC cron for the nightly auto-close sweep (default `0 4 * * *`); the per-org quiet threshold is an inbox setting |
+| `NUXT_PUBLIC_SITE_URL` | yes | Canonical origin for links in mail (the auto-ack's confirmation link is dropped when unset) |
 
 Multi-tenant: each org claims its own inbound (sub)domain via the settings store
-(namespace `inbox`, keys `inbound_domain` / `contact_address` / `auto_ack_enabled`).
+(namespace `inbox`, keys `inbound_domain` / `contact_address` / `auto_ack_enabled` /
+`auto_close_days`).
 Two orgs must never claim the same domain — such mail is unroutable and dropped.
 
 ## Mailgun setup (per environment)

@@ -14,7 +14,9 @@ import {
   INBOX_SETTING_AUTO_ACK,
   INBOX_SETTING_CONTACT_FORM_API_KEY,
   INBOX_SETTING_GROUNDING_SOURCE_URLS,
-  INBOX_SETTING_NOTIFY_USER_IDS
+  INBOX_SETTING_NOTIFY_USER_IDS,
+  INBOX_SETTING_AUTO_CLOSE_DAYS,
+  INBOX_AUTO_CLOSE_DAYS_MAX
 } from '../../../../utils/inbox-settings'
 
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i
@@ -32,7 +34,9 @@ const Body = z.object({
   autoAckEnabled: z.boolean().optional(),
   contactFormApiKey: z.string().trim().max(255).optional(),
   groundingSourceUrls: z.array(z.string().max(2000)).max(20).optional(),
-  notifyUserIds: z.array(z.string().uuid()).max(50).optional()
+  notifyUserIds: z.array(z.string().uuid()).max(50).optional(),
+  // 0 = never auto-close.
+  autoCloseDays: z.number().int().min(0).max(INBOX_AUTO_CLOSE_DAYS_MAX).optional()
 }).strict()
 
 export default defineEventHandler(async (event) => {
@@ -52,6 +56,7 @@ export default defineEventHandler(async (event) => {
     if (b.contactFormApiKey !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_CONTACT_FORM_API_KEY, b.contactFormApiKey)
     if (b.groundingSourceUrls !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_GROUNDING_SOURCE_URLS, b.groundingSourceUrls)
     if (b.notifyUserIds !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_NOTIFY_USER_IDS, b.notifyUserIds)
+    if (b.autoCloseDays !== undefined) await setSetting(tx, INBOX_SETTINGS_NAMESPACE, INBOX_SETTING_AUTO_CLOSE_DAYS, b.autoCloseDays)
 
     const s = await getInboxSettings(tx)
     return {
@@ -61,7 +66,8 @@ export default defineEventHandler(async (event) => {
       autoAckEnabled: s.autoAckEnabled,
       contactFormApiKey: s.contactFormApiKey,
       groundingSourceUrls: s.groundingSourceUrls,
-      notifyUserIds: s.notifyUserIds
+      notifyUserIds: s.notifyUserIds,
+      autoCloseDays: s.autoCloseDays
     }
   })
 })

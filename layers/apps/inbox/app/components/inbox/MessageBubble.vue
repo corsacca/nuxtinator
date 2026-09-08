@@ -114,6 +114,12 @@ const statusBadge = computed(() => {
 </template>
 
 <style scoped>
+/* Wide HTML mail (tables, long unbreakable runs) scrolls inside the bubble
+   instead of overflowing the thread pane. */
+.inbox-message-body {
+  overflow-x: auto;
+}
+
 /* Match the size cap outbound mail applies per <img> at send time
    (inboxConstrainImages), so the thread preview shows what recipients see. */
 .inbox-message-body :deep(img) {
