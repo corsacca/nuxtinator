@@ -91,4 +91,32 @@ describe('MCP section definition tools', () => {
     const neither = await callMcpTool(token, 'create_section', { org: org.slug, portfolio_id: portfolio.id })
     expect(neither.isError).toBe(true)
   })
+
+  it('bulk_create_sections adds several sections and reports per-entry failures', async () => {
+    const { user, org, token } = await setupAdmin()
+    const portfolio = await createTestPortfolio(sql, { org_id: org.id, name: 'MCP Bulk Create', created_by: user.id, builtin_sections: ['identity'] })
+
+    const result = await callMcpTool(token, 'bulk_create_sections', {
+      org: org.slug,
+      portfolio_id: portfolio.id,
+      sections: [
+        { title: 'Roadmap' },
+        { title: 'Pricing', description: 'What we charge' },
+        { key: 'team' },
+        { key: 'not-a-builtin' },
+        { title: 'Roadmap' }
+      ]
+    })
+
+    expect(result.isError, result.content[0]?.text).toBeFalsy()
+    const results = result.structuredContent?.results as Array<Record<string, unknown>>
+    expect(results.map(r => r.status)).toEqual(['created', 'created', 'created', 'error', 'error'])
+    expect(results[0]?.section).toMatchObject({ key: 'roadmap', title: 'Roadmap', is_custom: true })
+    expect(results[1]?.section).toMatchObject({ key: 'pricing', description: 'What we charge', is_custom: true })
+    expect(results[2]?.section).toMatchObject({ key: 'team', is_custom: false })
+    expect(results[3]?.reason).toContain('not-a-builtin')
+    expect(results[4]?.reason).toContain('already exists')
+
+    expect(await listKeys(token, org.slug, portfolio.id)).toEqual(['identity', 'team', 'pricing', 'roadmap'])
+  })
 })

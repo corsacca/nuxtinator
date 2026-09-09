@@ -456,6 +456,84 @@ export const createSectionTool = defineMcpTool({
   }
 })
 
+// addSection rejects a bad entry (not a built-in key, unusable title, key
+// already in the portfolio) before it writes anything, so a batch can report
+// that entry and carry on. Any other failure leaves the transaction unusable
+// and aborts the whole call.
+function rejectedEntryReason(err: unknown): string | null {
+  const e = err as { statusCode?: number, statusMessage?: string, message?: string } | null
+  if (e?.statusCode !== 400 && e?.statusCode !== 409) return null
+  return e.statusMessage || e.message || 'Invalid section.'
+}
+
+export const bulkCreateSectionsTool = defineMcpTool({
+  name: 'bulk_create_sections',
+  description: `Add several sections to a portfolio in one call. Each entry takes what create_section takes: \`key\` for a built-in from the catalog (keys: ${BUILTIN_KEY_LIST}), or \`title\` (plus optional description/order) for a custom section. Entries are applied in the order given and reported one by one — an entry that fails (not a built-in key, key already in the portfolio, title colliding with a built-in) comes back with status "error" and the rest still apply. Creates definitions only — write content afterwards with bulk_update_sections.`,
+  scope: 'context.section.custom',
+  input: z.object({
+    org: orgInput,
+    portfolio_id: z.string().uuid(),
+    sections: z.array(
+      z.object({
+        key: z.string().min(1).max(64).optional(),
+        title: z.string().trim().min(1).max(120).optional(),
+        description: z.string().trim().max(500).optional(),
+        order: z.number().int().min(0).optional()
+      }).strict().refine(d => (d.key !== undefined) !== (d.title !== undefined), {
+        message: 'Each entry takes exactly one of key (built-in) or title (custom).'
+      })
+    ).min(1).max(20)
+  }).strict(),
+  handler: async (input, ctx) => {
+    try {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+        const portfolio = await getPortfolioById(tx, input.portfolio_id)
+        if (!portfolio) throw createError({ statusCode: 404, statusMessage: 'Portfolio not found.' })
+
+        const results: Array<Record<string, unknown>> = []
+        let created = 0
+        for (const [index, entry] of input.sections.entries()) {
+          try {
+            const section = await addSection(
+              tx,
+              input.portfolio_id,
+              entry.key !== undefined
+                ? { key: entry.key }
+                : { title: entry.title!, description: entry.description, order: entry.order },
+              ctx.auth.userId
+            )
+
+            await mcpLog('CREATE', 'context_section_definitions', section.id, ctx, {
+              portfolio_id: input.portfolio_id,
+              key: section.key,
+              title: section.title
+            }, asAuditExecutor(tx))
+
+            created++
+            results.push({ index, key: section.key, status: 'created', section })
+          } catch (err) {
+            const reason = rejectedEntryReason(err)
+            if (reason === null) throw err
+            results.push({
+              index,
+              key: entry.key ?? null,
+              title: entry.title ?? null,
+              status: 'error',
+              reason
+            })
+          }
+        }
+
+        return textResult(
+          `Created ${created} of ${input.sections.length} section(s).`
+          + (created > 0 ? ' Write their content with bulk_update_sections.' : ''),
+          { portfolio_id: input.portfolio_id, results }
+        )
+      })
+    } catch (err) { return mcpError(err) }
+  }
+})
+
 export const deleteSectionTool = defineMcpTool({
   name: 'delete_section',
   description: 'Remove a section from a portfolio, built-in or custom. Any content saved under the key stays in the database but is no longer listed or readable; adding the section again (create_section with the same key or title) restores it.',
@@ -505,6 +583,7 @@ export const contextMcpTools = [
   bulkUpdateSectionsTool,
   createPortfolioTool,
   createSectionTool,
+  bulkCreateSectionsTool,
   deleteSectionTool
 ]
 
