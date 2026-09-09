@@ -102,7 +102,8 @@ async function deletePortfolio() {
               Sections
             </h2>
             <p class="text-sm text-(--ui-text-muted)">
-              Removing a section keeps its content; it comes back if you add the section again.
+              Drag a section, or use the arrows, to change the order it appears in. Removing a
+              section keeps its content; it comes back if you add the section again.
             </p>
             <ContextSectionsManager :slug="slug" />
           </section>

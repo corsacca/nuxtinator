@@ -174,7 +174,7 @@ export async function seedTestCustomSection(
   await sql`
     INSERT INTO context_section_definitions
       (id, portfolio_id, key, title, description, "order", created_by)
-    VALUES (${id}, ${opts.portfolio_id}, ${opts.key}, ${opts.title}, ${opts.description ?? ''}, ${opts.order ?? 0}, ${opts.created_by})
+    VALUES (${id}, ${opts.portfolio_id}, ${opts.key}, ${opts.title}, ${opts.description ?? ''}, ${opts.order ?? null}, ${opts.created_by})
   `
   return { id }
 }

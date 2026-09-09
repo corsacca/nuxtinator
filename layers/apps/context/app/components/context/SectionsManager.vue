@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Manage a portfolio's section definitions: every section (built-in and
-// custom) with a remove action, plus controls to add a missing built-in or a
-// new custom section. `list` off shows only the add controls, for pages that
-// already render the sections themselves.
+// custom) with reorder and remove actions, plus controls to add a missing
+// built-in or a new custom section. `list` off shows only the add controls,
+// for pages that already render the sections themselves.
 import { CONTEXT_SECTIONS } from '../../utils/section-catalog'
 
 const props = withDefaults(defineProps<{ slug: string, list?: boolean }>(), { list: true })
@@ -30,6 +30,11 @@ const missingBuiltins = computed(() => {
   return CONTEXT_SECTIONS.filter(s => !present.has(s.key)).map(s => ({ label: s.title, value: s.key }))
 })
 
+// Local copy the reorder controls mutate, so a drag or a move shows
+// immediately and rolls back if the save fails.
+const ordered = ref<SectionDef[]>([])
+watch(sections, next => (ordered.value = [...next]), { immediate: true })
+
 const builtinToAdd = ref<string | undefined>(undefined)
 const form = reactive({ title: '', description: '' })
 const adding = ref(false)
@@ -38,6 +43,10 @@ const error = ref<string | null>(null)
 const removeTarget = ref<SectionDef | null>(null)
 const removeOpen = ref(false)
 const removing = ref(false)
+
+const dragKey = ref<string | null>(null)
+const dragOverKey = ref<string | null>(null)
+const savingOrder = ref(false)
 
 async function afterChange() {
   await refresh()
@@ -73,6 +82,59 @@ async function addCustom() {
   }
 }
 
+async function persistOrder(next: SectionDef[]) {
+  const previous = ordered.value
+  ordered.value = next
+  savingOrder.value = true
+  error.value = null
+  try {
+    await $fetch(`/api/context/portfolios/${props.slug}/section-order`, {
+      method: 'PUT',
+      body: { keys: next.map(s => s.key) }
+    })
+    await afterChange()
+  } catch (e) {
+    ordered.value = previous
+    error.value = (e as { statusMessage?: string }).statusMessage ?? 'Reorder failed.'
+  } finally {
+    savingOrder.value = false
+  }
+}
+
+function reordered(from: number, to: number): SectionDef[] {
+  const next = [...ordered.value]
+  const [item] = next.splice(from, 1)
+  next.splice(to, 0, item!)
+  return next
+}
+
+function move(index: number, delta: number) {
+  const to = index + delta
+  if (to < 0 || to >= ordered.value.length) return
+  persistOrder(reordered(index, to))
+}
+
+function onDragStart(key: string, event: DragEvent) {
+  dragKey.value = key
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', key)
+  }
+}
+
+function onDragEnd() {
+  dragKey.value = null
+  dragOverKey.value = null
+}
+
+function onDrop(overKey: string) {
+  const from = ordered.value.findIndex(s => s.key === dragKey.value)
+  const to = ordered.value.findIndex(s => s.key === overKey)
+  onDragEnd()
+  if (from < 0 || to < 0 || from === to) return
+  persistOrder(reordered(from, to))
+}
+
 function askRemove(section: SectionDef) {
   removeTarget.value = section
   removeOpen.value = true
@@ -97,9 +159,27 @@ async function remove() {
 
 <template>
   <div class="space-y-4">
-    <ul v-if="list && sections.length" class="divide-y divide-(--ui-border) border border-(--ui-border) rounded">
-      <li v-for="s in sections" :key="s.key" class="flex items-center justify-between gap-3 p-3">
-        <div class="min-w-0">
+    <ul v-if="list && ordered.length" class="divide-y divide-(--ui-border) border border-(--ui-border) rounded">
+      <li
+        v-for="(s, i) in ordered"
+        :key="s.key"
+        class="flex items-center gap-2 p-3 transition-colors"
+        :class="{
+          'opacity-40': dragKey === s.key,
+          'bg-(--ui-bg-elevated)': dragOverKey === s.key && dragKey !== null && dragKey !== s.key
+        }"
+        :draggable="canManage && !savingOrder"
+        @dragstart="onDragStart(s.key, $event)"
+        @dragend="onDragEnd"
+        @dragover.prevent="dragOverKey = s.key"
+        @drop.prevent="onDrop(s.key)"
+      >
+        <UIcon
+          v-if="canManage"
+          name="i-lucide-grip-vertical"
+          class="shrink-0 size-4 text-(--ui-text-dimmed) cursor-grab"
+        />
+        <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <span class="font-medium">{{ s.title }}</span>
             <UBadge v-if="s.is_custom" variant="subtle" color="neutral" size="xs">
@@ -111,15 +191,34 @@ async function remove() {
             <span v-if="s.description"> · {{ s.description }}</span>
           </div>
         </div>
-        <UButton
-          v-if="canManage"
-          variant="ghost"
-          color="error"
-          icon="i-lucide-trash"
-          size="sm"
-          :aria-label="`Remove ${s.title}`"
-          @click="askRemove(s)"
-        />
+        <template v-if="canManage">
+          <UButton
+            variant="ghost"
+            color="neutral"
+            icon="i-lucide-chevron-up"
+            size="sm"
+            :disabled="i === 0 || savingOrder"
+            :aria-label="`Move ${s.title} up`"
+            @click="move(i, -1)"
+          />
+          <UButton
+            variant="ghost"
+            color="neutral"
+            icon="i-lucide-chevron-down"
+            size="sm"
+            :disabled="i === ordered.length - 1 || savingOrder"
+            :aria-label="`Move ${s.title} down`"
+            @click="move(i, 1)"
+          />
+          <UButton
+            variant="ghost"
+            color="error"
+            icon="i-lucide-trash"
+            size="sm"
+            :aria-label="`Remove ${s.title}`"
+            @click="askRemove(s)"
+          />
+        </template>
       </li>
     </ul>
     <p v-else-if="list" class="text-sm text-(--ui-text-muted)">

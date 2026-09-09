@@ -6,7 +6,7 @@ import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import type { ContextSectionVersionSource } from '../database/schema'
 import { CONTEXT_SECTION_KEYS, slugifySectionTitle } from './section-catalog'
-import { getPortfolioSections, type MergedSection } from './section-settings'
+import { getPortfolioSections, nextExplicitOrder, type MergedSection } from './section-settings'
 
 export const MAX_SECTION_BYTES = 100 * 1024
 
@@ -60,7 +60,7 @@ export async function addSection(
   userId: string
 ): Promise<MergedSection> {
   let key: string
-  let values: { title?: string, description?: string, order?: number } = {}
+  let values: { title?: string, description?: string } = {}
   if ('key' in input) {
     if (!CONTEXT_SECTION_KEYS.has(input.key)) {
       throw createError({
@@ -75,16 +75,21 @@ export async function addSection(
     if (CONTEXT_SECTION_KEYS.has(key)) {
       throw createError({ statusCode: 409, statusMessage: `Key "${key}" collides with a built-in section — add the built-in "${key}" instead.` })
     }
-    values = { title: input.title, description: input.description, order: input.order ?? 0 }
+    values = { title: input.title, description: input.description }
   }
 
   if (await isKnownSectionKey(tx, portfolioId, key)) {
     throw createError({ statusCode: 409, statusMessage: `Section "${key}" already exists in this portfolio.` })
   }
 
+  // The caller's explicit position, else the end of a portfolio the user has
+  // already ordered, else none — the code default places it.
+  const order = ('order' in input ? input.order : undefined)
+    ?? await nextExplicitOrder(tx, portfolioId)
+
   await tx
     .insertInto('context_section_definitions')
-    .values({ portfolio_id: portfolioId, key, ...values, created_by: userId })
+    .values({ portfolio_id: portfolioId, key, ...values, order, created_by: userId })
     .execute()
 
   const sections = await getPortfolioSections(tx, portfolioId)
@@ -118,6 +123,47 @@ export async function deleteSection(
     is_custom: !CONTEXT_SECTION_KEYS.has(key),
     content_retained: (content?.content ?? '').trim().length > 0
   }
+}
+
+// Stores an explicit position for every section from a full ordering. `keys`
+// must list exactly the portfolio's sections once each; a partial or stale
+// list is rejected rather than applied, so no section can be dropped out of
+// the order by a client working from an old view.
+export async function reorderSections(
+  tx: Transaction<Database>,
+  portfolioId: string,
+  keys: string[]
+): Promise<MergedSection[]> {
+  const current = await getPortfolioSections(tx, portfolioId)
+  const currentKeys = new Set(current.map(s => s.key))
+  const given = new Set(keys)
+
+  if (given.size !== keys.length) {
+    throw createError({ statusCode: 400, statusMessage: 'Order lists the same section more than once.' })
+  }
+  const missing = current.filter(s => !given.has(s.key)).map(s => s.key)
+  const unknown = keys.filter(k => !currentKeys.has(k))
+  if (missing.length > 0 || unknown.length > 0) {
+    const detail = [
+      missing.length > 0 ? `missing: ${missing.join(', ')}` : '',
+      unknown.length > 0 ? `not in this portfolio: ${unknown.join(', ')}` : ''
+    ].filter(Boolean).join('; ')
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Order must list every section in this portfolio exactly once (${detail}).`
+    })
+  }
+
+  for (const [index, key] of keys.entries()) {
+    await tx
+      .updateTable('context_section_definitions')
+      .set({ order: index + 1, updated_at: sql<Date>`now()` })
+      .where('portfolio_id', '=', portfolioId)
+      .where('key', '=', key)
+      .execute()
+  }
+
+  return await getPortfolioSections(tx, portfolioId)
 }
 
 export async function loadSection(
