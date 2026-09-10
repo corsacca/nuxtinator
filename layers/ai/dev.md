@@ -3,8 +3,7 @@
 Working doc for `@nuxtinator/ai`. [README.md](README.md) is the consumer overview.
 This is the shared AI backend built for Phase 10a of the inbox plan
 ([../apps/inbox/PLAN.md](../apps/inbox/PLAN.md)); the inbox is its first consumer
-(Phase 10b), the context assistant its second. It generalizes the Doxa
-campaigns-server Anthropic drafting client onto OpenRouter so any layer can use it.
+(Phase 10b), the context assistant its second.
 
 ## Decisions (what we chose and why)
 

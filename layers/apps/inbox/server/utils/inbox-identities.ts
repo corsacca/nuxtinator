@@ -12,7 +12,7 @@ export type InboxIdentityRow = Selectable<Database['inbox_identities']>
 // Reserved local parts that must never be claimed as an alias: `contact` is the
 // shared inbox address, `bounce` is Mailgun's VERP return path, and
 // `notifications` is a common system sender — routing any of them to a person
-// would hijack system mail. (Doxa has no such guard; this closes a real gap.)
+// would hijack system mail.
 export const INBOX_RESERVED_LOCAL_PARTS = ['contact', 'bounce', 'notifications']
 
 const ALIAS_RE = /^[a-z0-9][a-z0-9._-]*$/i
