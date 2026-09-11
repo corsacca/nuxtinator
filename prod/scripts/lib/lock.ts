@@ -14,7 +14,7 @@ import {
   listTags,
   repoOf,
   resolveRef,
-  subdirOf,
+  sourceOf,
   tagPrefixOf,
   versionOf
 } from './resolve'
@@ -55,7 +55,7 @@ export function resolveAll(layers: readonly LayerSpec[], token?: string): {
   const lock: Lock = {}
   const beyond: Record<string, string> = {}
   for (const l of layers) {
-    const source = `github:${repoOf(l)}/${subdirOf(l)}`
+    const source = sourceOf(l)
     const ref = globalRef ?? resolveRef(l, tagsFor(repoOf(l)))
     lock[l.id] = { pkg: l.pkg, version: globalRef ?? versionOf(l), ref, source, tagPrefix: tagPrefixOf(l) }
     if (!globalRef) {

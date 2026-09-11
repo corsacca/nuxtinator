@@ -27,6 +27,14 @@ export const subdirOf = (l: LayerSpec) => l.subdir ?? `layers/${l.id}`
 export const tagPrefixOf = (l: LayerSpec) => l.tagPrefix ?? `@nuxtinator/${l.id}@`
 export const versionOf = (l: LayerSpec) => l.version ?? 'latest'
 
+// The giget source of a layer, ref-less: `github:<repo>/<subdir>`, or plain
+// `github:<repo>` for a layer that is its own repo (subdir '.') — giget
+// extracts nothing for a literal `/.` path segment.
+export const sourceOf = (l: LayerSpec) => {
+  const subdir = subdirOf(l)
+  return subdir === '.' ? `github:${repoOf(l)}` : `github:${repoOf(l)}/${subdir}`
+}
+
 // List a repo's tag names. `git ls-remote` needs no API token and isn't rate
 // limited; a token (for a private source) is injected into the clone URL.
 // `--refs` drops the dereferenced `^{}` peeled entries.

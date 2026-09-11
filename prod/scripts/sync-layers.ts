@@ -1,6 +1,6 @@
 import { downloadTemplate } from 'giget'
 import { LAYERS } from '../layers'
-import { repoOf, subdirOf } from './lib/resolve'
+import { sourceOf } from './lib/resolve'
 import { readLock, resolveAll, writeLock } from './lib/lock'
 
 // Fetch each selected layer into _layers/<id>/.
@@ -21,7 +21,7 @@ if (!lock) {
 
 for (const l of LAYERS) {
   const ref = lock[l.id]?.ref ?? 'master'
-  const url = `github:${repoOf(l)}/${subdirOf(l)}#${ref}`
+  const url = `${sourceOf(l)}#${ref}`
   console.log(`Fetching ${l.id} @ ${ref}`)
   await downloadTemplate(url, { dir: `_layers/${l.id}`, forceClean: true })
 }
