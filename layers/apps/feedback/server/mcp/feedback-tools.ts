@@ -144,6 +144,58 @@ export const listCardsTool = defineMcpTool({
 
 // ─── Write tools ────────────────────────────────────────────────────────────
 
+export const createProjectTool = defineMcpTool({
+  name: 'feedback_create_project',
+  description: 'Create a kanban project (board) in the active org, along with its default swimlane. Columns are global to the deployment, so the new board immediately uses the existing FEEDBACK INBOX / TODO / DOING / DONE / ARCHIVE workflow. Board names are not unique — call feedback_list_projects first and reuse the existing board rather than creating a near-duplicate. Returns the project_id that feedback_create_card and feedback_list_cards need.',
+  scope: 'feedback.write',
+  input: z.object({
+    org: orgInput,
+    name: z.string().trim().min(1).max(200),
+    description: z.string().max(2000).optional(),
+    post_meta: z.record(z.unknown()).optional()
+  }).strict(),
+  handler: async (input, ctx) => {
+    try {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+        const project = await tx
+          .insertInto('projects')
+          .values({
+            name: input.name,
+            description: input.description ?? null,
+            post_meta: (input.post_meta ?? {}) as Record<string, any>
+          })
+          .returning(['id', 'name', 'description'])
+          .executeTakeFirstOrThrow()
+
+        // Cards always belong to a swimlane; every board needs one from birth.
+        const swimlane = await tx
+          .insertInto('swimlanes')
+          .values({
+            project_id: project.id,
+            name: 'default',
+            is_default: true,
+            position: 0
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow()
+
+        await mcpLog('CREATE', 'projects', project.id, ctx, {
+          name: project.name
+        }, asAuditExecutor(tx))
+        return {
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          swimlane_id: swimlane.id
+        }
+      })
+      return textResult(`Created project "${result.name}" (${result.id})`, result)
+    } catch (err) {
+      return mcpError(err)
+    }
+  }
+})
+
 export const createCardTool = defineMcpTool({
   name: 'feedback_create_card',
   description: 'Create a card on a project board in the active org. New findings/ideas belong in the default FEEDBACK INBOX column for human triage — only target another column when explicitly asked. Start the description with a "## What happens" section in plain behavior-first language a teammate can read without opening code (when someone does X, Y goes wrong — instead of Z; no function names or jargon there), then "## Why it matters", then "## Technical detail" with file:line evidence. Put the proposed fix as concrete steps in post_meta.plan (not in the description); use post_meta for machine data too (repo, branch, file, line, category, dedupe_key).',
@@ -316,6 +368,7 @@ export const updateCardTool = defineMcpTool({
 export const feedbackMcpTools = [
   listProjectsTool,
   listCardsTool,
+  createProjectTool,
   createCardTool,
   moveCardTool,
   updateCardTool
