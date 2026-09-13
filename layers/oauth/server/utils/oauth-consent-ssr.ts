@@ -29,8 +29,9 @@ export async function loadConsentView(event: H3Event, requestId: string): Promis
   if (!authUser) return { status: 'unauthorized' }
 
   // RLS-scoped in multi mode (oauth_pending_requests has org_id + policy).
-  // Single mode: plain transaction.
-  const pending = await runInOrgTransaction(event, async (tx) => {
+  // Single mode: plain transaction. `userId` resolves the org the same way
+  // `authorize.get.ts` did, so this read sees the pending row it wrote.
+  const pending = await runInOrgTransaction(event, { userId: authUser.userId }, async (tx) => {
     return await tx
       .selectFrom('oauth_pending_requests')
       .selectAll()

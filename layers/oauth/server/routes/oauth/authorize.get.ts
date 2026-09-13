@@ -177,42 +177,69 @@ export default defineEventHandler(async (event) => {
   // `app.current_org` set so RLS scopes correctly and the DEFAULT picks up
   // the active org for the pending-request INSERT. Single mode: just a plain
   // transaction (no GUC, no RLS).
-  const pendingRequestId = await runInOrgTransaction(event, async (tx) => {
-    // Existing consent short-circuit.
-    const existingConsent = await tx
-      .selectFrom('oauth_consents')
-      .selectAll()
-      .where('client_id', '=', client.client_id)
-      .where('user_id', '=', authUser.userId)
-      .where('resource', '=', cfg.mcpResource)
-      .where('revoked', '=', false)
-      .executeTakeFirst()
+  //
+  // `userId` is what lets the org resolve at all here: this endpoint is a
+  // browser navigation on a non-`/api/` path, so it carries no `X-Active-Org`
+  // header and the tenancy middleware never populates `event.context`. That
+  // leaves the `active-org-slug` cookie, which is unset until some other
+  // org-scoped request has written it. Passing the user lets the kernel fall
+  // back to their sole membership, and lets a stale cookie fall back too.
+  let pendingRequestId: string | null
+  try {
+    pendingRequestId = await runInOrgTransaction(event, { userId: authUser.userId }, async (tx) => {
+      // Existing consent short-circuit.
+      const existingConsent = await tx
+        .selectFrom('oauth_consents')
+        .selectAll()
+        .where('client_id', '=', client.client_id)
+        .where('user_id', '=', authUser.userId)
+        .where('resource', '=', cfg.mcpResource)
+        .where('revoked', '=', false)
+        .executeTakeFirst()
 
-    const consentCoversScope = existingConsent
-      && isScopeSubset(grantedScopes, parseScopeString(existingConsent.scope))
+      const consentCoversScope = existingConsent
+        && isScopeSubset(grantedScopes, parseScopeString(existingConsent.scope))
 
-    if (consentCoversScope) {
-      return null // Signals the caller to issue a code directly.
-    }
+      if (consentCoversScope) {
+        return null // Signals the caller to issue a code directly.
+      }
 
-    const csrfHash = sha256Hex(csrfPlaintext)
-    const pendingRow = await tx
-      .insertInto('oauth_pending_requests')
-      .values({
-        expires: sql<Date>`now() + interval '${sql.raw(String(cfg.pendingRequestTtl))} seconds'`,
-        client_id: client.client_id,
-        user_id: authUser.userId,
-        redirect_uri: normalizedRedirect,
-        scope: grantedScopes.join(' '),
-        resource: cfg.mcpResource,
-        state,
-        code_challenge: codeChallenge,
-        csrf_token_hash: csrfHash
-      })
-      .returning('id')
-      .executeTakeFirstOrThrow()
-    return pendingRow.id
-  })
+      const csrfHash = sha256Hex(csrfPlaintext)
+      const pendingRow = await tx
+        .insertInto('oauth_pending_requests')
+        .values({
+          expires: sql<Date>`now() + interval '${sql.raw(String(cfg.pendingRequestTtl))} seconds'`,
+          client_id: client.client_id,
+          user_id: authUser.userId,
+          redirect_uri: normalizedRedirect,
+          scope: grantedScopes.join(' '),
+          resource: cfg.mcpResource,
+          state,
+          code_challenge: codeChallenge,
+          csrf_token_hash: csrfHash
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+      return pendingRow.id
+    })
+  } catch (err) {
+    // The kernel rejects an unresolvable org with a 4xx: the user belongs to
+    // no active org, or to several with nothing selecting one. Report that to
+    // the client as an OAuth error instead of letting it render as an error
+    // page mid-flow. Anything else (a DB fault) propagates.
+    const status = (err as { statusCode?: number }).statusCode
+    if (typeof status !== 'number' || status < 400 || status >= 500) throw err
+    logOauthEvent({
+      event: OAUTH_EVENTS.AUTHORIZE_ORG_UNRESOLVED,
+      userId: authUser.userId,
+      event3: event,
+      metadata: { client_id: client.client_id, status }
+    })
+    const desc = (err as { statusMessage?: string }).statusMessage
+      || 'No organization could be resolved for this authorization'
+    await sendRedirect(event, errRedirect('access_denied', desc))
+    return
+  }
 
   if (pendingRequestId === null) {
     // Skip consent UI — issue a code directly.

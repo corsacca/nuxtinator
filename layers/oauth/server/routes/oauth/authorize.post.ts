@@ -29,7 +29,9 @@ export default defineEventHandler(async (event) => {
 
   // Reads + writes against oauth_pending_requests and oauth_consents are
   // RLS-scoped in multi-tenant mode. Single mode: plain transaction, no GUC.
-  const pending = await runInOrgTransaction(event, async (tx) => {
+  // `userId` resolves the org the same way `authorize.get.ts` did, so this
+  // step reads the pending row it wrote.
+  const pending = await runInOrgTransaction(event, { userId: user.userId }, async (tx) => {
     const row = await tx
       .selectFrom('oauth_pending_requests')
       .selectAll()
