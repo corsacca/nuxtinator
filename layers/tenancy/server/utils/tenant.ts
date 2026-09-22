@@ -355,6 +355,20 @@ async function resolveSelectedOrg(slug: string, userId?: string): Promise<string
   return row.id
 }
 
+// Org ids the user actively belongs to. Backs the fallback for surfaces that
+// carry no org selector at all; only the single-membership case uses it, so
+// the order is immaterial.
+async function memberOrgIds(userId: string): Promise<string[]> {
+  const rows = await adminDb
+    .selectFrom('memberships')
+    .innerJoin('orgs', 'orgs.id', 'memberships.org_id')
+    .select('orgs.id')
+    .where('memberships.user_id', '=', userId)
+    .where('orgs.suspended_at', 'is', null)
+    .execute()
+  return rows.map(r => r.id)
+}
+
 // Open a transaction and run `fn(tx)` inside it with the active org's GUC set.
 // Used by code paths that aren't routed through `defineTenantHandler` but
 // still need to write to RLS-protected tables: the OAuth flow's non-`/api/`
@@ -369,12 +383,15 @@ async function resolveSelectedOrg(slug: string, userId?: string): Promise<string
 //      but no session cookie, so the tenancy middleware never populates
 //      `event.context` for them
 //   4. `active-org-slug` cookie
+//   5. the user's sole active membership, when `opts.userId` is given and
+//      nothing above selected an org
 // Sources 1, 3 and 4 are client-controlled: they select the org, they do not
 // authorize. Callers that know the acting user pass `opts.userId`, which
 // makes any client-selected org subject to a membership check (see
-// `resolveSelectedOrg`) and turns "no org at all" into a 400. Without it, an
-// unknown or missing slug opens the txn with no GUC — RLS-protected INSERTs
-// then fail loudly via `current_org_id() → NULL`.
+// `resolveSelectedOrg`), enables source 5, and turns a user with several
+// orgs and no selection into a 400. Without `opts.userId` an unknown or
+// missing slug opens the txn with no GUC — RLS-protected INSERTs then fail
+// loudly via `current_org_id() → NULL`.
 export async function runInOrgTransaction<T>(event: H3Event, fn: OrgTransactionFn<T>): Promise<T>
 export async function runInOrgTransaction<T>(event: H3Event, opts: OrgTransactionOpts, fn: OrgTransactionFn<T>): Promise<T>
 export async function runInOrgTransaction<T>(
@@ -401,7 +418,23 @@ export async function runInOrgTransaction<T>(
     }
   }
   if (!orgId && slug) {
-    orgId = await resolveSelectedOrg(slug, opts.userId)
+    orgId = opts.org
+      // An explicit `org` is the caller's own selection — a slug that names
+      // no accessible org is a caller error and surfaces as 404 / 423.
+      ? await resolveSelectedOrg(slug, opts.userId)
+      // Header and cookie slugs are ambient request state that can be stale
+      // (org renamed, membership removed, cookie from another deployment).
+      // A miss falls through to the membership fallback instead of failing.
+      : await resolveSelectedOrg(slug, opts.userId).catch(() => undefined)
+  }
+  // Nothing selected an org. Surfaces that can't carry a selector land here:
+  // the OAuth consent flow runs on non-`/api/` paths the tenancy middleware
+  // never populates, and a browser navigation sends no `X-Active-Org`. With a
+  // single membership the org is unambiguous, so resolve it rather than
+  // opening a GUC-less transaction whose RLS-protected writes would fail.
+  if (!orgId && opts.userId) {
+    const owned = await memberOrgIds(opts.userId)
+    if (owned.length === 1) orgId = owned[0]
   }
   if (!orgId && opts.userId) {
     throw createError({ statusCode: 400, statusMessage: 'No organization selected. Pass `org` or send the X-Active-Org header.' })
