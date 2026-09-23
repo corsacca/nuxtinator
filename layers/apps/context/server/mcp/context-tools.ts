@@ -28,7 +28,7 @@ import type { Database as CoreDatabase } from '#core/server/database/schema'
 import { runInOrgTransaction } from '#tenant/server'
 import { getPortfolioSections } from '../utils/section-settings'
 import { loadSection, saveSectionContent, isKnownSectionKey, addSection, deleteSection } from '../utils/section-helpers'
-import { createPortfolio, getPortfolioById } from '../utils/portfolio-helpers'
+import { createPortfolio, getPortfolioById, listPortfolios } from '../utils/portfolio-helpers'
 import { CONTEXT_SECTIONS } from '../utils/section-catalog'
 
 const BUILTIN_KEY_LIST = CONTEXT_SECTIONS.map(s => s.key).join(', ')
@@ -83,11 +83,7 @@ export const listPortfoliosTool = defineMcpTool({
   handler: async (input, ctx) => {
     try {
       return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
-        const rows = await tx
-          .selectFrom('context_portfolios')
-          .select(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
-          .orderBy('name', 'asc')
-          .execute()
+        const rows = await listPortfolios(tx)
         return textResult(`${rows.length} portfolio(s).`, { portfolios: rows })
       })
     } catch (err) { return mcpError(err) }

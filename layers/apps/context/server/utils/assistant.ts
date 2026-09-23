@@ -13,7 +13,7 @@
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import type { AiTool, AiToolHandler, AiMessage, AiTextPart } from '#ai/server'
-import type { PortfolioRow } from './portfolio-helpers'
+import { listPortfolios, type PortfolioRow } from './portfolio-helpers'
 import { getPortfolioSections, type MergedSection } from './section-settings'
 import type { ContextAssistantProposal } from '../database/schema'
 import type { ConversationRow, MessageRow } from './assistant-conversations'
@@ -51,8 +51,6 @@ interface PortfolioEntry {
   loaded: Set<string>
 }
 
-const PORTFOLIO_COLUMNS = ['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'] as const
-
 // Most recent messages sent to the model as history.
 export const HISTORY_LIMIT = 30
 
@@ -87,7 +85,7 @@ function wordCount(text: string): number {
 
 async function loadPortfolioEntries(tx: Tx, scope: AssistantScope): Promise<PortfolioEntry[]> {
   const portfolios: PortfolioRow[] = scope.kind === 'all'
-    ? (await tx.selectFrom('context_portfolios').select(PORTFOLIO_COLUMNS).orderBy('name', 'asc').execute()) as PortfolioRow[]
+    ? await listPortfolios(tx)
     : [scope.portfolio]
   if (portfolios.length === 0) return []
 

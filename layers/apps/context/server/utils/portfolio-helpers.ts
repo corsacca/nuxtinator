@@ -43,6 +43,51 @@ export async function getPortfolioById(
   return (row as PortfolioRow | undefined) ?? null
 }
 
+// The org's portfolios in display order: placed ones by their stored
+// position, then any never placed, by name.
+export async function listPortfolios(tx: Transaction<Database>): Promise<PortfolioRow[]> {
+  const rows = await tx
+    .selectFrom('context_portfolios')
+    .select(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
+    .orderBy('order', ob => ob.asc().nullsLast())
+    .orderBy('name', 'asc')
+    .execute()
+  return rows as PortfolioRow[]
+}
+
+// Store a full ordering of the org's portfolios. `ids` must list every
+// portfolio exactly once.
+export async function reorderPortfolios(
+  tx: Transaction<Database>,
+  ids: string[]
+): Promise<PortfolioRow[]> {
+  const current = await listPortfolios(tx)
+  const currentIds = new Set(current.map(p => p.id))
+  const given = new Set(ids)
+
+  if (given.size !== ids.length) {
+    throw createError({ statusCode: 400, statusMessage: 'Order lists the same portfolio more than once.' })
+  }
+  const missing = current.filter(p => !given.has(p.id)).length
+  const unknown = ids.filter(id => !currentIds.has(id)).length
+  if (missing > 0 || unknown > 0) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Order must list every portfolio exactly once.'
+    })
+  }
+
+  for (const [index, id] of ids.entries()) {
+    await tx
+      .updateTable('context_portfolios')
+      .set({ order: index + 1 })
+      .where('id', '=', id)
+      .execute()
+  }
+
+  return await listPortfolios(tx)
+}
+
 export async function getPortfolioBySlugOr404(
   tx: Transaction<Database>,
   slug: string
@@ -111,6 +156,9 @@ export async function createPortfolio(
   return inserted as PortfolioRow
 }
 
+// Static pages under /context/ that a portfolio slug would collide with.
+const RESERVED_SLUGS = new Set(['settings'])
+
 export async function ensureUniqueSlug(
   tx: Transaction<Database>,
   desired: string
@@ -118,7 +166,7 @@ export async function ensureUniqueSlug(
   let slug = desired
   let n = 2
   while (true) {
-    const existing = await tx
+    const existing = RESERVED_SLUGS.has(slug) || await tx
       .selectFrom('context_portfolios')
       .select('id')
       .where('slug', '=', slug)

@@ -6,6 +6,7 @@ export interface ContextPortfoliosTable {
   name: string
   color: string | null
   icon_url: string | null
+  order: number | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }

@@ -7,7 +7,8 @@ export const CONTEXT_PERMISSIONS = [
   'context.portfolio.delete',
   'context.section.custom',
   'context.assistant.chat',
-  'context.assistant.apply'
+  'context.assistant.apply',
+  'context.settings'
 ] as const
 
 export type ContextPermission = typeof CONTEXT_PERMISSIONS[number]
@@ -48,6 +49,10 @@ export const CONTEXT_PERMISSION_META: Record<string, { title: string, descriptio
   'context.assistant.apply': {
     title: 'Apply assistant updates',
     description: 'Apply assistant-proposed section updates.'
+  },
+  'context.settings': {
+    title: 'Manage Context settings',
+    description: 'Open the Context settings page and set the portfolio order.'
   }
 }
 
@@ -73,5 +78,6 @@ declare module '#permissions' {
     'context.section.custom': true
     'context.assistant.chat': true
     'context.assistant.apply': true
+    'context.settings': true
   }
 }

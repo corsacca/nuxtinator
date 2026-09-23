@@ -39,4 +39,12 @@ export default defineNitroPlugin(() => {
     requiredPermission: 'context.read',
     order: 10
   })
+  registerNavItem({
+    appId: 'context',
+    title: 'Settings',
+    path: '/context/settings',
+    icon: 'i-lucide-settings',
+    requiredPermission: 'context.settings',
+    order: 90
+  })
 })
