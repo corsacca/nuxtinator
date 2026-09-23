@@ -25,12 +25,14 @@ const { data, pending, refresh } = await useFetch<{ apps: OrgApp[] }>(
 
 const apps = computed(() => data.value?.apps ?? [])
 
+const { refresh: refreshRailApps } = await useApps()
+
 const onToggle = async (app: OrgApp) => {
   if (app.lockedByHost) return
   const verb = app.enabled ? 'disable' : 'enable'
   try {
     await $fetch(`/api/o/${orgSlug.value}/apps/${app.appId}/${verb}`, { method: 'POST' })
-    await refresh()
+    await Promise.all([refresh(), refreshRailApps()])
   } catch (err: unknown) {
     toast.add({
       title: 'Update failed',
