@@ -32,6 +32,7 @@ describe('/mcp transport (integration)', async () => {
     runner: 'vitest',
     env: {
       TEST_DATABASE_URL: process.env.TEST_DATABASE_URL ?? '',
+      DATABASE_URL: process.env.TEST_DATABASE_URL ?? '',
       NUXT_PUBLIC_SITE_URL: process.env.NUXT_PUBLIC_SITE_URL ?? 'http://localhost:3099',
       OAUTH_CONSENT_COOKIE_SECRET: 'test-secret-32-bytes-of-random-stuff-for-integration-suite-padding'
     }
@@ -85,12 +86,22 @@ describe('/mcp transport (integration)', async () => {
     expect(res.status).toBe(413)
   })
 
-  it('post-initialize POST without MCP-Protocol-Version returns 400', async () => {
+  it('post-initialize POST without MCP-Protocol-Version is accepted', async () => {
     const fx = await fixtureToken({ scopes: ['pages.view'], permissions: ['pages.view'] })
     const res = await callMcp({
       token: fx.token,
       rawBody: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
       headers: {} // explicitly omit mcp-protocol-version
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('POST with an unsupported MCP-Protocol-Version returns 400', async () => {
+    const fx = await fixtureToken({ scopes: ['pages.view'], permissions: ['pages.view'] })
+    const res = await callMcp({
+      token: fx.token,
+      rawBody: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      headers: { 'mcp-protocol-version': '1999-01-01' }
     })
     expect(res.status).toBe(400)
   })
