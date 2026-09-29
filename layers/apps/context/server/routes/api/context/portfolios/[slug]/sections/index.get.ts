@@ -2,6 +2,7 @@
 import { withOrgPermission } from '#tenant/server'
 import { getPortfolioBySlugOr404 } from '../../../../../../utils/portfolio-helpers'
 import { getPortfolioSections } from '../../../../../../utils/section-settings'
+import { pendingCountsByKey } from '../../../../../../utils/suggestions'
 
 export default defineEventHandler(async (event) => {
   return await withOrgPermission(event, { appId: 'context' }, 'context.read', async (tx) => {
@@ -23,6 +24,7 @@ export default defineEventHandler(async (event) => {
       .execute()
 
     const byKey = new Map(rows.map(r => [r.section_key as string, r]))
+    const pending = await pendingCountsByKey(tx, p.id)
 
     return {
       portfolio_id: p.id,
@@ -43,7 +45,8 @@ export default defineEventHandler(async (event) => {
           has_content: content.trim().length > 0,
           last_edited_at: r?.last_edited_at ?? null,
           last_edited_by: r?.last_edited_by ?? null,
-          last_edited_by_name: r?.last_edited_by_name ?? null
+          last_edited_by_name: r?.last_edited_by_name ?? null,
+          pending_suggestions: pending.get(d.key) ?? 0
         }
       })
     }

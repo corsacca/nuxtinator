@@ -182,8 +182,11 @@ export async function loadSection(
 
 export interface SaveSectionOptions {
   // Stamped on the version row so history can show who made the change:
-  // 'user' for UI routes, 'assistant' for accepted proposals, 'mcp' for MCP tools.
+  // 'user' for UI routes, 'assistant' for accepted proposals, 'mcp' for MCP
+  // tools, 'suggestion' for approved suggestions.
   source: ContextSectionVersionSource
+  // The approved suggestion this version was written from.
+  suggestionId?: string
   enforceKeyExists?: boolean
 }
 
@@ -243,7 +246,8 @@ export async function saveSectionContent(
       section_id: section.id,
       content,
       edited_by: userId,
-      source: opts.source
+      source: opts.source,
+      suggestion_id: opts.suggestionId ?? null
     })
     .returning('id')
     .executeTakeFirstOrThrow()

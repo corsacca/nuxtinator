@@ -157,7 +157,7 @@ export async function createPortfolio(
 }
 
 // Static pages under /context/ that a portfolio slug would collide with.
-const RESERVED_SLUGS = new Set(['settings'])
+const RESERVED_SLUGS = new Set(['settings', 'suggestions'])
 
 export async function ensureUniqueSlug(
   tx: Transaction<Database>,

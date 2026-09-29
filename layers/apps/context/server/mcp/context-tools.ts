@@ -20,6 +20,11 @@
 // `update_section` and `bulk_update_sections` support optimistic locking via
 // an optional `last_edited_at` ISO timestamp. If the section has been edited
 // since the caller's read, the update is rejected with `status: 'conflict'`.
+//
+// Both update tools suggest by default: a change to a section with content
+// becomes a pending suggestion (one set per call) that a reviewer approves in
+// the web app. Writing into an empty section applies immediately, since
+// there is nothing to overwrite. `mode: 'direct'` writes straight through.
 
 import { z } from 'zod'
 import { sql, type Kysely } from 'kysely'
@@ -29,6 +34,13 @@ import { runInOrgTransaction } from '#tenant/server'
 import { getPortfolioSections } from '../utils/section-settings'
 import { loadSection, saveSectionContent, isKnownSectionKey, addSection, deleteSection } from '../utils/section-helpers'
 import { createPortfolio, getPortfolioById, listPortfolios } from '../utils/portfolio-helpers'
+import {
+  createSuggestionSet,
+  listOwnSuggestions,
+  ownPendingSuggestionId,
+  withdrawSuggestions,
+  type NewSuggestion
+} from '../utils/suggestions'
 import { CONTEXT_SECTIONS } from '../utils/section-catalog'
 
 const BUILTIN_KEY_LIST = CONTEXT_SECTIONS.map(s => s.key).join(', ')
@@ -41,6 +53,17 @@ function asAuditExecutor(tx: unknown): Kysely<CoreDatabase> {
 // to one org via a fixed `X-Active-Org` header keep working unchanged.
 const orgInput = z.string().min(1).max(64).optional()
   .describe('Org slug to operate in. Defaults to the X-Active-Org header sent by the client.')
+
+const modeInput = z.enum(['suggest', 'direct']).optional()
+  .describe('suggest (default): the change waits for an admin to approve it. direct: write immediately — only when the user explicitly asks to bypass review.')
+const noteInput = z.string().trim().max(1000).optional()
+  .describe('Short summary of the change and why, shown to the reviewer.')
+
+const SUGGESTED_NOTE = 'Pending review by an admin; the section keeps its current content until the suggestion is approved.'
+
+function hasContent(content: string | undefined | null): boolean {
+  return (content ?? '').trim().length > 0
+}
 
 function textResult(text: string, structured?: Record<string, unknown>) {
   return {
@@ -133,7 +156,7 @@ export const listSectionsTool = defineMcpTool({
 
 export const readSectionTool = defineMcpTool({
   name: 'read_section',
-  description: 'Read the markdown content of a single portfolio section. Returns content and last_edited_at (pass last_edited_at to update_section for optimistic-lock conflict detection).',
+  description: 'Read the markdown content of a single portfolio section. Returns content and last_edited_at (pass last_edited_at to update_section for optimistic-lock conflict detection), plus pending_suggestion_id when you have a suggestion awaiting review on it.',
   scope: 'context.read',
   input: z.object({
     org: orgInput,
@@ -160,7 +183,8 @@ export const readSectionTool = defineMcpTool({
           key: input.section_key,
           title: def?.title ?? input.section_key,
           content: section?.content ?? '',
-          last_edited_at: section?.last_edited_at ? new Date(section.last_edited_at).toISOString() : null
+          last_edited_at: section?.last_edited_at ? new Date(section.last_edited_at).toISOString() : null,
+          pending_suggestion_id: await ownPendingSuggestionId(tx, input.portfolio_id, input.section_key, ctx.auth.userId)
         }
         return textResult(`Section "${result.title}" (${result.content.length} chars).`, result)
       })
@@ -257,14 +281,16 @@ export const readOrganizationTool = defineMcpTool({
 
 export const updateSectionTool = defineMcpTool({
   name: 'update_section',
-  description: 'Update the markdown content of a portfolio section. Creates a version snapshot. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection. Atomic: if the call returns an error, nothing was written.',
+  description: 'Update the markdown content of a portfolio section. By default this suggests the change: it returns status "suggested" and the section is unchanged until an admin approves it. Writing into an empty section applies immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection. Atomic: if the call returns an error, nothing was written.',
   scope: 'context.write',
   input: z.object({
     org: orgInput,
     portfolio_id: z.string().uuid(),
     section_key: z.string().min(1).max(64),
     content: z.string(),
-    last_edited_at: z.string().datetime().optional()
+    last_edited_at: z.string().datetime().optional(),
+    mode: modeInput,
+    note: noteInput
   }).strict(),
   handler: async (input, ctx) => {
     try {
@@ -279,8 +305,8 @@ export const updateSectionTool = defineMcpTool({
         const known = await isKnownSectionKey(tx, input.portfolio_id, input.section_key)
         if (!known) throw createError({ statusCode: 404, statusMessage: `Unknown section key: ${input.section_key}` })
 
+        const cur = await loadSection(tx, input.portfolio_id, input.section_key)
         if (input.last_edited_at) {
-          const cur = await loadSection(tx, input.portfolio_id, input.section_key)
           if (cur && cur.last_edited_at) {
             const currentIso = new Date(cur.last_edited_at).toISOString()
             if (currentIso !== new Date(input.last_edited_at).toISOString()) {
@@ -293,6 +319,31 @@ export const updateSectionTool = defineMcpTool({
               })
             }
           }
+        }
+
+        if (input.mode !== 'direct' && hasContent(cur?.content)) {
+          if (input.content === cur!.content) {
+            return textResult(`No change — section "${input.section_key}" already has this content.`, {
+              key: input.section_key,
+              status: 'unchanged' as const
+            })
+          }
+          const { setId, suggestions } = await createSuggestionSet(tx, {
+            portfolioId: input.portfolio_id,
+            authorId: ctx.auth.userId,
+            note: input.note || null,
+            items: [{ key: input.section_key, baseContent: cur!.content, proposedContent: input.content }]
+          })
+          await mcpLog('CREATE', 'context_suggestion_sets', setId, ctx, {
+            portfolio_id: input.portfolio_id,
+            keys: [input.section_key]
+          }, asAuditExecutor(tx))
+          return textResult(`Suggested an update to section "${input.section_key}". ${SUGGESTED_NOTE}`, {
+            key: input.section_key,
+            status: 'suggested' as const,
+            suggestion_id: suggestions[0]!.id,
+            suggestion_set_id: setId
+          })
         }
 
         const { section, versionId } = await saveSectionContent(
@@ -318,7 +369,7 @@ export const updateSectionTool = defineMcpTool({
 
 export const bulkUpdateSectionsTool = defineMcpTool({
   name: 'bulk_update_sections',
-  description: 'Update multiple portfolio sections in a single call. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still updated. Runs as one transaction: if the call returns an error, every update in it was rolled back and nothing was written.',
+  description: 'Update multiple portfolio sections in a single call. By default the changes are suggested: sections with content come back with status "suggested" and are grouped into one suggestion an admin reviews; empty sections are written immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still processed. Runs as one transaction: if the call returns an error, nothing in it was written or suggested.',
   scope: 'context.write',
   input: z.object({
     org: orgInput,
@@ -327,7 +378,9 @@ export const bulkUpdateSectionsTool = defineMcpTool({
       section_key: z.string().min(1).max(64),
       content: z.string(),
       last_edited_at: z.string().datetime().optional()
-    })).min(1).max(20)
+    })).min(1).max(20),
+    mode: modeInput,
+    note: noteInput
   }).strict(),
   handler: async (input, ctx) => {
     try {
@@ -340,14 +393,15 @@ export const bulkUpdateSectionsTool = defineMcpTool({
         if (!exists) throw createError({ statusCode: 404, statusMessage: 'Portfolio not found.' })
 
         const results: Array<Record<string, unknown>> = []
+        const toSuggest: Array<NewSuggestion & { result: Record<string, unknown> }> = []
         for (const u of input.updates) {
           const known = await isKnownSectionKey(tx, input.portfolio_id, u.section_key)
           if (!known) {
             results.push({ key: u.section_key, status: 'error', reason: `Unknown section key: ${u.section_key}` })
             continue
           }
+          const cur = await loadSection(tx, input.portfolio_id, u.section_key)
           if (u.last_edited_at) {
-            const cur = await loadSection(tx, input.portfolio_id, u.section_key)
             if (cur?.last_edited_at) {
               const currentIso = new Date(cur.last_edited_at).toISOString()
               if (currentIso !== new Date(u.last_edited_at).toISOString()) {
@@ -362,6 +416,16 @@ export const bulkUpdateSectionsTool = defineMcpTool({
               }
             }
           }
+          if (input.mode !== 'direct' && hasContent(cur?.content)) {
+            if (u.content === cur!.content) {
+              results.push({ key: u.section_key, status: 'unchanged' })
+              continue
+            }
+            const result: Record<string, unknown> = { key: u.section_key, status: 'suggested' }
+            results.push(result)
+            toSuggest.push({ key: u.section_key, baseContent: cur!.content, proposedContent: u.content, result })
+            continue
+          }
           const { section, versionId } = await saveSectionContent(
             tx, input.portfolio_id, u.section_key, u.content, ctx.auth.userId, { source: 'mcp' }
           )
@@ -375,7 +439,33 @@ export const bulkUpdateSectionsTool = defineMcpTool({
             version_id: versionId
           })
         }
-        return textResult(`Processed ${results.length} update(s).`, { results })
+
+        let setId: string | null = null
+        if (toSuggest.length > 0) {
+          const created = await createSuggestionSet(tx, {
+            portfolioId: input.portfolio_id,
+            authorId: ctx.auth.userId,
+            note: input.note || null,
+            items: toSuggest
+          })
+          setId = created.setId
+          // A key repeated in one call supersedes its earlier entry.
+          const idByKey = new Map(created.suggestions.map(s => [s.key, s.id]))
+          for (const t of toSuggest) {
+            t.result.suggestion_id = idByKey.get(t.key)
+            t.result.suggestion_set_id = setId
+          }
+          await mcpLog('CREATE', 'context_suggestion_sets', setId, ctx, {
+            portfolio_id: input.portfolio_id,
+            keys: toSuggest.map(t => t.key)
+          }, asAuditExecutor(tx))
+        }
+
+        return textResult(
+          `Processed ${results.length} update(s).`
+          + (toSuggest.length > 0 ? ` ${toSuggest.length} suggested — ${SUGGESTED_NOTE}` : ''),
+          { results, ...(setId ? { suggestion_set_id: setId } : {}) }
+        )
       })
     } catch (err) { return mcpError(err) }
   }
@@ -568,6 +658,65 @@ export const deleteSectionTool = defineMcpTool({
   }
 })
 
+export const listSuggestionsTool = defineMcpTool({
+  name: 'list_suggestions',
+  description: 'List your own suggested section updates, newest first, with status (pending, approved, rejected, withdrawn, superseded) and the reviewer\'s note when one was left. Use to check whether earlier suggestions were approved.',
+  scope: 'context.read',
+  input: z.object({
+    org: orgInput,
+    portfolio_id: z.string().uuid().optional(),
+    status: z.enum(['pending', 'approved', 'rejected', 'withdrawn', 'superseded']).optional(),
+    limit: z.number().int().min(1).max(100).optional()
+  }).strict(),
+  handler: async (input, ctx) => {
+    try {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+        const rows = await listOwnSuggestions(tx, ctx.auth.userId, {
+          portfolioId: input.portfolio_id,
+          status: input.status,
+          limit: input.limit ?? 50
+        })
+        const suggestions = rows.map(r => ({
+          ...r,
+          created_at: new Date(r.created_at).toISOString(),
+          decided_at: r.decided_at ? new Date(r.decided_at).toISOString() : null
+        }))
+        return textResult(`${suggestions.length} suggestion(s).`, { suggestions })
+      })
+    } catch (err) { return mcpError(err) }
+  }
+})
+
+export const withdrawSuggestionTool = defineMcpTool({
+  name: 'withdraw_suggestion',
+  description: 'Withdraw one of your own pending suggestions so it leaves the review queue.',
+  scope: 'context.write',
+  input: z.object({
+    org: orgInput,
+    suggestion_id: z.string().uuid()
+  }).strict(),
+  handler: async (input, ctx) => {
+    try {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+        const row = await tx
+          .selectFrom('context_suggestions')
+          .select('set_id')
+          .where('id', '=', input.suggestion_id)
+          .executeTakeFirst()
+        if (!row) throw createError({ statusCode: 404, statusMessage: 'Suggestion not found.' })
+
+        await withdrawSuggestions(tx, row.set_id, [input.suggestion_id], ctx.auth.userId)
+
+        await mcpLog('UPDATE', 'context_suggestions', input.suggestion_id, ctx, {
+          status: 'withdrawn'
+        }, asAuditExecutor(tx))
+
+        return textResult('Suggestion withdrawn.', { suggestion_id: input.suggestion_id, status: 'withdrawn' as const })
+      })
+    } catch (err) { return mcpError(err) }
+  }
+})
+
 export const contextMcpTools = [
   listOrgsTool,
   listPortfoliosTool,
@@ -580,7 +729,9 @@ export const contextMcpTools = [
   createPortfolioTool,
   createSectionTool,
   bulkCreateSectionsTool,
-  deleteSectionTool
+  deleteSectionTool,
+  listSuggestionsTool,
+  withdrawSuggestionTool
 ]
 
 // Suppress unused-imports warning when sql isn't directly referenced — the

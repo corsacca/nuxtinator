@@ -3,9 +3,10 @@ import { withOrgPermission } from '#tenant/server'
 import { getPortfolioBySlugOr404 } from '../../../../../../utils/portfolio-helpers'
 import { loadSection, isKnownSectionKey } from '../../../../../../utils/section-helpers'
 import { getPortfolioSections } from '../../../../../../utils/section-settings'
+import { pendingForSection, REVIEW_PERMISSION } from '../../../../../../utils/suggestions'
 
 export default defineEventHandler(async (event) => {
-  return await withOrgPermission(event, { appId: 'context' }, 'context.read', async (tx) => {
+  return await withOrgPermission(event, { appId: 'context' }, 'context.read', async (tx, ctx) => {
     const slug = getRouterParam(event, 'slug') ?? ''
     const key = getRouterParam(event, 'key') ?? ''
     const p = await getPortfolioBySlugOr404(tx, slug)
@@ -25,7 +26,11 @@ export default defineEventHandler(async (event) => {
       is_custom: def?.is_custom ?? false,
       content: section?.content ?? '',
       last_edited_at: section?.last_edited_at ?? null,
-      last_edited_by: section?.last_edited_by ?? null
+      last_edited_by: section?.last_edited_by ?? null,
+      pending_suggestions: await pendingForSection(tx, p.id, key, {
+        userId: ctx.userId,
+        isReviewer: ctx.perms.has(REVIEW_PERMISSION)
+      })
     }
   })
 })
