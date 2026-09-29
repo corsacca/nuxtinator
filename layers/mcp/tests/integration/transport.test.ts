@@ -214,6 +214,37 @@ describe('/mcp transport (integration)', async () => {
     expect(body.result?.structuredContent).toEqual({ ok: true, value: 1 })
   })
 
+  it('structuredContent is also returned serialized as a trailing text block', async () => {
+    const fx = await fixtureToken({ scopes: ['pages.view'], permissions: ['pages.view'] })
+    const res = await callMcp({
+      method: 'tools/call',
+      params: { name: 'output_check', arguments: { malformed: false } },
+      token: fx.token
+    })
+    const body = res.body as { result?: { content?: Array<{ type: string; text: string }>; structuredContent?: unknown } }
+    const content = body.result?.content ?? []
+    expect(content).toHaveLength(2)
+    expect(content[0]?.text).toBe('ok')
+    expect(content[1]?.type).toBe('text')
+    expect(JSON.parse(content[1]!.text)).toEqual(body.result?.structuredContent)
+  })
+
+  it('authorization errors also return their payload serialized as a text block', async () => {
+    const { userId } = await createTestUser({ permissions: ['pages.view', 'pages.write'] })
+    const { clientId } = await createTestClient()
+    const { token } = await issueTestToken({ userId, clientId, scopes: ['pages.view'] })
+    const res = await callMcp({
+      method: 'tools/call',
+      params: { name: 'create_page', arguments: { slug: 'x' } },
+      token
+    })
+    const body = res.body as { result?: { content?: Array<{ text: string }>; structuredContent?: unknown } }
+    const content = body.result?.content ?? []
+    expect(content).toHaveLength(2)
+    expect(content[0]?.text).toMatch(/insufficient scope/i)
+    expect(JSON.parse(content[1]!.text)).toEqual(body.result?.structuredContent)
+  })
+
   // ── Error mapping ──────────────────────────────────────────────────────
 
   it('tools/call with handler throwing 404 maps to isError "<entity> not found"', async () => {

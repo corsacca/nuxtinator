@@ -119,4 +119,18 @@ describe('MCP section definition tools', () => {
 
     expect(await listKeys(token, org.slug, portfolio.id)).toEqual(['identity', 'team', 'pricing', 'roadmap'])
   })
+
+  it('read_section carries the section as JSON in content for clients that ignore structuredContent', async () => {
+    const { user, org, token } = await setupAdmin()
+    const portfolio = await createTestPortfolio(sql, { org_id: org.id, name: 'MCP Text Content', created_by: user.id })
+    await seedTestSection(sql, { portfolio_id: portfolio.id, section_key: 'team', content: '# Team\n\nAlice', last_edited_by: user.id })
+
+    const read = await callMcpTool(token, 'read_section', { org: org.slug, portfolio_id: portfolio.id, section_key: 'team' })
+    expect(read.isError, read.content[0]?.text).toBeFalsy()
+    const json = read.content.at(-1)
+    expect(json?.type).toBe('text')
+    const parsed = JSON.parse(json!.text) as Record<string, unknown>
+    expect(parsed).toEqual(read.structuredContent)
+    expect(parsed.content).toBe('# Team\n\nAlice')
+  })
 })
