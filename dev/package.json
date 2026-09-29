@@ -32,6 +32,7 @@
     "@nuxtinator/feedback": "workspace:*",
     "@nuxtinator/files": "workspace:*",
     "@nuxtinator/inbox": "workspace:*",
+    "@nuxtinator/helpinator": "workspace:*",
     "@nuxtinator/list-of-100": "workspace:*",
     "@nuxtinator/mcp": "workspace:*",
     "@nuxtinator/messages": "workspace:*",

@@ -42,6 +42,8 @@ export const LAYERS: readonly LayerSpec[] = [
   { id: 'videos',        pkg: '@nuxtinator/videos',        repo: 'corsacca/nuxtinator', subdir: 'layers/apps/videos' },
   { id: 'files',         pkg: '@nuxtinator/files',         repo: 'corsacca/nuxtinator', subdir: 'layers/apps/files' },
   { id: 'context',       pkg: '@nuxtinator/context',       repo: 'corsacca/nuxtinator', subdir: 'layers/apps/context' },
+  // Needs context + ai. Add crm + inbox too for the "still need help?" handoff.
+  { id: 'helpinator',    pkg: '@nuxtinator/helpinator',    repo: 'corsacca/nuxtinator', subdir: 'layers/apps/helpinator' },
   { id: 'crm',           pkg: '@nuxtinator/crm',           repo: 'corsacca/nuxtinator', subdir: 'layers/apps/crm' },
   { id: 'dev',           pkg: '@nuxtinator/dev',           repo: 'corsacca/nuxtinator', subdir: 'layers/dev' }
 

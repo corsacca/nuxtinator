@@ -179,6 +179,14 @@ function onFilesPicked(e: Event) {
 const replyEditor = ref<{ editor?: { chain: () => { focus: () => { setImage: (o: { src: string }) => { run: () => void } } } } } | null>(null)
 const imageInput = ref<HTMLInputElement | null>(null)
 const insertingImage = ref(false)
+
+// `?reply=1` (e.g. a help-chat elevation) lands with the composer focused,
+// ready to write.
+const route = useRoute()
+watch(() => replyEditor.value?.editor, (ed) => {
+  if (!ed || route.query.reply !== '1') return
+  (ed as unknown as { commands: { focus: (pos?: string) => void } }).commands.focus('end')
+}, { immediate: true })
 function pickImage() {
   imageInput.value?.click()
 }
