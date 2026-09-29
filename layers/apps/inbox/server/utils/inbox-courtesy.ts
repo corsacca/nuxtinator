@@ -18,6 +18,9 @@ export interface InboxCourtesyContext {
   // to confirm it, so one email does both jobs (contact-form intake only —
   // authenticated inbound mail already proves ownership).
   verificationUrl?: string | null
+  // Trusted HTML appended to the auto-ack after the standard body (e.g. a
+  // help-chat transcript). Callers escape their own content.
+  extraHtml?: string | null
 }
 
 function escapeAttr(s: string): string {
@@ -39,6 +42,7 @@ function ackBodyHtml(ctx: InboxCourtesyContext): string {
       `<p style="font-size:14px;color:#666666;word-break:break-all;">${url}</p>`
     )
   }
+  if (ctx.extraHtml) parts.push(ctx.extraHtml)
   return parts.join('\n')
 }
 

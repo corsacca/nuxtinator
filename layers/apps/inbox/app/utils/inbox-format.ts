@@ -56,6 +56,7 @@ export const INBOX_SUPPRESSION_REASON_META: Record<string, { label: string, colo
 export const INBOX_SOURCE_META: Record<string, { label: string, icon: string }> = {
   inbound_email: { label: 'Email', icon: 'i-lucide-mail' },
   contact_form: { label: 'Form', icon: 'i-lucide-clipboard-list' },
+  helpinator: { label: 'Chat', icon: 'i-lucide-message-circle' },
   staff: { label: 'Staff', icon: 'i-lucide-pen-line' }
 }
 
