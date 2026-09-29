@@ -67,6 +67,15 @@ describe('context MCP tools file', () => {
     expect(orgScopedCalls.length).toBe(13)
   })
 
+  it('both update tools carry the privacy instruction in their descriptions', async () => {
+    const src = await fs.readFile(TOOLS_FILE, 'utf8')
+    expect(src).toMatch(/const PRIVACY_INSTRUCTION = '[^']*initials[^']*'/)
+    const withInstruction = src.match(/description: `[^`]*\$\{PRIVACY_INSTRUCTION\}`/g) ?? []
+    expect(withInstruction).toHaveLength(2)
+    expect(src).toMatch(/name: 'update_section',\s*description: `[^`]*\$\{PRIVACY_INSTRUCTION\}`/)
+    expect(src).toMatch(/name: 'bulk_update_sections',\s*description: `[^`]*\$\{PRIVACY_INSTRUCTION\}`/)
+  })
+
   it('update_section accepts optional last_edited_at for optimistic locking', async () => {
     const src = await fs.readFile(TOOLS_FILE, 'utf8')
     expect(src).toMatch(/last_edited_at:\s*z\.string\(\)\.datetime\(\)\.optional\(\)/)

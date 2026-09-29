@@ -28,7 +28,7 @@ export const CONTEXT_SECTIONS: readonly SectionDef[] = [
   {
     key: 'team',
     title: 'Team',
-    description: 'Leadership, staff, and key roles within the organization',
+    description: 'Leadership, staff, and key roles within the organization — roles and initials for private individuals',
     order: 3,
     staleness_days: 60
   },

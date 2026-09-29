@@ -59,6 +59,10 @@ const modeInput = z.enum(['suggest', 'direct']).optional()
 const noteInput = z.string().trim().max(1000).optional()
   .describe('Short summary of the change and why, shown to the reviewer.')
 
+// Appended to the update tools' descriptions so the writing AI keeps personal
+// information about private individuals out of context.
+const PRIVACY_INSTRUCTION = 'Privacy: do not include personal information about private individuals. Refer to people by role or initials (e.g. "J.S., field coordinator"). Organization and project names (e.g. Joshua Project) and publicly known figures may be written in full. Do not include personal email addresses, phone numbers, or home addresses.'
+
 const SUGGESTED_NOTE = 'Pending review by an admin; the section keeps its current content until the suggestion is approved.'
 
 function hasContent(content: string | undefined | null): boolean {
@@ -281,7 +285,7 @@ export const readOrganizationTool = defineMcpTool({
 
 export const updateSectionTool = defineMcpTool({
   name: 'update_section',
-  description: 'Update the markdown content of a portfolio section. By default this suggests the change: it returns status "suggested" and the section is unchanged until an admin approves it. Writing into an empty section applies immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection. Atomic: if the call returns an error, nothing was written.',
+  description: `Update the markdown content of a portfolio section. By default this suggests the change: it returns status "suggested" and the section is unchanged until an admin approves it. Writing into an empty section applies immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection. Atomic: if the call returns an error, nothing was written. ${PRIVACY_INSTRUCTION}`,
   scope: 'context.write',
   input: z.object({
     org: orgInput,
@@ -369,7 +373,7 @@ export const updateSectionTool = defineMcpTool({
 
 export const bulkUpdateSectionsTool = defineMcpTool({
   name: 'bulk_update_sections',
-  description: 'Update multiple portfolio sections in a single call. By default the changes are suggested: sections with content come back with status "suggested" and are grouped into one suggestion an admin reviews; empty sections are written immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still processed. Runs as one transaction: if the call returns an error, nothing in it was written or suggested.',
+  description: `Update multiple portfolio sections in a single call. By default the changes are suggested: sections with content come back with status "suggested" and are grouped into one suggestion an admin reviews; empty sections are written immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still processed. Runs as one transaction: if the call returns an error, nothing in it was written or suggested. ${PRIVACY_INSTRUCTION}`,
   scope: 'context.write',
   input: z.object({
     org: orgInput,
