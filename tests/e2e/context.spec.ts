@@ -275,6 +275,57 @@ test('custom sections: rename from settings — new title shows, key unchanged',
   await expect(page.locator('code', { hasText: 'pitch-methodology' })).toBeVisible()
 })
 
+// ─── suggestions ──────────────────────────────────────────────────────────
+
+async function seedSuggestionSet(
+  sql: ReturnType<typeof getHostAdminDb>,
+  opts: { org_id: string, portfolio_id: string, section_key: string, base: string, created_at: Date }
+): Promise<string> {
+  const [set] = await sql<{ id: string }[]>`
+    INSERT INTO context_suggestion_sets (portfolio_id, org_id, created_at)
+    VALUES (${opts.portfolio_id}, ${opts.org_id}, ${opts.created_at})
+    RETURNING id
+  `
+  await sql`
+    INSERT INTO context_suggestions (set_id, portfolio_id, org_id, section_key, base_content, proposed_content, status, created_at)
+    VALUES (${set!.id}, ${opts.portfolio_id}, ${opts.org_id}, ${opts.section_key}, ${opts.base}, 'Proposed.', 'pending', ${opts.created_at})
+  `
+  return set!.id
+}
+
+test('suggestions: arrows step through the open queue; approving the last pending item moves on', async ({ page }) => {
+  const sql = getHostAdminDb()
+  const { user, org } = await loginIntoNewOrg(page, { roles: ['admin'] })
+  const portfolio = await createTestPortfolio(sql, { org_id: org.id, created_by: user.id })
+  await seedTestSection(sql, { portfolio_id: portfolio.id, section_key: 'identity', content: 'Current.' })
+  const first = await seedSuggestionSet(sql, {
+    org_id: org.id, portfolio_id: portfolio.id, section_key: 'identity', base: 'Current.', created_at: new Date(Date.now() - 60_000)
+  })
+  const second = await seedSuggestionSet(sql, {
+    org_id: org.id, portfolio_id: portfolio.id, section_key: 'team', base: '', created_at: new Date()
+  })
+
+  await page.goto(`/@${org.slug}/context/suggestions/${first}`)
+  // First visit to this route in the dev server compiles it on demand.
+  await expect(page.locator('text=1 / 2')).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('link', { name: 'Next suggestion' }).click()
+  await expect(page).toHaveURL(new RegExp(`/context/suggestions/${second}$`))
+  await page.getByRole('link', { name: 'Previous suggestion' }).click()
+  await expect(page).toHaveURL(new RegExp(`/context/suggestions/${first}$`))
+
+  await Promise.all([
+    page.waitForResponse(r => r.url().includes(`/api/context/suggestions/${first}/decide`) && r.status() === 200),
+    page.getByRole('button', { name: /^approve$/i }).click()
+  ])
+  await expect(page).toHaveURL(new RegExp(`/context/suggestions/${second}$`))
+
+  await Promise.all([
+    page.waitForResponse(r => r.url().includes(`/api/context/suggestions/${second}/decide`) && r.status() === 200),
+    page.getByRole('button', { name: /^approve$/i }).click()
+  ])
+  await expect(page).toHaveURL(/\/context\/suggestions$/)
+})
+
 // ─── export ────────────────────────────────────────────────────────────────
 
 test('export: single-section download returns markdown', async ({ page }) => {

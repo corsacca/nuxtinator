@@ -31,6 +31,23 @@ const { data, error: loadError } = await useAsyncData(
 )
 const set = computed(() => data.value?.set ?? null)
 const pendingItems = computed(() => set.value?.suggestions.filter(s => s.status === 'pending') ?? [])
+
+// The open review queue, for stepping between sets and moving on once this
+// one has nothing left pending.
+const { data: queueData, refresh: refreshQueue } = await useAsyncData(
+  'context-suggestions-queue',
+  () => $fetch<{ sets: Array<{ id: string }> }>('/api/context/suggestions', { query: { state: 'open' } })
+)
+const queueIds = computed(() => queueData.value?.sets.map(s => s.id) ?? [])
+const queueIndex = computed(() => queueIds.value.indexOf(id.value))
+const prevId = computed(() => queueIndex.value > 0 ? queueIds.value[queueIndex.value - 1] : undefined)
+const nextId = computed(() => queueIndex.value >= 0 ? queueIds.value[queueIndex.value + 1] : undefined)
+
+async function advance() {
+  const target = nextId.value ?? queueIds.value.find(q => q !== id.value)
+  await refreshQueue()
+  await navigateTo(target ? `/context/suggestions/${target}` : '/context/suggestions')
+}
 const approvable = computed(() => pendingItems.value.filter(s => s.section_exists))
 
 type Action = 'approve' | 'reject' | 'withdraw'
@@ -85,6 +102,7 @@ async function run(action: Action, ids?: string[]) {
       'context-suggestions-pending-count',
       `context-sidebar-sections-${res.set.portfolio_slug}`
     ])
+    if (!res.set.suggestions.some(s => s.status === 'pending')) await advance()
   } catch (e) {
     error.value = (e as { statusMessage?: string }).statusMessage ?? 'Something went wrong.'
   } finally {
@@ -135,6 +153,29 @@ const confirmCopy = computed(() => {
           <p v-if="set" class="text-xs text-(--ui-text-muted) truncate">
             {{ set.author_name ?? 'Unknown' }} · {{ new Date(set.created_at).toLocaleString() }}
           </p>
+        </div>
+        <div v-if="queueIndex >= 0 && queueIds.length > 1" class="flex items-center gap-1">
+          <UButton
+            variant="ghost"
+            color="neutral"
+            icon="i-lucide-chevron-left"
+            size="sm"
+            aria-label="Previous suggestion"
+            :disabled="!prevId"
+            :to="prevId ? `/context/suggestions/${prevId}` : undefined"
+          />
+          <span class="text-xs text-(--ui-text-muted) tabular-nums">
+            {{ queueIndex + 1 }} / {{ queueIds.length }}
+          </span>
+          <UButton
+            variant="ghost"
+            color="neutral"
+            icon="i-lucide-chevron-right"
+            size="sm"
+            aria-label="Next suggestion"
+            :disabled="!nextId"
+            :to="nextId ? `/context/suggestions/${nextId}` : undefined"
+          />
         </div>
         <template v-if="set && pendingItems.length > 1">
           <template v-if="data?.can_review">
