@@ -82,7 +82,7 @@ export type AppStatus = 'disabled' | 'available' | 'default'
 
 export interface AppsTable {
   id: string
-  status: Generated<AppStatus>
+  status: AppStatus | null
   created_at: ColumnType<Date, string | undefined, string>
   updated_at: ColumnType<Date, string | undefined, string>
 }

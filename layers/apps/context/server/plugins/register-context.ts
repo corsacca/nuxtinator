@@ -28,6 +28,7 @@ export default defineNitroPlugin(() => {
     path: '/context',
     icon: 'i-lucide-book-open-text',
     requiredPermission: 'context.access',
+    defaultStatus: 'available',
     order: 25
   })
 

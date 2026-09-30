@@ -30,8 +30,8 @@ const { data, pending, refresh } = await useFetch<{ apps: AdminApp[] }>(
 const apps = computed(() => data.value?.apps ?? [])
 
 const STATUS_OPTIONS: { value: AppStatus, label: string, description: string, color: 'success' | 'neutral' | 'error', icon: string }[] = [
-  { value: 'default', label: 'Default', description: 'Auto-enabled for every new org.', color: 'success', icon: 'i-lucide-circle-check' },
-  { value: 'available', label: 'Available', description: 'Org admin must opt in.', color: 'neutral', icon: 'i-lucide-circle-dashed' },
+  { value: 'default', label: 'Enabled for all', description: 'On for every org; an org admin can turn it off.', color: 'success', icon: 'i-lucide-circle-check' },
+  { value: 'available', label: 'Available to all', description: 'Off until an org admin turns it on.', color: 'neutral', icon: 'i-lucide-circle-dashed' },
   { value: 'disabled', label: 'Disabled', description: 'Hidden from every org.', color: 'error', icon: 'i-lucide-circle-x' }
 ]
 const statusMeta = (s: AppStatus) => STATUS_OPTIONS.find(o => o.value === s) ?? STATUS_OPTIONS[1]!
@@ -51,6 +51,83 @@ const onSetStatus = async (app: AdminApp, status: AppStatus) => {
       description: (err as { data?: { statusMessage?: string } } | null)?.data?.statusMessage,
       color: 'error'
     })
+  }
+}
+
+interface AppOrg {
+  id: string
+  slug: string
+  name: string
+  enabled: boolean
+  source: 'auto' | 'org_admin' | 'host' | null
+}
+
+const orgsApp = ref<AdminApp | null>(null)
+const orgsOpen = computed({
+  get: () => orgsApp.value !== null,
+  set: (v: boolean) => { if (!v) orgsApp.value = null }
+})
+const appOrgs = ref<AppOrg[]>([])
+const appOrgsLoading = ref(false)
+const togglingOrgId = ref<string | null>(null)
+
+const loadAppOrgs = async () => {
+  if (!orgsApp.value) return
+  appOrgsLoading.value = true
+  try {
+    const res = await $fetch<{ orgs: AppOrg[] }>(`/api/admin/apps/${orgsApp.value.id}/orgs`)
+    appOrgs.value = res.orgs
+  } finally {
+    appOrgsLoading.value = false
+  }
+}
+
+const openOrgs = async (app: AdminApp) => {
+  orgsApp.value = app
+  appOrgs.value = []
+  await loadAppOrgs()
+}
+
+const onToggleOrg = async (org: AppOrg, enabled: boolean) => {
+  if (!orgsApp.value) return
+  togglingOrgId.value = org.id
+  try {
+    await $fetch(`/api/admin/orgs/${org.id}/apps/${orgsApp.value.id}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' })
+    await loadAppOrgs()
+  } catch (err: unknown) {
+    toast.add({
+      title: 'Update failed',
+      description: (err as { data?: { statusMessage?: string } } | null)?.data?.statusMessage,
+      color: 'error'
+    })
+  } finally {
+    togglingOrgId.value = null
+  }
+}
+
+const removeApp = ref<AdminApp | null>(null)
+const removeOpen = computed({
+  get: () => removeApp.value !== null,
+  set: (v: boolean) => { if (!v) removeApp.value = null }
+})
+const removing = ref(false)
+
+const onRemove = async () => {
+  if (!removeApp.value) return
+  removing.value = true
+  try {
+    await $fetch(`/api/admin/apps/${removeApp.value.id}`, { method: 'DELETE' })
+    toast.add({ title: `Removed ${removeApp.value.title}`, color: 'success' })
+    removeApp.value = null
+    await refresh()
+  } catch (err: unknown) {
+    toast.add({
+      title: 'Remove failed',
+      description: (err as { data?: { statusMessage?: string } } | null)?.data?.statusMessage,
+      color: 'error'
+    })
+  } finally {
+    removing.value = false
   }
 }
 </script>
@@ -112,12 +189,23 @@ const onSetStatus = async (app: AdminApp, status: AppStatus) => {
             </div>
           </div>
         </div>
+        <UButton
+          v-if="!app.installed"
+          color="error"
+          variant="soft"
+          size="sm"
+          icon="i-lucide-trash-2"
+          class="shrink-0"
+          @click="removeApp = app"
+        >
+          Remove
+        </UButton>
         <!-- Single-tenant: a plain on/off switch. "On" stores `default` (shown
              in the launcher); "off" stores `disabled` (hidden). The `available`
              tier is multi-tenant-only (it means "org admin must opt in"), so it
              isn't offered here. -->
         <div
-          v-if="!tenancyEnabled"
+          v-else-if="!tenancyEnabled"
           class="flex items-center gap-2 shrink-0"
         >
           <span class="text-sm text-(--ui-text-muted)">
@@ -129,43 +217,142 @@ const onSetStatus = async (app: AdminApp, status: AppStatus) => {
             @update:model-value="(v: boolean) => onSetStatus(app, v ? 'default' : 'disabled')"
           />
         </div>
-        <USelectMenu
+        <div
           v-else
-          :model-value="app.status"
-          :items="STATUS_OPTIONS"
-          value-key="value"
-          label-key="label"
-          :search="false"
-          :color="statusMeta(app.status).color"
-          variant="outline"
-          size="sm"
-          class="w-44 shrink-0"
-          @update:model-value="(v: AppStatus) => onSetStatus(app, v)"
+          class="flex items-center gap-2 shrink-0"
         >
-          <template #leading>
-            <UIcon
-              :name="statusMeta(app.status).icon"
-              class="size-4"
-            />
-          </template>
-          <template #item="{ item }">
-            <div class="flex items-start gap-2 py-0.5">
+          <UButton
+            variant="outline"
+            color="neutral"
+            size="sm"
+            icon="i-lucide-building-2"
+            @click="openOrgs(app)"
+          >
+            Orgs
+          </UButton>
+          <USelectMenu
+            :model-value="app.status"
+            :items="STATUS_OPTIONS"
+            value-key="value"
+            label-key="label"
+            :search="false"
+            :color="statusMeta(app.status).color"
+            variant="outline"
+            size="sm"
+            class="w-44 shrink-0"
+            @update:model-value="(v: AppStatus) => onSetStatus(app, v)"
+          >
+            <template #leading>
               <UIcon
-                :name="(item as typeof STATUS_OPTIONS[number]).icon"
-                class="size-4 mt-0.5 shrink-0"
+                :name="statusMeta(app.status).icon"
+                class="size-4"
               />
-              <div>
-                <div class="font-medium leading-tight">
-                  {{ (item as typeof STATUS_OPTIONS[number]).label }}
-                </div>
-                <div class="text-xs text-(--ui-text-muted) leading-tight mt-0.5">
-                  {{ (item as typeof STATUS_OPTIONS[number]).description }}
+            </template>
+            <template #item="{ item }">
+              <div class="flex items-start gap-2 py-0.5">
+                <UIcon
+                  :name="(item as typeof STATUS_OPTIONS[number]).icon"
+                  class="size-4 mt-0.5 shrink-0"
+                />
+                <div>
+                  <div class="font-medium leading-tight">
+                    {{ (item as typeof STATUS_OPTIONS[number]).label }}
+                  </div>
+                  <div class="text-xs text-(--ui-text-muted) leading-tight mt-0.5">
+                    {{ (item as typeof STATUS_OPTIONS[number]).description }}
+                  </div>
                 </div>
               </div>
-            </div>
-          </template>
-        </USelectMenu>
+            </template>
+          </USelectMenu>
+        </div>
       </li>
     </ul>
+
+    <USlideover
+      v-model:open="orgsOpen"
+      :title="orgsApp ? `${orgsApp.title} — orgs` : ''"
+      description="Turn this app on or off per org. Changes made here are marked as set by the host, and org admins can't change them."
+    >
+      <template #body>
+        <div
+          v-if="appOrgsLoading && appOrgs.length === 0"
+          class="text-sm text-(--ui-text-muted)"
+        >
+          Loading...
+        </div>
+        <div
+          v-else-if="appOrgs.length === 0"
+          class="text-sm text-(--ui-text-muted)"
+        >
+          No organizations yet.
+        </div>
+        <p
+          v-else-if="orgsApp?.status === 'disabled'"
+          class="text-sm text-(--ui-text-muted) mb-3"
+        >
+          This app is disabled for every org. Change its status to enable it per org.
+        </p>
+        <ul
+          v-if="appOrgs.length > 0"
+          class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-md"
+        >
+          <li
+            v-for="org in appOrgs"
+            :key="org.id"
+            class="flex items-center justify-between gap-3 p-3"
+          >
+            <div class="min-w-0">
+              <div class="font-medium truncate">
+                {{ org.name }}
+              </div>
+              <div class="text-xs text-(--ui-text-muted)">
+                @{{ org.slug }}
+                <template v-if="org.source === 'host'">
+                  · set by host
+                </template>
+                <template v-else-if="org.source === 'org_admin'">
+                  · set by org admin
+                </template>
+              </div>
+            </div>
+            <USwitch
+              :model-value="org.enabled"
+              :disabled="orgsApp?.status === 'disabled' || togglingOrgId === org.id"
+              @update:model-value="(v: boolean) => onToggleOrg(org, v)"
+            />
+          </li>
+        </ul>
+      </template>
+    </USlideover>
+
+    <UModal v-model:open="removeOpen">
+      <template #content>
+        <div class="p-6 space-y-4">
+          <h2 class="text-lg font-semibold">
+            Remove {{ removeApp?.title }}?
+          </h2>
+          <p class="text-sm">
+            This removes the app from the catalog along with every org's on/off
+            setting for it. The app's own data tables are left in place.
+          </p>
+          <div class="flex gap-2 justify-end">
+            <UButton
+              variant="ghost"
+              @click="removeApp = null"
+            >
+              Cancel
+            </UButton>
+            <UButton
+              color="error"
+              :loading="removing"
+              @click="onRemove"
+            >
+              Remove
+            </UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

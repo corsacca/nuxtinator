@@ -22,6 +22,11 @@ export async function createTestOrg(
     INSERT INTO orgs (id, slug, name)
     VALUES (${id}, ${slug}, ${name})
   `
+  // Catalog apps default to off for orgs; tests exercise every app.
+  await sql`
+    INSERT INTO org_apps (org_id, app_id, enabled, source)
+    SELECT ${id}, a.id, true, 'auto' FROM apps a
+  `
   return { id, slug, name }
 }
 

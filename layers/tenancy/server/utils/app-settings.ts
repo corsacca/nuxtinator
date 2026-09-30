@@ -6,6 +6,8 @@
 //
 //   1. Registry default       — layer's `registerApp({ defaultStatus })`
 //   2. Host-admin override    — `apps.status` (set via /admin/apps)
+//                               'default' = on for orgs without a row,
+//                               'available' = off until the org enables it
 //   3. Org-admin override     — `org_apps.enabled` (set via /@<org>/settings/apps)
 //
 // `getApps` resolves (1) and (2). `getOrgApps` adds (3). The downstream
@@ -56,10 +58,7 @@ export const getOrgApps = defineSettings<AppCatalogEntry, OrgAppRow, OrgAppEntry
   merge: (app, orgRow) => {
     const a = app!
     const lockedByHost = a.status === 'disabled'
-    let enabled: boolean
-    if (lockedByHost) enabled = false
-    else if (orgRow) enabled = orgRow.enabled
-    else enabled = true
+    const enabled = resolveOrgAppEnabled(a.status, orgRow)
     return {
       ...a,
       globalStatus: a.status,
@@ -69,6 +68,14 @@ export const getOrgApps = defineSettings<AppCatalogEntry, OrgAppRow, OrgAppEntry
     }
   }
 })
+
+// Whether an org has an app on, given the catalog status and the org's row
+// (if any). A host-disabled app is off regardless of the row.
+export function resolveOrgAppEnabled(status: AppStatus, orgRow: { enabled: boolean } | undefined): boolean {
+  if (status === 'disabled') return false
+  if (orgRow) return orgRow.enabled
+  return status === 'default'
+}
 
 // Set of installed-and-enabled app IDs for an org. Used by the launcher
 // (`/api/.../_apps`), the `app.enabled` gate inside `defineTenantHandler`,

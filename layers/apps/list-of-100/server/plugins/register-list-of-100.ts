@@ -19,7 +19,7 @@ export default defineNitroPlugin(() => {
     icon: '100',
     description: 'Steward the 100 relationships God has put in your life.',
     requiredPermission: 'list-of-100.access',
-    defaultStatus: 'default',
+    defaultStatus: 'available',
     order: 30
   })
 

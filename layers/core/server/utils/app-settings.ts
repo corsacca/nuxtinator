@@ -5,7 +5,8 @@
 //
 //   getApps(tx)             — merged catalog from the host-admin POV.
 //                             Registry entries get their declared default
-//                             status when no DB row exists; orphan DB rows
+//                             status (else 'disabled') when the DB row has
+//                             no status; orphan DB rows
 //                             (layer uninstalled but row left behind) are
 //                             appended with `installed: false` so a host
 //                             admin can purge them.
@@ -37,7 +38,7 @@ export interface AppCatalogEntry {
 
 interface AppRow {
   id: string
-  status: AppStatus
+  status: AppStatus | null
   created_at: Date | string
   updated_at: Date | string
 }
@@ -62,7 +63,7 @@ export const getApps = defineSettings<AppEntry, AppRow, AppCatalogEntry>({
         path: app.path,
         requiredPermission: app.requiredPermission,
         order: app.order,
-        status: row?.status ?? app.defaultStatus ?? 'available',
+        status: row?.status ?? app.defaultStatus ?? 'disabled',
         installed: true,
         created_at: row?.created_at ?? null,
         updated_at: row?.updated_at ?? null
@@ -78,7 +79,7 @@ export const getApps = defineSettings<AppEntry, AppRow, AppCatalogEntry>({
       path: undefined,
       requiredPermission: undefined,
       order: undefined,
-      status: row!.status,
+      status: row!.status ?? 'disabled',
       installed: false,
       created_at: row!.created_at,
       updated_at: row!.updated_at
