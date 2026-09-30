@@ -249,6 +249,32 @@ test('custom sections: create from manager — appears in sidebar tree', async (
   await expect(page.locator('nav').filter({ hasText: title }).first()).toBeVisible()
 })
 
+test('custom sections: rename from settings — new title shows, key unchanged', async ({ page }) => {
+  const sql = getHostAdminDb()
+  const { user, org } = await loginIntoNewOrg(page, { roles: ['admin'] })
+  const portfolio = await createTestPortfolio(sql, { org_id: org.id, created_by: user.id })
+  const created = await page.request.post(
+    `/api/context/portfolios/${portfolio.slug}/sections`,
+    { data: { title: 'Pitch Methodology' }, headers: { 'x-active-org': org.slug } }
+  )
+  expect(created.status()).toBe(200)
+
+  await page.goto(`/@${org.slug}/context/${portfolio.slug}/settings`)
+  await page.getByRole('button', { name: 'Rename Pitch Methodology' }).click()
+  await page.getByLabel('Section title').fill('Pitch')
+  await Promise.all([
+    page.waitForResponse(r =>
+      r.url().includes(`/api/context/portfolios/${portfolio.slug}/sections/pitch-methodology`)
+      && r.request().method() === 'PATCH'
+      && r.status() === 200
+    ),
+    page.locator('form').filter({ has: page.getByLabel('Section title') }).getByRole('button', { name: /^save$/i }).click()
+  ])
+
+  await expect(page.getByRole('button', { name: 'Rename Pitch' })).toBeVisible()
+  await expect(page.locator('code', { hasText: 'pitch-methodology' })).toBeVisible()
+})
+
 // ─── export ────────────────────────────────────────────────────────────────
 
 test('export: single-section download returns markdown', async ({ page }) => {

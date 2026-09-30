@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Manage a portfolio's section definitions: every section (built-in and
-// custom) with reorder and remove actions, plus controls to add a missing
-// built-in or a new custom section. `list` off shows only the add controls,
-// for pages that already render the sections themselves.
+// custom) with reorder and remove actions, rename for custom sections, plus
+// controls to add a missing built-in or a new custom section. `list` off shows
+// only the add controls, for pages that already render the sections themselves.
 import { CONTEXT_SECTIONS } from '../../utils/section-catalog'
 
 const props = withDefaults(defineProps<{ slug: string, list?: boolean }>(), { list: true })
@@ -43,6 +43,10 @@ const error = ref<string | null>(null)
 const removeTarget = ref<SectionDef | null>(null)
 const removeOpen = ref(false)
 const removing = ref(false)
+
+const editKey = ref<string | null>(null)
+const editForm = reactive({ title: '', description: '' })
+const savingEdit = ref(false)
 
 const dragKey = ref<string | null>(null)
 const dragOverKey = ref<string | null>(null)
@@ -135,6 +139,31 @@ function onDrop(overKey: string) {
   persistOrder(reordered(from, to))
 }
 
+function startEdit(section: SectionDef) {
+  editKey.value = section.key
+  editForm.title = section.title
+  editForm.description = section.description
+}
+
+async function saveEdit() {
+  const key = editKey.value
+  if (!key || !editForm.title.trim()) return
+  savingEdit.value = true
+  error.value = null
+  try {
+    await $fetch(`/api/context/portfolios/${props.slug}/sections/${key}`, {
+      method: 'PATCH',
+      body: { title: editForm.title.trim(), description: editForm.description.trim() }
+    })
+    editKey.value = null
+    await afterChange()
+  } catch (e) {
+    error.value = (e as { statusMessage?: string }).statusMessage ?? 'Rename failed.'
+  } finally {
+    savingEdit.value = false
+  }
+}
+
 function askRemove(section: SectionDef) {
   removeTarget.value = section
   removeOpen.value = true
@@ -168,7 +197,7 @@ async function remove() {
           'opacity-40': dragKey === s.key,
           'bg-(--ui-bg-elevated)': dragOverKey === s.key && dragKey !== null && dragKey !== s.key
         }"
-        :draggable="canManage && !savingOrder"
+        :draggable="canManage && !savingOrder && editKey === null"
         @dragstart="onDragStart(s.key, $event)"
         @dragend="onDragEnd"
         @dragover.prevent="dragOverKey = s.key"
@@ -179,7 +208,23 @@ async function remove() {
           name="i-lucide-grip-vertical"
           class="shrink-0 size-4 text-(--ui-text-dimmed) cursor-grab"
         />
-        <div class="min-w-0 flex-1">
+        <form
+          v-if="editKey === s.key"
+          class="min-w-0 flex-1 flex flex-col gap-2 sm:flex-row sm:items-center"
+          @submit.prevent="saveEdit"
+        >
+          <UInput v-model="editForm.title" placeholder="Title" aria-label="Section title" class="flex-1" autofocus />
+          <UInput v-model="editForm.description" placeholder="Description (optional)" aria-label="Section description" class="flex-1" />
+          <div class="flex gap-1">
+            <UButton type="submit" size="sm" :loading="savingEdit" :disabled="!editForm.title.trim()">
+              Save
+            </UButton>
+            <UButton size="sm" variant="ghost" color="neutral" :disabled="savingEdit" @click="editKey = null">
+              Cancel
+            </UButton>
+          </div>
+        </form>
+        <div v-else class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <span class="font-medium">{{ s.title }}</span>
             <UBadge v-if="s.is_custom" variant="subtle" color="neutral" size="xs">
@@ -191,7 +236,16 @@ async function remove() {
             <span v-if="s.description"> · {{ s.description }}</span>
           </div>
         </div>
-        <template v-if="canManage">
+        <template v-if="canManage && editKey !== s.key">
+          <UButton
+            v-if="s.is_custom"
+            variant="ghost"
+            color="neutral"
+            icon="i-lucide-pencil"
+            size="sm"
+            :aria-label="`Rename ${s.title}`"
+            @click="startEdit(s)"
+          />
           <UButton
             variant="ghost"
             color="neutral"
