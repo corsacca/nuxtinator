@@ -290,6 +290,19 @@ async function processUrl(orgId: string | null, source: HelpinatorSourceRow, tok
   })
 }
 
+// Progress writes are token-guarded but never throw: a superseded run finds
+// out at its next page write.
+async function setProgress(orgId: string | null, sourceId: string, token: string, patch: { run_total: number } | { run_done: number }): Promise<void> {
+  await helpinatorScopeTx(orgId, async (tx) => {
+    await tx
+      .updateTable('helpinator_library_sources')
+      .set(patch)
+      .where('id', '=', sourceId)
+      .where('run_token', '=', token)
+      .execute()
+  })
+}
+
 async function finish(orgId: string | null, sourceId: string, token: string, patch: Partial<{ status: 'done' | 'error', page_count: number, bytes: number, last_error: string | null }>): Promise<void> {
   await helpinatorScopeTx(orgId, async (tx) => {
     await tx
@@ -318,13 +331,16 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
     }
     const plan = helpinatorDiscoverLinks(first.html, source.url, { restrictToPath: source.restrict_to_path, maxPages: source.max_pages })
     const queue = plan.urls.filter(u => robots.isAllowed(u))
+    await setProgress(orgId, source.id, token, { run_total: queue.length })
 
     // Bounded concurrency with a short gap between starts.
     let next = 0
+    let done = 0
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       while (next < queue.length) {
         const url = queue[next++]!
         await processUrl(orgId, source, token, url, startedAt, counters)
+        await setProgress(orgId, source.id, token, { run_done: ++done })
         await sleep(GAP_MS)
       }
     })
@@ -367,10 +383,10 @@ export async function helpinatorStartSourceSync(
   const token = randomUUID()
   await tx
     .updateTable('helpinator_library_sources')
-    .set({ status: 'syncing', run_token: token, run_started_at: sql`now()`, last_error: null })
+    .set({ status: 'syncing', run_token: token, run_started_at: sql`now()`, run_total: 0, run_done: 0, last_error: null })
     .where('id', '=', source.id)
     .execute()
-  const fresh = { ...source, status: 'syncing' as const, run_token: token }
+  const fresh = { ...source, status: 'syncing' as const, run_token: token, run_total: 0, run_done: 0 }
   // Start after the caller's transaction commits so the token is visible.
   const done = new Promise<void>((resolve) => {
     setTimeout(async () => {

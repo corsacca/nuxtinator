@@ -62,6 +62,8 @@ describe('website crawl', () => {
     // example.com (off host), not the PDF, not /docs/secret (robots).
     expect(pages.map(p => p.url)).toEqual([`${site.origin}/docs`, `${site.origin}/docs/anvils`, `${site.origin}/docs/horseshoes`])
     expect(s.page_count).toBe(3)
+    expect(s.run_total).toBe(3)
+    expect(s.run_done).toBe(3)
     expect(site.hits).not.toContain('/docs/secret')
     expect(site.hits).not.toContain('/pricing')
 

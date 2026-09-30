@@ -36,6 +36,8 @@ export interface HelpinatorLibrarySourcesTable {
   run_started_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
   page_count: Generated<number>
   bytes: Generated<number>
+  run_total: Generated<number>
+  run_done: Generated<number>
   last_synced_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
   last_error: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>

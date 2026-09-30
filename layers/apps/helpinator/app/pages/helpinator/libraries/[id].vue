@@ -175,19 +175,28 @@ const pagesOpen = ref(false)
 const pagesSource = ref<HelpinatorSource | null>(null)
 const pages = ref<HelpinatorPageSummary[]>([])
 const pagesLoading = ref(false)
+const pagesHasMore = ref(false)
 const pageView = ref<{ title: string, url: string, content: string } | null>(null)
 
 async function showPages(s: HelpinatorSource) {
   pagesSource.value = s
   pagesOpen.value = true
   pageView.value = null
+  pages.value = []
   pagesLoading.value = true
   try {
-    const res = await $fetch<{ pages: HelpinatorPageSummary[] }>(`/api/helpinator/libraries/${saved.value!.id}/pages`, { query: { source: s.id } })
-    pages.value = res.pages
+    await loadMorePages()
   } finally {
     pagesLoading.value = false
   }
+}
+
+async function loadMorePages() {
+  const res = await $fetch<{ pages: HelpinatorPageSummary[], hasMore: boolean }>(`/api/helpinator/libraries/${saved.value!.id}/pages`, {
+    query: { source: pagesSource.value!.id, offset: pages.value.length }
+  })
+  pages.value = [...pages.value, ...res.pages]
+  pagesHasMore.value = res.hasMore
 }
 
 async function viewPage(p: HelpinatorPageSummary) {
@@ -293,6 +302,9 @@ async function prunePage(p: HelpinatorPageSummary) {
                   <p class="truncate">
                     <a :href="s.url" target="_blank" rel="noopener" class="hover:underline">{{ s.url }}</a>
                     <span class="text-(--ui-text-muted)"> ({{ s.page_count }} pages)</span>
+                    <span v-if="s.status === 'syncing'" class="text-(--ui-text-muted) text-sm">
+                      · {{ s.run_total ? `crawling ${s.run_done} of ${s.run_total}` : 'finding pages…' }}
+                    </span>
                   </p>
                   <p class="text-xs text-(--ui-text-muted) flex items-center gap-2 flex-wrap">
                     <span>{{ s.restrict_to_path ? 'Under this path' : 'Whole site, one hop' }}</span>
@@ -408,6 +420,11 @@ async function prunePage(p: HelpinatorPageSummary) {
             </li>
             <li v-if="pages.length === 0" class="py-2 text-sm text-(--ui-text-muted)">
               No pages.
+            </li>
+            <li v-if="pagesHasMore" class="py-2">
+              <UButton size="xs" variant="ghost" color="neutral" @click="loadMorePages">
+                Load more
+              </UButton>
             </li>
           </ul>
         </template>

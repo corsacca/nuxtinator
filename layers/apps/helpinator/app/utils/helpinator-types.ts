@@ -42,6 +42,9 @@ export interface HelpinatorSource {
   run_started_at: string | null
   page_count: number
   bytes: number
+  // Progress of the run in flight (meaningful while status is 'syncing').
+  run_total: number
+  run_done: number
   last_synced_at: string | null
   last_error: string | null
   created_at: string

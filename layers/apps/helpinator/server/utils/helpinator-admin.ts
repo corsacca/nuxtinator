@@ -49,6 +49,8 @@ export function helpinatorAdminSource(s: HelpinatorSourceRow) {
     run_started_at: s.run_started_at,
     page_count: s.page_count,
     bytes: s.bytes,
+    run_total: s.run_total,
+    run_done: s.run_done,
     last_synced_at: s.last_synced_at,
     last_error: s.last_error,
     created_at: s.created_at
