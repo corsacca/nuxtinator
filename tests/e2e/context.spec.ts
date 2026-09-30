@@ -8,6 +8,7 @@
 // the response settles is the canonical flake source.
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
 import { config as loadDotenv } from 'dotenv'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -282,15 +283,15 @@ test('export: full-portfolio zip download returns a zip', async ({ page }) => {
     content: 'zip contents marker'
   })
 
-  const res = await page.request.get(
-    `/api/context/portfolios/${portfolio.slug}/export`,
-    { headers: { 'x-active-org': org.slug } }
-  )
-  expect(res.status()).toBe(200)
-  expect(res.headers()['content-type']).toContain('zip')
+  await page.goto(`/@${org.slug}/context/${portfolio.slug}`)
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: /^export$/i }).click()
+  ])
+  expect(download.suggestedFilename()).toMatch(/\.zip$/)
   // Body has bytes; we don't unzip here (vitest's export/zip.test.ts already does).
-  const buf = await res.body()
-  expect(buf.byteLength).toBeGreaterThan(100)
+  const { size } = await stat((await download.path())!)
+  expect(size).toBeGreaterThan(100)
 })
 
 // ─── assistant chat ───────────────────────────────────────────────────────
