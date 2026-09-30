@@ -7,11 +7,68 @@ export interface HelpinatorAppearanceForm {
   handoff_prompt: string
 }
 
+export type HelpinatorLibraryKind = 'website' | 'portfolio'
+export type HelpinatorSourceStatus = 'idle' | 'syncing' | 'done' | 'error'
+
+export interface HelpinatorLibrary {
+  id: string
+  name: string
+  kind: HelpinatorLibraryKind
+  portfolio_id: string | null
+  description: string
+  created_at: string
+  updated_at: string
+}
+
+export interface HelpinatorLibraryStats {
+  pages: number
+  chunks: number
+  bytes: number
+  models: string[]
+}
+
+export interface HelpinatorLibrarySummary extends HelpinatorLibrary {
+  stats: HelpinatorLibraryStats
+  source_count: number
+}
+
+export interface HelpinatorSource {
+  id: string
+  library_id: string
+  url: string
+  restrict_to_path: boolean
+  max_pages: number
+  status: HelpinatorSourceStatus
+  run_started_at: string | null
+  page_count: number
+  bytes: number
+  last_synced_at: string | null
+  last_error: string | null
+  created_at: string
+}
+
+export interface HelpinatorLibraryDetail extends HelpinatorLibrary {
+  sources: HelpinatorSource[]
+  stats: HelpinatorLibraryStats
+  embedding_model: string
+  index_stale: boolean
+}
+
+export interface HelpinatorPageSummary {
+  id: string
+  source_id: string
+  url: string
+  title: string
+  bytes: number
+  fetched_at: string
+}
+
 export interface HelpinatorWidget {
   id: string
   name: string
-  portfolio_id: string | null
-  default_section_key: string
+  library_ids: string[]
+  default_library_id: string | null
+  default_section_key: string | null
   allowed_origins: string[]
   daily_message_cap: number
   enabled: boolean
@@ -52,10 +109,17 @@ export interface HelpinatorTranscriptMessage {
   content: string
   model: string | null
   created_at: string
-  sections_loaded: { key: string, title: string }[]
+  pages_loaded: { ref: string, title: string }[]
+  searches: string[]
 }
 
 export function helpinatorErrorMessage(err: unknown): string {
   const e = err as { data?: { statusMessage?: string, message?: string }, statusMessage?: string, message?: string }
   return e?.data?.statusMessage || e?.data?.message || e?.statusMessage || e?.message || 'Something went wrong.'
+}
+
+export function helpinatorFormatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AiOrgConfig } from '#ai'
+import type { AiOrgConfig, AiModelInfo, AiEmbeddingModelInfo, AiReindexStatus } from '#ai'
 
 // Org-level AI settings, rendered inside the tenancy layer's settings shell
 // (registered via core's org-settings-section registry). Lets an org bring its
@@ -25,7 +25,13 @@ const { data, pending, refresh } = await useFetch<AiOrgConfig>('/api/ai/org/conf
     allowedModels: [],
     defaultModel: '',
     effectiveDefaultModel: '',
-    features: []
+    features: [],
+    embeddingAvailable: false,
+    embeddingModels: [],
+    embeddingModel: '',
+    effectiveEmbeddingModel: '',
+    embeddingStale: false,
+    embeddingStoredModels: []
   })
 })
 
@@ -111,6 +117,60 @@ async function setFeatureModel(featureKey: string, id: string) {
 function nameOf(id: string): string {
   return allowed.value.find(m => m.id === id)?.name ?? id
 }
+
+// ---- Embedding model ----------------------------------------------------
+
+const embeddingItems = computed<AiModelInfo[]>(() => (data.value?.embeddingModels ?? []).map((m: AiEmbeddingModelInfo): AiModelInfo => ({
+  id: m.id,
+  name: m.name,
+  promptPrice: m.promptPrice,
+  completionPrice: null,
+  contextLength: m.contextLength,
+  supportsTemperature: false,
+  supportsCaching: false
+})))
+function embeddingNameOf(id: string): string {
+  return embeddingItems.value.find((m: AiModelInfo) => m.id === id)?.name ?? id
+}
+const confirmEmbedding = ref<string | null>(null)
+
+async function setEmbeddingModel(id: string) {
+  confirmEmbedding.value = null
+  if (await put({ embedding_model: id })) {
+    toast.add({ title: id ? 'Embedding model updated' : 'Using the host\'s embedding model', color: 'success' })
+  }
+}
+function onPickEmbedding(id: string) {
+  if (id === (data.value?.embeddingModel ?? '')) return
+  if (data.value?.embeddingStoredModels.length) confirmEmbedding.value = id
+  else setEmbeddingModel(id)
+}
+
+const reindex = ref<AiReindexStatus | null>(null)
+const reindexing = computed(() => reindex.value?.running === true)
+let reindexTimer: ReturnType<typeof setTimeout> | null = null
+async function pollReindex() {
+  try {
+    reindex.value = await $fetch<AiReindexStatus>('/api/ai/org/reindex-status')
+  } catch {
+    return
+  }
+  if (reindex.value?.running) reindexTimer = setTimeout(pollReindex, 2000)
+  else await refresh()
+}
+async function startReindex() {
+  try {
+    const res = await $fetch<{ started: boolean, reason: string | null, status: AiReindexStatus }>('/api/ai/org/reindex', { method: 'POST' })
+    reindex.value = res.status
+    if (!res.started) toast.add({ title: 'A rebuild is already running', color: 'warning' })
+    await pollReindex()
+  } catch (err: unknown) {
+    fail(err, 'Could not start the rebuild')
+  }
+}
+onBeforeUnmount(() => {
+  if (reindexTimer) clearTimeout(reindexTimer)
+})
 </script>
 
 <template>
@@ -334,7 +394,118 @@ function nameOf(id: string): string {
             </li>
           </ul>
         </section>
+
+        <section
+          v-if="data?.embeddingAvailable"
+          class="space-y-3"
+        >
+          <div>
+            <h2 class="text-lg font-semibold">
+              Embedding model
+            </h2>
+            <p class="text-sm text-(--ui-text-muted)">
+              Builds this organization's search indexes (help libraries, portfolio sections).
+              <template v-if="!data?.embeddingModel && data?.effectiveEmbeddingModel">
+                Currently the host's: {{ embeddingNameOf(data.effectiveEmbeddingModel) }}.
+              </template>
+              <template v-else-if="!data?.effectiveEmbeddingModel">
+                Nothing resolves yet — search stays off until one is chosen here or by the host.
+              </template>
+            </p>
+          </div>
+
+          <div class="max-w-md">
+            <AiModelSelect
+              :model-value="data?.embeddingModel ?? ''"
+              :items="embeddingItems"
+              clearable
+              clear-label="Use the host's embedding model"
+              :disabled="saving || reindexing || !embeddingItems.length"
+              @update:model-value="onPickEmbedding"
+            />
+          </div>
+
+          <UAlert
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            title="Changing this makes the existing search indexes unusable until they are rebuilt"
+            description="Vectors from different models cannot be compared. After a change, re-embed this organization's indexes with the button that appears below."
+          />
+
+          <UAlert
+            v-if="data?.embeddingStale && !reindexing"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-database-zap"
+            title="The search indexes were built with another model"
+          >
+            <template #description>
+              <p class="mb-2">
+                Search returns nothing useful until they are rebuilt with {{ embeddingNameOf(data.effectiveEmbeddingModel) }}.
+              </p>
+              <UButton
+                size="sm"
+                color="error"
+                icon="i-lucide-refresh-cw"
+                :disabled="saving"
+                @click="startReindex"
+              >
+                Re-embed this organization's indexes
+              </UButton>
+            </template>
+          </UAlert>
+
+          <div
+            v-if="reindex"
+            class="text-sm border border-(--ui-border) rounded-md p-3 flex items-center gap-2"
+          >
+            <UIcon
+              :name="reindexing ? 'i-lucide-loader-circle' : 'i-lucide-check'"
+              class="size-4"
+              :class="{ 'animate-spin': reindexing }"
+            />
+            <span v-if="reindexing">Rebuilding…</span>
+            <span v-else>
+              Rebuild finished — {{ reindex.scopes.reduce((n, s) => n + s.chunks, 0) }} chunks
+              <span
+                v-if="reindex.scopes.some(s => s.error)"
+                class="text-(--ui-error)"
+              >({{ reindex.scopes.find(s => s.error)?.error }})</span>
+            </span>
+          </div>
+        </section>
       </template>
     </div>
+
+    <UModal
+      :open="confirmEmbedding !== null"
+      title="Change the embedding model?"
+      @update:open="(v: boolean) => { if (!v) confirmEmbedding = null }"
+    >
+      <template #body>
+        <p class="text-sm">
+          This organization's search indexes stop matching until they are re-embedded.
+          You can start the rebuild right after saving.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton
+            variant="ghost"
+            color="neutral"
+            @click="confirmEmbedding = null"
+          >
+            Cancel
+          </UButton>
+          <UButton
+            color="warning"
+            @click="setEmbeddingModel(confirmEmbedding ?? '')"
+          >
+            Change model
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

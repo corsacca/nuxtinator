@@ -8,6 +8,7 @@ import {
   createHelpinatorOrgWith,
   addHelpinatorMember,
   seedPortfolio,
+  seedLibrary,
   seedWidget,
   sendTurn,
   primeAiFake,
@@ -32,9 +33,12 @@ describe('admin + handoff', () => {
     const { org, opts } = await createHelpinatorOrgWith(sql)
     const a = await seedPortfolio(sql, org.id, 'A', { faq: 'A content' })
     const b = await seedPortfolio(sql, org.id, 'B', { intro: 'B content' })
+    const la = await seedLibrary(sql, { orgId: org.id, portfolioId: a.id })
+    const lb = await seedLibrary(sql, { orgId: org.id, portfolioId: b.id })
     const body = {
       name: 'Site',
-      portfolio_id: a.id,
+      library_ids: [la.id],
+      default_library_id: la.id,
       default_section_key: 'faq',
       allowed_origins: [`${SITE_ORIGIN}/some/path`],
       appearance: { primary_color: '#FF0000', title: 'Help!', bogus: 'dropped' }
@@ -50,19 +54,25 @@ describe('admin + handoff', () => {
     const turn = await sendTurn(w.id, 'hello')
 
     await $fetch(`/api/helpinator/widgets/${w.id}`, {
-      method: 'PUT', body: { ...body, portfolio_id: b.id, default_section_key: 'intro' }, ...opts
+      method: 'PUT', body: { ...body, library_ids: [lb.id], default_library_id: lb.id, default_section_key: 'intro' }, ...opts
     })
     const [row] = await sql`SELECT ended_at FROM helpinator_conversations WHERE id = ${turn.conversationId}`
     expect(row!.ended_at).not.toBeNull()
   })
 
-  it('rejects a section that is not in the chosen portfolio', async () => {
+  it('rejects a section that is not in the default library\'s portfolio, and a default outside the list', async () => {
     const { org, opts } = await createHelpinatorOrgWith(sql)
     const a = await seedPortfolio(sql, org.id, 'A', { faq: 'x' })
-    const err = await $fetch('/api/helpinator/widgets', {
-      method: 'POST', body: { name: 'S', portfolio_id: a.id, default_section_key: 'nope' }, ...opts
+    const la = await seedLibrary(sql, { orgId: org.id, portfolioId: a.id })
+    const lw = await seedLibrary(sql, { orgId: org.id, kind: 'website' })
+    const bad = await $fetch('/api/helpinator/widgets', {
+      method: 'POST', body: { name: 'S', library_ids: [la.id], default_library_id: la.id, default_section_key: 'nope' }, ...opts
     }).catch(e => e)
-    expect(err.statusCode).toBe(400)
+    expect(bad.statusCode).toBe(400)
+    const notListed = await $fetch('/api/helpinator/widgets', {
+      method: 'POST', body: { name: 'S', library_ids: [la.id], default_library_id: lw.id }, ...opts
+    }).catch(e => e)
+    expect(notListed.statusCode).toBe(400)
   })
 
   it('members without helpinator permissions are refused', async () => {
@@ -82,10 +92,10 @@ describe('admin + handoff', () => {
     const list = await $fetch<{ conversations: { id: string, first_question: string }[] }>('/api/helpinator/conversations', opts)
     expect(list.conversations[0]!.first_question).toBe('my question')
 
-    const detail = await $fetch<{ messages: { role: string, sections_loaded: { key: string }[] }[] }>(
+    const detail = await $fetch<{ messages: { role: string, pages_loaded: { ref: string }[] }[] }>(
       `/api/helpinator/conversations/${turn.conversationId}`, opts)
     expect(detail.messages).toHaveLength(2)
-    expect(detail.messages[1]!.sections_loaded.map(s => s.key)).toEqual(['faq'])
+    expect(detail.messages[1]!.pages_loaded.map(p => p.ref)).toEqual([`section:${widget.libraryId}:faq`])
   })
 
   it('visitor handoff creates an open, unassigned inbox conversation with the transcript — once', async () => {

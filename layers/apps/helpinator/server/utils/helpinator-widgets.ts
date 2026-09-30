@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { sql, type Selectable, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import type { HelpinatorAppearance } from '../database/schema'
+import { helpinatorAssertLibraries } from './helpinator-libraries'
 
 type Tx = Transaction<Database>
 
@@ -71,8 +72,10 @@ export function helpinatorNormalizeOrigins(list: string[]): string[] {
 
 export const HelpinatorWidgetInput = z.object({
   name: z.string().trim().min(1).max(200),
-  portfolio_id: z.string().uuid(),
-  default_section_key: z.string().trim().min(1).max(200),
+  library_ids: z.array(z.string().uuid()).min(1).max(20),
+  default_library_id: z.string().uuid(),
+  // Preloaded section when the default library is a portfolio; ignored otherwise.
+  default_section_key: z.string().trim().max(200).nullable().default(null),
   allowed_origins: z.array(z.string().max(500)).max(50).default([]),
   daily_message_cap: z.number().int().min(1).max(100_000).default(500),
   enabled: z.boolean().default(true),
@@ -81,21 +84,33 @@ export const HelpinatorWidgetInput = z.object({
 })
 export type HelpinatorWidgetInputValue = z.infer<typeof HelpinatorWidgetInput>
 
-// The portfolio must exist in this org (RLS) and the section must belong to it.
-async function assertBinding(tx: Tx, portfolioId: string, sectionKey: string): Promise<void> {
-  const portfolio = await tx
-    .selectFrom('context_portfolios')
-    .select('id')
-    .where('id', '=', portfolioId)
-    .executeTakeFirst()
-  if (!portfolio) throw createError({ statusCode: 400, statusMessage: 'Unknown portfolio' })
+// Every listed library must exist in this org (RLS), the default must be one
+// of them, and when the default is a portfolio the preloaded section (if any)
+// must belong to it. Returns the section key to store ('' → null).
+async function assertBinding(tx: Tx, input: HelpinatorWidgetInputValue): Promise<string | null> {
+  const libraries = await helpinatorAssertLibraries(tx, input.library_ids, input.default_library_id)
+  const def = libraries.find(l => l.id === input.default_library_id)!
+  const key = input.default_section_key?.trim() || null
+  if (def.kind !== 'portfolio' || !def.portfolio_id) return null
+  if (!key) return null
   const section = await tx
     .selectFrom('context_section_definitions')
     .select('id')
-    .where('portfolio_id', '=', portfolioId)
-    .where('key', '=', sectionKey)
+    .where('portfolio_id', '=', def.portfolio_id)
+    .where('key', '=', key)
     .executeTakeFirst()
-  if (!section) throw createError({ statusCode: 400, statusMessage: 'Unknown section for this portfolio' })
+  if (!section) throw createError({ statusCode: 400, statusMessage: 'Unknown section for the default library\'s portfolio' })
+  return key
+}
+
+// Same libraries, same default: order-insensitive.
+export function helpinatorSameBinding(
+  a: { library_ids: string[], default_library_id: string | null },
+  b: { library_ids: string[], default_library_id: string | null }
+): boolean {
+  const sa = [...a.library_ids].sort().join(',')
+  const sb = [...b.library_ids].sort().join(',')
+  return sa === sb && a.default_library_id === b.default_library_id
 }
 
 export async function helpinatorListWidgets(tx: Tx): Promise<HelpinatorWidgetRow[]> {
@@ -121,13 +136,14 @@ export async function helpinatorCreateWidget(
   input: HelpinatorWidgetInputValue,
   userId: string
 ): Promise<HelpinatorWidgetRow> {
-  await assertBinding(tx, input.portfolio_id, input.default_section_key)
+  const sectionKey = await assertBinding(tx, input)
   return await tx
     .insertInto('helpinator_widgets')
     .values({
       name: input.name,
-      portfolio_id: input.portfolio_id,
-      default_section_key: input.default_section_key,
+      library_ids: [...new Set(input.library_ids)],
+      default_library_id: input.default_library_id,
+      default_section_key: sectionKey,
       allowed_origins: helpinatorNormalizeOrigins(input.allowed_origins),
       daily_message_cap: input.daily_message_cap,
       enabled: input.enabled,
@@ -145,13 +161,15 @@ export async function helpinatorUpdateWidget(
   input: HelpinatorWidgetInputValue
 ): Promise<HelpinatorWidgetRow> {
   const existing = await helpinatorGetWidgetOr404(tx, id)
-  await assertBinding(tx, input.portfolio_id, input.default_section_key)
+  const sectionKey = await assertBinding(tx, input)
+  const libraryIds = [...new Set(input.library_ids)]
   const updated = await tx
     .updateTable('helpinator_widgets')
     .set({
       name: input.name,
-      portfolio_id: input.portfolio_id,
-      default_section_key: input.default_section_key,
+      library_ids: libraryIds,
+      default_library_id: input.default_library_id,
+      default_section_key: sectionKey,
       allowed_origins: helpinatorNormalizeOrigins(input.allowed_origins),
       daily_message_cap: input.daily_message_cap,
       enabled: input.enabled,
@@ -163,9 +181,9 @@ export async function helpinatorUpdateWidget(
     .returningAll()
     .executeTakeFirstOrThrow()
 
-  // Rebinding to another portfolio ends every open conversation: each was
-  // grounded on the old portfolio and must never silently switch.
-  if (existing.portfolio_id !== input.portfolio_id) {
+  // Rebinding to other libraries ends every open conversation: each was
+  // grounded on the old set and must never silently switch.
+  if (!helpinatorSameBinding(existing, { library_ids: libraryIds, default_library_id: input.default_library_id })) {
     await tx
       .updateTable('helpinator_conversations')
       .set({ ended_at: sql`now()` })
@@ -185,8 +203,9 @@ export async function helpinatorDeleteWidget(tx: Tx, id: string): Promise<void> 
 export interface HelpinatorPublicConfig {
   id: string
   appearance: Required<HelpinatorAppearance>
-  // False when the widget is disabled, unbound, or AI isn't configured — the
-  // widget then shows a short "unavailable" state instead of the chat.
+  // False when the widget is disabled, has no libraries, or AI isn't
+  // configured — the widget then shows a short "unavailable" state instead of
+  // the chat.
   aiAvailable: boolean
   // Whether "still need help?" is offered (inbox layer loaded).
   handoffAvailable: boolean
@@ -199,7 +218,7 @@ export function helpinatorPublicConfig(
   return {
     id: widget.id,
     appearance: helpinatorResolvedAppearance(widget.appearance),
-    aiAvailable: widget.enabled && widget.portfolio_id !== null && flags.aiConfigured,
+    aiAvailable: widget.enabled && widget.library_ids.length > 0 && flags.aiConfigured,
     handoffAvailable: flags.handoffAvailable
   }
 }

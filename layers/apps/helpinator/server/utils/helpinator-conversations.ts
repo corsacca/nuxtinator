@@ -3,8 +3,8 @@
 import { sql, type Selectable, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { helpinatorInbox } from '#helpinator/inbox'
-import type { HelpinatorHandoffKind } from '../database/schema'
-import type { HelpinatorWidgetRow } from './helpinator-widgets'
+import type { HelpinatorHandoffKind, HelpinatorPageLoaded } from '../database/schema'
+import { helpinatorSameBinding, type HelpinatorWidgetRow } from './helpinator-widgets'
 import { helpinatorCurrentScope } from './helpinator-guards'
 
 type Tx = Transaction<Database>
@@ -19,12 +19,13 @@ export async function helpinatorCreateConversation(tx: Tx, data: {
   origin: string | null
   userAgent: string | null
 }): Promise<HelpinatorConversationRow> {
-  if (!data.widget.portfolio_id) throw createError({ statusCode: 503, statusMessage: 'This help widget is not available.' })
+  if (data.widget.library_ids.length === 0) throw createError({ statusCode: 503, statusMessage: 'This help widget is not available.' })
   return await tx
     .insertInto('helpinator_conversations')
     .values({
       widget_id: data.widget.id,
-      portfolio_id: data.widget.portfolio_id,
+      library_ids: data.widget.library_ids,
+      default_library_id: data.widget.default_library_id,
       session_hash: data.sessionHash,
       page_url: data.pageUrl?.slice(0, 2000) ?? null,
       origin: data.origin,
@@ -51,9 +52,9 @@ export async function helpinatorFindSession(
 }
 
 // Whether a conversation may take another turn on its widget as it is now.
-// A widget rebound to another portfolio ends the old conversations.
+// A widget rebound to other libraries ends the old conversations.
 export function helpinatorIsLive(conversation: HelpinatorConversationRow, widget: HelpinatorWidgetRow): boolean {
-  return conversation.ended_at === null && conversation.portfolio_id === widget.portfolio_id
+  return conversation.ended_at === null && helpinatorSameBinding(conversation, widget)
 }
 
 export async function helpinatorListMessages(tx: Tx, conversationId: string): Promise<HelpinatorMessageRow[]> {
@@ -70,7 +71,8 @@ export async function helpinatorInsertMessage(tx: Tx, data: {
   conversationId: string
   role: 'user' | 'assistant'
   content: string
-  sectionsLoaded?: string[]
+  pagesLoaded?: HelpinatorPageLoaded[]
+  searches?: string[]
   model?: string | null
 }): Promise<HelpinatorMessageRow> {
   const row = await tx
@@ -79,7 +81,8 @@ export async function helpinatorInsertMessage(tx: Tx, data: {
       conversation_id: data.conversationId,
       role: data.role,
       content: data.content,
-      sections_loaded: sql`${JSON.stringify(data.sectionsLoaded ?? [])}::text::jsonb`,
+      pages_loaded: sql`${JSON.stringify(data.pagesLoaded ?? [])}::text::jsonb`,
+      searches: sql`${JSON.stringify(data.searches ?? [])}::text::jsonb`,
       model: data.model ?? null,
       // clock_timestamp, not now(): both turns of an exchange are inserted in
       // one transaction and must still sort in order.

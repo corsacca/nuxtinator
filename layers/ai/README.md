@@ -41,6 +41,32 @@ Core ships a throwing `#ai/server` fallback, so a consumer layer can import
 `#ai/server` unconditionally and simply gate on `isAiConfigured(tx)` — the app
 still builds and runs with the AI layer (or any key) absent.
 
+## Embeddings and vector indexes
+
+Layers that keep a vector index (context sections, helpinator libraries) embed
+through this layer too:
+
+- `embed({ tx, input })` — OpenRouter `POST /embeddings` with the embedding
+  model that resolves for the org (org choice → host choice). Every vector is
+  `AI_EMBED_DIMENSIONS` (1536) wide so one `vector(1536)` column fits any model.
+- `isEmbeddingConfigured(tx)`, `resolveEmbeddingModel(tx)`,
+  `getEmbeddingModelList()` — the readiness probe, the resolution, and the live
+  `GET /embeddings/models` list.
+- `chunkMarkdown()`, `vectorSql()`, `cosineDistance()` — pure helpers for
+  chunking content and querying pgvector, shared through `#ai/server` (they live
+  in core so they exist without this layer too).
+- `registerAiFeature({ kind: 'embedding', … })` — declares that a layer builds
+  an index; the **Embedding model** section appears on the AI settings pages
+  only when some loaded layer has.
+- `registerAiReindexer({ key, label, currentModels, run })` — lets the settings
+  pages rebuild a layer's index after the embedding model changes. Both pages
+  show a warning when stored chunks were built with another model than the one
+  that resolves now, with a re-embed button (the org page for that org, the host
+  page for every affected org).
+
+The database needs pgvector. Migrations run `CREATE EXTENSION IF NOT EXISTS
+vector` when their role may; otherwise a superuser runs it once beforehand.
+
 ## Setup
 
 1. Add the layer to `extends:` (via `layers.ts` in a prod host, or `dev/layers.ts`).

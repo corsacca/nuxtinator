@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AiAdminConfig, AiEnabledModel, AiModelInfo } from '#ai'
+import type { AiAdminConfig, AiEnabledModel, AiModelInfo, AiEmbeddingModelInfo, AiReindexStatus, AiStaleScope } from '#ai'
 import { modelMeta } from '../../../utils/ai-model-meta'
 
 definePageMeta({
@@ -10,9 +10,15 @@ definePageMeta({
 const toast = useToast()
 
 const { data, pending, refresh } = await useFetch<AiAdminConfig>('/api/ai/admin/config', {
-  default: () => ({ hostKeyConfigured: false, modelListAvailable: false, enabled: [], defaultModel: '', features: [] })
+  default: () => ({
+    hostKeyConfigured: false, modelListAvailable: false, enabled: [], defaultModel: '', features: [],
+    embeddingAvailable: false, embeddingModelListAvailable: false, embeddingModel: '', staleScopes: []
+  })
 })
 const { data: list } = await useFetch<{ models: AiModelInfo[] }>('/api/ai/models', {
+  default: () => ({ models: [] })
+})
+const { data: embeddingList } = await useFetch<{ models: AiEmbeddingModelInfo[] }>('/api/ai/embedding-models', {
   default: () => ({ models: [] })
 })
 
@@ -89,6 +95,61 @@ async function setFeatureModel(featureKey: string, id: string) {
 function nameOf(id: string): string {
   return enabled.value.find(m => m.id === id)?.name ?? id
 }
+
+// ---- Embedding model ----------------------------------------------------
+
+// The picker reuses AiModelSelect, which renders AiModelInfo rows; embedding
+// models carry a subset of those fields.
+const embeddingItems = computed<AiModelInfo[]>(() => (embeddingList.value?.models ?? []).map((m: AiEmbeddingModelInfo): AiModelInfo => ({
+  id: m.id,
+  name: m.name,
+  promptPrice: m.promptPrice,
+  completionPrice: null,
+  contextLength: m.contextLength,
+  supportsTemperature: false,
+  supportsCaching: false
+})))
+const staleScopes = computed<AiStaleScope[]>(() => data.value?.staleScopes ?? [])
+const confirmEmbedding = ref<string | null>(null)
+
+async function setEmbeddingModel(id: string) {
+  confirmEmbedding.value = null
+  if (await put({ embedding_model: id })) {
+    toast.add({ title: id ? 'Embedding model updated' : 'Embedding model cleared', color: 'success' })
+  }
+}
+function onPickEmbedding(id: string) {
+  if (id === (data.value?.embeddingModel ?? '')) return
+  // Only warn when an index exists somewhere that this change would orphan.
+  if (data.value?.embeddingModel || staleScopes.value.length) confirmEmbedding.value = id
+  else setEmbeddingModel(id)
+}
+
+const reindex = ref<AiReindexStatus | null>(null)
+const reindexing = computed(() => reindex.value?.running === true)
+let reindexTimer: ReturnType<typeof setTimeout> | null = null
+async function pollReindex() {
+  try {
+    reindex.value = await $fetch<AiReindexStatus>('/api/ai/admin/reindex-status')
+  } catch {
+    return
+  }
+  if (reindex.value?.running) reindexTimer = setTimeout(pollReindex, 2000)
+  else await refresh()
+}
+async function startReindex(all = false) {
+  try {
+    const res = await $fetch<{ started: boolean, reason: string | null, status: AiReindexStatus }>('/api/ai/admin/reindex', { method: 'POST', body: { all } })
+    reindex.value = res.status
+    if (!res.started && res.reason === 'already-running') toast.add({ title: 'A rebuild is already running', color: 'warning' })
+    await pollReindex()
+  } catch (err: unknown) {
+    toast.add({ title: 'Could not start the rebuild', description: (err as { data?: { statusMessage?: string } } | null)?.data?.statusMessage, color: 'error' })
+  }
+}
+onBeforeUnmount(() => {
+  if (reindexTimer) clearTimeout(reindexTimer)
+})
 </script>
 
 <template>
@@ -284,5 +345,138 @@ function nameOf(id: string): string {
       No AI features are registered yet. Feature layers (like the inbox) register
       the models they need here once loaded.
     </div>
+
+    <section
+      v-if="data?.embeddingAvailable"
+      class="space-y-3"
+    >
+      <div>
+        <h2 class="text-lg font-semibold">
+          Embedding model
+        </h2>
+        <p class="text-sm text-(--ui-text-muted)">
+          Builds the search indexes (help libraries, portfolio sections). Every
+          organization uses this unless it picks its own on its AI settings page.
+        </p>
+      </div>
+
+      <UAlert
+        v-if="!data?.embeddingModelListAvailable"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-cloud-off"
+        title="Embedding model list unavailable"
+        description="OpenRouter's embedding model list could not be loaded. The current choice still works."
+      />
+
+      <div class="max-w-md">
+        <AiModelSelect
+          :model-value="data?.embeddingModel ?? ''"
+          :items="embeddingItems"
+          clearable
+          clear-label="None"
+          :disabled="saving || reindexing || !embeddingItems.length"
+          @update:model-value="onPickEmbedding"
+        />
+      </div>
+
+      <UAlert
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="Changing this makes the existing search indexes unusable until they are rebuilt"
+        description="Vectors from different models cannot be compared. After a change, every index built with the old model must be re-embedded — the button below does that for every organization affected."
+      />
+
+      <UAlert
+        v-if="staleScopes.length && !reindexing"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-database-zap"
+        :title="`${staleScopes.length} ${staleScopes.length === 1 ? 'index set was' : 'index sets were'} built with another model`"
+      >
+        <template #description>
+          <p class="mb-2">
+            Search returns nothing useful for these until they are rebuilt.
+          </p>
+          <UButton
+            size="sm"
+            color="error"
+            icon="i-lucide-refresh-cw"
+            :disabled="saving"
+            @click="startReindex(false)"
+          >
+            Re-embed the affected indexes
+          </UButton>
+        </template>
+      </UAlert>
+
+      <div
+        v-if="reindex"
+        class="text-sm border border-(--ui-border) rounded-md p-3 space-y-1"
+      >
+        <div class="font-medium flex items-center gap-2">
+          <UIcon
+            :name="reindexing ? 'i-lucide-loader-circle' : 'i-lucide-check'"
+            class="size-4"
+            :class="{ 'animate-spin': reindexing }"
+          />
+          {{ reindexing ? 'Rebuilding…' : 'Rebuild finished' }}
+        </div>
+        <ul class="text-xs text-(--ui-text-muted)">
+          <li
+            v-for="scope in reindex.scopes"
+            :key="scope.orgId ?? 'single'"
+          >
+            {{ scope.orgId ?? 'this deployment' }} — {{ scope.state }}, {{ scope.chunks }} chunks
+            <span
+              v-if="scope.error"
+              class="text-(--ui-error)"
+            >({{ scope.error }})</span>
+          </li>
+        </ul>
+      </div>
+
+      <UButton
+        v-if="data?.embeddingModel && !reindexing"
+        size="xs"
+        variant="ghost"
+        color="neutral"
+        icon="i-lucide-refresh-cw"
+        @click="startReindex(true)"
+      >
+        Re-embed everything
+      </UButton>
+    </section>
+
+    <UModal
+      :open="confirmEmbedding !== null"
+      title="Change the embedding model?"
+      @update:open="(v: boolean) => { if (!v) confirmEmbedding = null }"
+    >
+      <template #body>
+        <p class="text-sm">
+          Every search index built with the current model stops matching until it is re-embedded.
+          You can start the rebuild right after saving.
+        </p>
+      </template>
+      <template #footer>
+        <div class="flex justify-end gap-2 w-full">
+          <UButton
+            variant="ghost"
+            color="neutral"
+            @click="confirmEmbedding = null"
+          >
+            Cancel
+          </UButton>
+          <UButton
+            color="warning"
+            @click="setEmbeddingModel(confirmEmbedding ?? '')"
+          >
+            Change model
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

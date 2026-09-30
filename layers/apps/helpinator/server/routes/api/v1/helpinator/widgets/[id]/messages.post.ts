@@ -40,6 +40,7 @@ import {
   helpinatorBuildBot,
   helpinatorHistoryToMessages
 } from '../../../../../../utils/helpinator-bot'
+import { helpinatorGetLibraries } from '../../../../../../utils/helpinator-libraries'
 
 const Body = z.object({
   message: z.string().trim().min(1).max(HELPINATOR_MAX_MESSAGE_CHARS),
@@ -85,7 +86,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const payload = await helpinatorWithWidget(event, async (tx, widget, origin) => {
-      if (!widget.enabled || !widget.portfolio_id || !(await helpinatorAiReady(tx))) {
+      if (!widget.enabled || widget.library_ids.length === 0 || !(await helpinatorAiReady(tx))) {
         throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
       }
       if ((await helpinatorMessagesToday(tx, widget.id)) >= widget.daily_message_cap) {
@@ -114,11 +115,19 @@ export default defineEventHandler(async (event) => {
       const session = { token: token!, conversationId: conversation.id, reset }
 
       const history = helpinatorHistoryToMessages(await helpinatorListMessages(tx, conversation.id))
+      // The conversation's snapshot of the binding; RLS hides any library
+      // that is not this org's, and an empty result means unavailable.
+      const libraries = await helpinatorGetLibraries(tx, conversation.library_ids)
+      if (libraries.length === 0) {
+        throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
+      }
       const bot = await helpinatorBuildBot(tx, {
-        portfolioId: conversation.portfolio_id,
+        libraries,
+        defaultLibraryId: conversation.default_library_id,
         defaultSectionKey: widget.default_section_key,
         extraInstructions: widget.extra_instructions,
-        handoffAvailable: helpinatorInbox.available
+        handoffAvailable: helpinatorInbox.available,
+        userMessage: parsed.data.message
       })
       const userMessage = await helpinatorInsertMessage(tx, {
         conversationId: conversation.id,
@@ -155,7 +164,8 @@ export default defineEventHandler(async (event) => {
         conversationId: conversation.id,
         role: 'assistant',
         content: reply,
-        sectionsLoaded: bot.sectionsLoaded,
+        pagesLoaded: bot.pagesLoaded,
+        searches: bot.searches,
         model: result.model
       })
 

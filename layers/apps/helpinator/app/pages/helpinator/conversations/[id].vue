@@ -69,16 +69,28 @@ async function elevate() {
               </template>
               <template v-else>
                 <HelpinatorMarkdown :text="m.content" />
-                <div v-if="m.sections_loaded.length" class="mt-2 flex flex-wrap items-center gap-1">
+                <div v-if="m.searches.length" class="mt-2 flex flex-wrap items-center gap-1">
+                  <UIcon name="i-lucide-search" class="size-3.5 text-(--ui-text-dimmed)" />
+                  <UBadge
+                    v-for="(q, i) in m.searches"
+                    :key="i"
+                    color="neutral"
+                    variant="soft"
+                    size="sm"
+                  >
+                    {{ q }}
+                  </UBadge>
+                </div>
+                <div v-if="m.pages_loaded.length" class="mt-2 flex flex-wrap items-center gap-1">
                   <UIcon name="i-lucide-book-open" class="size-3.5 text-(--ui-text-dimmed)" />
                   <UBadge
-                    v-for="s in m.sections_loaded"
-                    :key="s.key"
+                    v-for="p in m.pages_loaded"
+                    :key="p.ref"
                     color="neutral"
                     variant="outline"
                     size="sm"
                   >
-                    {{ s.title }}
+                    {{ p.title }}
                   </UBadge>
                 </div>
               </template>
@@ -131,7 +143,7 @@ async function elevate() {
                 <dt class="text-(--ui-text-muted)">
                   Ended
                 </dt>
-                <dd>{{ when(conversation.ended_at) }} (widget was moved to another portfolio)</dd>
+                <dd>{{ when(conversation.ended_at) }} (the widget's libraries changed)</dd>
               </div>
               <div v-if="conversation.user_agent">
                 <dt class="text-(--ui-text-muted)">

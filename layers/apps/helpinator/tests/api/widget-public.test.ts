@@ -84,12 +84,27 @@ describe('public widget API', () => {
     expect(conv.messages.map(m => m.content)).toEqual(['When do you open?', 'We open at 9.', 'And close?', 'Until 5.'])
   })
 
-  it('records the sections the bot grounded on', async () => {
+  it('records the pages the bot grounded on and the searches it ran', async () => {
+    const { widget } = await setup()
+    await primeAiFake({ text: 'ok', toolCalls: [{ name: 'search', input: { query: 'opening hours' } }] })
+    const turn = await sendTurn(widget.id, 'hi')
+    const [row] = await sql`SELECT pages_loaded, searches FROM helpinator_messages WHERE id = ${turn.assistantMessage.id}`
+    expect(row!.pages_loaded).toEqual([{ ref: `section:${widget.libraryId}:faq`, title: 'Title faq' }])
+    expect(row!.searches).toEqual(['opening hours'])
+  })
+
+  it('auto-searches every visitor message and injects the hits as a second, non-cached system part', async () => {
     const { widget } = await setup()
     await primeAiFake({ text: 'ok' })
-    const turn = await sendTurn(widget.id, 'hi')
-    const [row] = await sql`SELECT sections_loaded FROM helpinator_messages WHERE id = ${turn.assistantMessage.id}`
-    expect(row!.sections_loaded).toEqual(['faq'])
+    await sendTurn(widget.id, 'opening hours')
+    const call = (await getAiFakeLog()).find(c => c.kind === 'complete')!
+    const parts = call.system as Array<{ text: string, cache?: boolean }>
+    expect(parts).toHaveLength(2)
+    expect(parts[0]!.cache).toBe(true)
+    expect(parts[1]!.cache).toBeUndefined()
+    expect(parts[1]!.text).toContain('Search hits')
+    expect(parts[1]!.text).toContain(`section:${widget.libraryId}:faq`)
+    expect(call.tools).toEqual(['search', 'load_page'])
   })
 
   it('streams a turn as server-sent events', async () => {

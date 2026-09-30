@@ -11,6 +11,11 @@ export interface ContextPortfoliosTable {
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
+// Whether a section's vector chunks match its current content. 'none' = never
+// indexed (or embeddings not configured), 'ok', 'stale' = the last embed
+// attempt failed (see index_error) and the chunks describe an older version.
+export type ContextSectionIndexState = 'none' | 'ok' | 'stale'
+
 export interface ContextSectionsTable {
   id: Generated<string>
   portfolio_id: string
@@ -18,6 +23,22 @@ export interface ContextSectionsTable {
   content: Generated<string>
   last_edited_by: string | null
   last_edited_at: ColumnType<Date, Date | string | undefined, Date | string>
+  index_state: Generated<ContextSectionIndexState>
+  index_error: string | null
+}
+
+// One embedded chunk of a section. `embedding` is a pgvector column: written
+// through `vectorSql()` from #ai/server, read only via distance expressions.
+export interface ContextSectionChunksTable {
+  id: Generated<string>
+  section_id: string
+  portfolio_id: string
+  ordinal: number
+  heading: Generated<string>
+  content: string
+  embedding: ColumnType<string, unknown, unknown>
+  model: string
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
 // How a version came to be: a direct edit by the user, an accepted in-app
@@ -110,6 +131,7 @@ declare global {
   interface NuxtinatorDatabaseTables {
     context_portfolios: ContextPortfoliosTable
     context_sections: ContextSectionsTable
+    context_section_chunks: ContextSectionChunksTable
     context_section_versions: ContextSectionVersionsTable
     context_section_definitions: ContextSectionDefinitionsTable
     context_section_comments: ContextSectionCommentsTable

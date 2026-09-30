@@ -208,7 +208,7 @@ describe('assistant conversations', () => {
     expect(systemText(call)).toContain('IDENTITY BODY')
     expect(systemText(call)).not.toContain('TEAM BODY')
     expect(systemText(call)).toContain('focused on the "Identity" section')
-    expect(call.tools).toEqual(['load_section', 'load_portfolio'])
+    expect(call.tools).toEqual(['load_section', 'load_portfolio', 'search_sections'])
     expect(call.toolResults[0]!.result).toContain('TEAM BODY')
     expect(call.toolResults[1]!.result).toContain('already loaded')
     expect(call.toolResults[2]!.result).toContain('unknown section key')
@@ -236,7 +236,7 @@ describe('assistant conversations', () => {
     expect(systemText(call)).toContain(`slug: \`${b.slug}\``)
     expect(systemText(call)).not.toContain('ALPHA TEAM')
     expect(systemText(call)).not.toContain('BETA TEAM')
-    expect(call.tools).toEqual(['load_section', 'load_portfolio'])
+    expect(call.tools).toEqual(['load_section', 'load_portfolio', 'search_sections'])
     expect(call.toolResults[0]!.result).toContain('BETA TEAM')
     expect(turn.assistant_message.context_loaded).toEqual(['Beta Org › Team'])
 

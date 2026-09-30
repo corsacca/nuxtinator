@@ -14,6 +14,8 @@ interface SectionData {
   content: string
   last_edited_at: string | null
   last_edited_by_name: string | null
+  index_state?: 'none' | 'ok' | 'stale'
+  index_error?: string | null
 }
 
 const { data, refresh } = await useAsyncData(
@@ -63,6 +65,22 @@ async function removeSection() {
     error.value = (e as { statusMessage?: string }).statusMessage ?? 'Remove failed.'
   } finally {
     removing.value = false
+  }
+}
+
+// The search index is rebuilt on every save; a failed rebuild shows below
+// with a button to retry without re-saving.
+const reindexing = ref(false)
+async function reindex() {
+  reindexing.value = true
+  error.value = null
+  try {
+    await $fetch(`/api/context/portfolios/${slug.value}/sections/${key.value}/reindex`, { method: 'POST' })
+    await refresh()
+  } catch (e) {
+    error.value = (e as Error).message ?? 'Re-embed failed.'
+  } finally {
+    reindexing.value = false
   }
 }
 
@@ -133,6 +151,22 @@ async function save() {
       </header>
 
       <ContextMarkdownToolbar v-if="editing" :textarea-id="`section-editor-${key}`" />
+
+      <UAlert
+        v-if="data?.index_state === 'stale' && !editing"
+        class="mx-3 mt-3"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="Search index didn't regenerate"
+        :description="`The assistant's search still sees the previous version of this section. ${data.index_error ?? ''}`"
+      >
+        <template #actions>
+          <UButton size="xs" color="warning" variant="solid" icon="i-lucide-refresh-cw" :loading="reindexing" @click="reindex">
+            Re-embed
+          </UButton>
+        </template>
+      </UAlert>
 
       <div class="flex-1 flex min-h-0">
         <div class="flex-1 flex min-h-0 overflow-auto">

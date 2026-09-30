@@ -1,0 +1,102 @@
+// Save-time embedding: every section save chunks and embeds through the AI
+// fake, a failed embed leaves the save intact and the section stale, and the
+// reindex route clears it.
+import { describe, it, expect, afterEach, beforeEach } from 'vitest'
+import { $fetch } from '@nuxt/test-utils/e2e'
+import {
+  getHostAdminDb,
+  cleanupContextTestData,
+  createContextOrgWith,
+  createTestPortfolio,
+  withOrgHeader,
+  resetAiFake,
+  getAiFakeLog
+} from '../helpers'
+
+interface SectionRead {
+  content: string
+  index_state: 'none' | 'ok' | 'stale'
+  index_error: string | null
+}
+
+describe('section vector index', () => {
+  const sql = getHostAdminDb()
+  beforeEach(async () => {
+    await resetAiFake()
+  })
+  afterEach(async () => {
+    await cleanupContextTestData(sql)
+    await resetAiFake()
+  })
+
+  async function setup() {
+    const { org, auth, user } = await createContextOrgWith(sql, ['admin'])
+    const p = await createTestPortfolio(sql, { org_id: org.id, name: 'Indexed', created_by: user.id })
+    return { org, p, opts: withOrgHeader(auth, org.slug) }
+  }
+
+  it('embeds on save and stores one chunk row per chunk with the model id', async () => {
+    const { p, opts } = await setup()
+    const res = await $fetch<{ id: string }>(`/api/context/portfolios/${p.slug}/sections/identity`, {
+      method: 'PUT', body: { content: '# Who we are\n\nAcme makes anvils.\n\n## Where\n\nWe are in Springfield.' }, ...opts
+    })
+    const chunks = await sql<{ ordinal: number, heading: string, model: string, content: string }[]>`
+      SELECT ordinal, heading, model, content FROM context_section_chunks WHERE section_id = ${res.id} ORDER BY ordinal
+    `
+    expect(chunks.length).toBeGreaterThan(0)
+    expect(chunks[0]!.model).toBe('test/embed-small')
+    expect(chunks.map(c => c.content).join('\n')).toContain('Acme makes anvils.')
+
+    const read = await $fetch<SectionRead>(`/api/context/portfolios/${p.slug}/sections/identity`, { ...opts })
+    expect(read.index_state).toBe('ok')
+    expect(read.index_error).toBeNull()
+
+    const embeds = (await getAiFakeLog()).filter(c => c.kind === 'embed')
+    expect(embeds.length).toBe(1)
+  })
+
+  it('replaces chunks on the next save', async () => {
+    const { p, opts } = await setup()
+    const first = await $fetch<{ id: string }>(`/api/context/portfolios/${p.slug}/sections/identity`, {
+      method: 'PUT', body: { content: 'Version one.' }, ...opts
+    })
+    await $fetch(`/api/context/portfolios/${p.slug}/sections/identity`, { method: 'PUT', body: { content: 'Version two.' }, ...opts })
+    const chunks = await sql<{ content: string }[]>`SELECT content FROM context_section_chunks WHERE section_id = ${first.id}`
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]!.content).toContain('Version two.')
+  })
+
+  it('keeps the save when embedding fails, marks the section stale, and reindex clears it', async () => {
+    const { p, opts } = await setup()
+    // The fake throws for any input containing [[fail]].
+    const res = await $fetch<{ id: string, content: string }>(`/api/context/portfolios/${p.slug}/sections/identity`, {
+      method: 'PUT', body: { content: 'This will [[fail]] to embed.' }, ...opts
+    })
+    expect(res.content).toBe('This will [[fail]] to embed.')
+    let read = await $fetch<SectionRead>(`/api/context/portfolios/${p.slug}/sections/identity`, { ...opts })
+    expect(read.index_state).toBe('stale')
+    expect(read.index_error).toBeTruthy()
+
+    // Fix the content, but through the reindex route rather than a save: it
+    // must re-embed the stored content. First a save that succeeds…
+    await $fetch(`/api/context/portfolios/${p.slug}/sections/identity`, { method: 'PUT', body: { content: 'Now fine.' }, ...opts })
+    read = await $fetch<SectionRead>(`/api/context/portfolios/${p.slug}/sections/identity`, { ...opts })
+    expect(read.index_state).toBe('ok')
+
+    // …then simulate a stale flag and clear it with the route.
+    await sql`UPDATE context_sections SET index_state = 'stale', index_error = 'boom' WHERE id = ${res.id}`
+    const out = await $fetch<{ index_state: string, chunks: number }>(`/api/context/portfolios/${p.slug}/sections/identity/reindex`, { method: 'POST', ...opts })
+    expect(out.index_state).toBe('ok')
+    expect(out.chunks).toBe(1)
+  })
+
+  it('cascades chunks when the section goes', async () => {
+    const { p, opts } = await setup()
+    const res = await $fetch<{ id: string }>(`/api/context/portfolios/${p.slug}/sections/identity`, {
+      method: 'PUT', body: { content: 'Gone soon.' }, ...opts
+    })
+    await sql`DELETE FROM context_sections WHERE id = ${res.id}`
+    const chunks = await sql<{ id: string }[]>`SELECT id FROM context_section_chunks WHERE section_id = ${res.id}`
+    expect(chunks).toHaveLength(0)
+  })
+})

@@ -18,6 +18,10 @@ interface AiConfig {
   enabled: AiEnabled[]
   defaultModel: string
   features: { key: string, label: string, model: string, effectiveModel: string }[]
+  embeddingAvailable: boolean
+  embeddingModelListAvailable: boolean
+  embeddingModel: string
+  staleScopes: { orgId: string | null, model: string, stored: string[] }[]
 }
 
 const sql = getHostAdminDb()
@@ -147,5 +151,38 @@ describe('ai status', () => {
     )
     expect(after.hasEnabledModel).toBe(true)
     expect(after.featureAvailable).toBe(true)
+  })
+
+  it('stores an embedding model from the live list, refuses an unknown one, and hides embedding features from the chat pickers', async () => {
+    const { auth, opts } = await createAiOrg(sql)
+    const before = await getConfig(auth)
+    // The dev host loads context + helpinator, both of which register an
+    // embedding feature; those never appear as chat features.
+    expect(before.embeddingAvailable).toBe(true)
+    expect(before.embeddingModelListAvailable).toBe(true)
+    expect(before.embeddingModel).toBe('')
+    expect(before.features.map(f => f.key)).not.toContain('context.embeddings')
+    expect(before.features.map(f => f.key)).not.toContain('helpinator.embeddings')
+
+    const list = await $fetch<{ models: { id: string }[] }>('/api/ai/embedding-models', { ...opts })
+    expect(list.models.map(m => m.id).sort()).toEqual(['test/embed-large', 'test/embed-small'])
+
+    await expect(putConfig(auth, { embedding_model: 'nope/model' })).rejects.toMatchObject({ statusCode: 400 })
+    await putConfig(auth, { embedding_model: 'test/embed-large' })
+    expect((await getConfig(auth)).embeddingModel).toBe('test/embed-large')
+    await putConfig(auth, { embedding_model: '' })
+    expect((await getConfig(auth)).embeddingModel).toBe('')
+  })
+
+  it('reindex endpoints are operator-only and report a run', async () => {
+    const { opts } = await createAiOrg(sql, { admin: false })
+    await expect($fetch('/api/ai/admin/reindex', { method: 'POST', body: {}, ...opts })).rejects.toMatchObject({ statusCode: 403 })
+    const { auth } = await createAiOrg(sql)
+    const res = await $fetch<{ started: boolean, reason: string | null, status: { running: boolean } }>('/api/ai/admin/reindex', { method: 'POST', body: {}, ...auth })
+    // Nothing is stale on a fresh host, so nothing starts.
+    expect(res.started).toBe(false)
+    expect(res.reason).toBe('nothing-stale')
+    const status = await $fetch<{ running: boolean, scopes: unknown[] }>('/api/ai/admin/reindex-status', { ...auth })
+    expect(typeof status.running).toBe('boolean')
   })
 })

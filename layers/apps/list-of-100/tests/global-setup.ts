@@ -3,8 +3,8 @@
 import { createTest, exposeContextToEnv } from '@nuxt/test-utils/e2e'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { getHostAdminDb, closeTestDatabases, cleanupCoreTestData, clearMailhog } from 'layer-core/test-helpers'
-import { cleanupTenancyTestData } from 'layer-tenancy/test-helpers'
+import { getHostAdminDb, closeTestDatabases, cleanupCoreTestData, clearMailhog } from '@nuxtinator/core/test-helpers'
+import { cleanupTenancyTestData } from '@nuxtinator/tenancy/test-helpers'
 import { cleanupListOf100TestData } from './helpers'
 
 const HOST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../host')

@@ -7,6 +7,7 @@ import {
   AI_SETTING_DEFAULT_MODEL,
   AI_SETTING_FEATURE_MODELS,
   AI_SETTING_API_KEY,
+  AI_SETTING_EMBEDDING_MODEL,
   sanitizeModelIdList,
   sanitizeModelId,
   sanitizeFeatureModels
@@ -53,6 +54,15 @@ export default defineNitroPlugin(() => {
     default: '',
     parse: v => (typeof v === 'string' ? v : ''),
     label: 'OpenRouter API key'
+  })
+
+  // The model every vector index in a scope is built with (org overrides host).
+  registerSetting<string>({
+    namespace: AI_SETTINGS_NAMESPACE,
+    key: AI_SETTING_EMBEDDING_MODEL,
+    default: '',
+    parse: sanitizeModelId,
+    label: 'Embedding model'
   })
 
   registerAdminSection({

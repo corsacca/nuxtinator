@@ -4,6 +4,7 @@ import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { HELPINATOR_UUID_RE, helpinatorResolvedAppearance, type HelpinatorWidgetRow } from './helpinator-widgets'
 import type { HelpinatorConversationRow } from './helpinator-conversations'
+import type { HelpinatorLibraryRow, HelpinatorSourceRow } from './helpinator-libraries'
 
 type Tx = Transaction<Database>
 
@@ -11,7 +12,8 @@ export function helpinatorAdminWidget(w: HelpinatorWidgetRow) {
   return {
     id: w.id,
     name: w.name,
-    portfolio_id: w.portfolio_id,
+    library_ids: w.library_ids,
+    default_library_id: w.default_library_id,
     default_section_key: w.default_section_key,
     allowed_origins: w.allowed_origins,
     daily_message_cap: w.daily_message_cap,
@@ -20,6 +22,36 @@ export function helpinatorAdminWidget(w: HelpinatorWidgetRow) {
     extra_instructions: w.extra_instructions,
     created_at: w.created_at,
     updated_at: w.updated_at
+  }
+}
+
+export function helpinatorAdminLibrary(l: HelpinatorLibraryRow) {
+  return {
+    id: l.id,
+    name: l.name,
+    kind: l.kind,
+    portfolio_id: l.portfolio_id,
+    description: l.description,
+    created_at: l.created_at,
+    updated_at: l.updated_at
+  }
+}
+
+// The run token stays server-side.
+export function helpinatorAdminSource(s: HelpinatorSourceRow) {
+  return {
+    id: s.id,
+    library_id: s.library_id,
+    url: s.url,
+    restrict_to_path: s.restrict_to_path,
+    max_pages: s.max_pages,
+    status: s.status,
+    run_started_at: s.run_started_at,
+    page_count: s.page_count,
+    bytes: s.bytes,
+    last_synced_at: s.last_synced_at,
+    last_error: s.last_error,
+    created_at: s.created_at
   }
 }
 

@@ -12,10 +12,18 @@ const pathTo = useHelpinatorPath()
 const { data: status } = useHelpinatorStatus()
 
 const open = ref(false)
-watch(() => route.fullPath, () => { open.value = false })
+watch(() => route.fullPath, () => {
+  open.value = false
+})
 
 const widgetsPath = computed(() => pathTo('/helpinator/widgets'))
+const librariesPath = computed(() => pathTo('/helpinator/libraries'))
 const onWidgets = computed(() => route.path === widgetsPath.value || route.path.startsWith(widgetsPath.value + '/'))
+const onLibraries = computed(() => route.path === librariesPath.value || route.path.startsWith(librariesPath.value + '/'))
+
+const itemClass = (active: boolean) => active
+  ? 'bg-(--ui-bg-accented) text-(--ui-text) font-medium'
+  : 'text-(--ui-text-muted) hover:bg-(--ui-bg-accented) hover:text-(--ui-text)'
 </script>
 
 <template>
@@ -28,16 +36,24 @@ const onWidgets = computed(() => route.path === widgetsPath.value || route.path.
       </template>
       <HelpinatorSidebarBody :active-widget-id="activeWidgetId" />
       <template v-if="status?.canManage" #footer>
-        <NuxtLink
-          :to="widgetsPath"
-          class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition"
-          :class="onWidgets
-            ? 'bg-(--ui-bg-accented) text-(--ui-text) font-medium'
-            : 'text-(--ui-text-muted) hover:bg-(--ui-bg-accented) hover:text-(--ui-text)'"
-        >
-          <UIcon name="i-lucide-settings" class="size-4 shrink-0" />
-          <span>Manage widgets</span>
-        </NuxtLink>
+        <nav class="flex flex-col gap-px">
+          <NuxtLink
+            :to="librariesPath"
+            class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition"
+            :class="itemClass(onLibraries)"
+          >
+            <UIcon name="i-lucide-library" class="size-4 shrink-0" />
+            <span>Libraries</span>
+          </NuxtLink>
+          <NuxtLink
+            :to="widgetsPath"
+            class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition"
+            :class="itemClass(onWidgets)"
+          >
+            <UIcon name="i-lucide-settings" class="size-4 shrink-0" />
+            <span>Manage widgets</span>
+          </NuxtLink>
+        </nav>
       </template>
     </SidebarPanel>
 
@@ -60,13 +76,22 @@ const onWidgets = computed(() => route.path === widgetsPath.value || route.path.
           </template>
           <HelpinatorSidebarBody :active-widget-id="activeWidgetId" @navigated="open = false" />
           <template v-if="status?.canManage" #footer>
-            <NuxtLink
-              :to="widgetsPath"
-              class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-(--ui-text-muted) hover:bg-(--ui-bg-accented) hover:text-(--ui-text) transition"
-            >
-              <UIcon name="i-lucide-settings" class="size-4 shrink-0" />
-              <span>Manage widgets</span>
-            </NuxtLink>
+            <nav class="flex flex-col gap-px">
+              <NuxtLink
+                :to="librariesPath"
+                class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-(--ui-text-muted) hover:bg-(--ui-bg-accented) hover:text-(--ui-text) transition"
+              >
+                <UIcon name="i-lucide-library" class="size-4 shrink-0" />
+                <span>Libraries</span>
+              </NuxtLink>
+              <NuxtLink
+                :to="widgetsPath"
+                class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-(--ui-text-muted) hover:bg-(--ui-bg-accented) hover:text-(--ui-text) transition"
+              >
+                <UIcon name="i-lucide-settings" class="size-4 shrink-0" />
+                <span>Manage widgets</span>
+              </NuxtLink>
+            </nav>
           </template>
         </SidebarPanel>
       </template>

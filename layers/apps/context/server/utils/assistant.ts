@@ -15,6 +15,7 @@ import type { Database } from '#core/server/database/schema'
 import type { AiTool, AiToolHandler, AiMessage, AiTextPart } from '#ai/server'
 import { listPortfolios, type PortfolioRow } from './portfolio-helpers'
 import { getPortfolioSections, type MergedSection } from './section-settings'
+import { searchSections, type SectionSearchHit } from './section-index'
 import type { ContextAssistantProposal } from '../database/schema'
 import type { ConversationRow, MessageRow } from './assistant-conversations'
 
@@ -140,13 +141,19 @@ const EDIT_NOTICE_VIEWER = 'The user has view-only access. You can help them dra
 interface ToolCaps {
   loadSection: number
   loadPortfolio: number
+  search: number
 }
 
+// The portfolio scope preloads everything, so it gets neither loaders nor
+// search; the other two search the vector index (section-index.ts).
 function toolCapsFor(scope: AssistantScope): ToolCaps {
-  if (scope.kind === 'section') return { loadSection: 3, loadPortfolio: 1 }
-  if (scope.kind === 'all') return { loadSection: 5, loadPortfolio: 3 }
-  return { loadSection: 0, loadPortfolio: 0 }
+  if (scope.kind === 'section') return { loadSection: 3, loadPortfolio: 1, search: 2 }
+  if (scope.kind === 'all') return { loadSection: 5, loadPortfolio: 3, search: 2 }
+  return { loadSection: 0, loadPortfolio: 0, search: 0 }
 }
+
+// Hits returned to the model, per search and per auto-search.
+export const SEARCH_HITS = 8
 
 function scopeIntro(scope: AssistantScope, entries: PortfolioEntry[]): string {
   if (scope.kind === 'section') {
@@ -160,14 +167,16 @@ function scopeIntro(scope: AssistantScope, entries: PortfolioEntry[]): string {
   return `You have access to every portfolio in this workspace${names ? `: ${names}` : ''}. Each portfolio describes one organization, team, or initiative.`
 }
 
+const SEARCH_NOTICE = 'Each user message is also searched against every section automatically and the best matches are listed under "Search hits"; use `search_sections` with a rephrased query when those miss, then load the matching section.'
+
 function loadingNotice(scope: AssistantScope, caps: ToolCaps): string {
   if (scope.kind === 'section') {
-    return `The current section is loaded below. Use \`load_section\` to read another section of this portfolio (up to ${caps.loadSection} per turn) or \`load_portfolio\` to read all of it (up to ${caps.loadPortfolio} per turn). ${MUST_LOAD}`
+    return `The current section is loaded below. Use \`load_section\` to read another section of this portfolio (up to ${caps.loadSection} per turn) or \`load_portfolio\` to read all of it (up to ${caps.loadPortfolio} per turn). ${SEARCH_NOTICE} ${MUST_LOAD}`
   }
   if (scope.kind === 'portfolio') {
     return 'Every section with content is loaded below. Sections listed without content are empty.'
   }
-  return `Nothing is loaded yet. Use \`load_portfolio\` (up to ${caps.loadPortfolio} per turn) to read every section of one portfolio, or \`load_section\` (up to ${caps.loadSection} per turn) for a single section. ${MUST_LOAD}`
+  return `Nothing is loaded yet. Use \`load_portfolio\` (up to ${caps.loadPortfolio} per turn) to read every section of one portfolio, or \`load_section\` (up to ${caps.loadSection} per turn) for a single section. ${SEARCH_NOTICE} ${MUST_LOAD}`
 }
 
 function portfolioLineNotice(scope: AssistantScope): string {
@@ -234,15 +243,42 @@ const LOAD_PORTFOLIO_TOOL: AiTool = {
   }
 }
 
+const SEARCH_SECTIONS_TOOL: AiTool = {
+  name: 'search_sections',
+  description: 'Find the sections most relevant to a query, across every portfolio available in this conversation. Returns section keys and snippets; load a section to read it in full.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'What to look for, phrased as a short question or topic.' }
+    },
+    required: ['query'],
+    additionalProperties: false
+  }
+}
+
+function renderHits(scope: AssistantScope, entries: PortfolioEntry[], hits: SectionSearchHit[]): string {
+  if (hits.length === 0) return '(no matches)'
+  const byId = new Map(entries.map(e => [e.portfolio.id, e]))
+  return hits.map((h) => {
+    const entry = byId.get(h.portfolio_id)
+    const label = entry ? sectionLabel(scope, entry, h.section_key) : h.section_key
+    const where = scope.kind === 'all' && entry ? ` (portfolio \`${entry.portfolio.slug}\`)` : ''
+    const snippet = h.snippet.replace(/\s+/g, ' ').trim().slice(0, 200)
+    return `- \`${h.section_key}\`${where}: ${label}${h.heading ? ` › ${h.heading}` : ''} — ${snippet}`
+  }).join('\n')
+}
+
 export async function buildAssistantContext(
   tx: Tx,
   scope: AssistantScope,
-  userCanEdit: boolean
+  userCanEdit: boolean,
+  opts: { userMessage?: string } = {}
 ): Promise<AssistantContext> {
   const entries = await loadPortfolioEntries(tx, scope)
   const bySlug = new Map(entries.map(e => [e.portfolio.slug, e]))
   const scopedSlug = scope.kind === 'all' ? null : scope.portfolio.slug
   const contextLoaded: string[] = []
+  const portfolioIds = entries.map(e => e.portfolio.id)
 
   // Preload per scope. Only sections with content count as loaded, so an
   // empty section stays loadable (and reports as empty when asked for).
@@ -261,6 +297,19 @@ export async function buildAssistantContext(
 
   const caps = toolCapsFor(scope)
   const tools: AiTool[] = caps.loadSection > 0 ? [LOAD_SECTION_TOOL, LOAD_PORTFOLIO_TOOL] : []
+  if (caps.search > 0) tools.push(SEARCH_SECTIONS_TOOL)
+
+  // Auto-search: the user's latest message against the index, injected as a
+  // second, NON-cached system part so the cached prefix above stays
+  // byte-stable. Silent when embeddings are not configured.
+  let autoHits: SectionSearchHit[] = []
+  if (caps.search > 0 && opts.userMessage?.trim()) {
+    try {
+      autoHits = await searchSections(tx, { portfolioIds, query: opts.userMessage, limit: SEARCH_HITS })
+    } catch (err) {
+      console.error('[context] assistant auto-search failed:', (err as Error)?.message ?? err)
+    }
+  }
 
   // One cacheable part: the prompt is byte-stable across the tool rounds of a
   // turn and across turns until a section changes, so caching-capable models
@@ -279,9 +328,16 @@ export async function buildAssistantContext(
     ].join('\n\n'),
     cache: true
   }]
+  if (caps.search > 0 && opts.userMessage?.trim()) {
+    system.push({
+      type: 'text',
+      text: `## Search hits for the latest message:\n${renderHits(scope, entries, autoHits)}`
+    })
+  }
 
   let sectionLoads = 0
   let portfolioLoads = 0
+  let searches = 0
 
   function resolveEntry(input: Record<string, unknown>): PortfolioEntry | string {
     const raw = typeof input.portfolio === 'string' ? input.portfolio.trim() : ''
@@ -303,6 +359,18 @@ export async function buildAssistantContext(
   }
 
   const onToolCall: AiToolHandler = async (name, input) => {
+    if (name === 'search_sections') {
+      if (searches >= caps.search) return `Error: search_sections limit reached (max ${caps.search} per turn).`
+      const query = typeof input.query === 'string' ? input.query.trim() : ''
+      if (!query) return 'Error: a query is required.'
+      searches++
+      try {
+        const hits = await searchSections(tx, { portfolioIds, query, limit: SEARCH_HITS })
+        return `## Search hits for "${query}":\n${renderHits(scope, entries, hits)}`
+      } catch (err) {
+        return `Error: search is unavailable right now (${(err as { statusMessage?: string })?.statusMessage ?? 'embedding failed'}).`
+      }
+    }
     if (name === 'load_section') {
       if (sectionLoads >= caps.loadSection) return `Error: load_section limit reached (max ${caps.loadSection} per turn).`
       const entry = resolveEntry(input)
@@ -327,6 +395,10 @@ export async function buildAssistantContext(
   }
 
   function describeToolCall(name: string, input: Record<string, unknown>): string | null {
+    if (name === 'search_sections') {
+      const query = typeof input.query === 'string' ? input.query.trim() : ''
+      return query ? `search results for "${query.slice(0, 60)}"` : null
+    }
     const entry = resolveEntry(input)
     if (typeof entry === 'string') return null
     if (name === 'load_portfolio') return `all of ${entry.portfolio.name}`

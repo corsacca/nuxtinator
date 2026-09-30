@@ -2,7 +2,7 @@
 // Create / edit one widget, plus the embed helper: the snippet to paste into
 // the site, optional CSS variables to match the site's styling, and a live
 // preview of the saved widget running on this page.
-import type { HelpinatorWidget, HelpinatorPortfolioOption, HelpinatorAppearanceForm } from '../../../utils/helpinator-types'
+import type { HelpinatorWidget, HelpinatorPortfolioOption, HelpinatorAppearanceForm, HelpinatorLibrarySummary } from '../../../utils/helpinator-types'
 import { helpinatorErrorMessage } from '../../../utils/helpinator-types'
 
 definePageMeta({ middleware: 'auth' })
@@ -14,6 +14,7 @@ const isNew = computed(() => route.params.id === 'new')
 
 const { data: status } = useHelpinatorStatus()
 const { data: portfolios } = useFetch<HelpinatorPortfolioOption[]>('/api/helpinator/portfolios', { default: () => [] })
+const { data: libraries } = useFetch<HelpinatorLibrarySummary[]>('/api/helpinator/libraries', { default: () => [] })
 
 const DEFAULT_APPEARANCE: HelpinatorAppearanceForm = {
   primary_color: '#2563eb',
@@ -26,7 +27,8 @@ const DEFAULT_APPEARANCE: HelpinatorAppearanceForm = {
 
 const form = reactive({
   name: '',
-  portfolio_id: '' as string,
+  library_ids: [] as string[],
+  default_library_id: '' as string,
   default_section_key: '',
   originsText: '',
   daily_message_cap: 500,
@@ -42,8 +44,9 @@ const previewKey = ref(0)
 function fill(w: HelpinatorWidget) {
   saved.value = w
   form.name = w.name
-  form.portfolio_id = w.portfolio_id ?? ''
-  form.default_section_key = w.default_section_key
+  form.library_ids = [...w.library_ids]
+  form.default_library_id = w.default_library_id ?? ''
+  form.default_section_key = w.default_section_key ?? ''
   form.originsText = w.allowed_origins.join('\n')
   form.daily_message_cap = w.daily_message_cap
   form.enabled = w.enabled
@@ -57,29 +60,48 @@ if (!isNew.value) {
   if (data.value) fill(data.value)
 }
 
-const portfolioItems = computed(() => (portfolios.value ?? []).map((p: HelpinatorPortfolioOption) => ({ label: p.name, value: p.id })))
-const selectedPortfolio = computed(() => portfolios.value?.find((p: HelpinatorPortfolioOption) => p.id === form.portfolio_id) ?? null)
-const sectionItems = computed(() => (selectedPortfolio.value?.sections ?? []).map((s: HelpinatorPortfolioOption['sections'][number]) => ({ label: s.title, value: s.key })))
+const libraryItems = computed(() => (libraries.value ?? []).map((l: HelpinatorLibrarySummary) => ({
+  label: `${l.name} (${l.kind})`,
+  value: l.id
+})))
+const defaultItems = computed(() => libraryItems.value.filter((i: { label: string, value: string }) => form.library_ids.includes(i.value)))
+const defaultLibrary = computed(() => libraries.value?.find((l: HelpinatorLibrarySummary) => l.id === form.default_library_id) ?? null)
+// The default section only applies when the default library is a portfolio.
+const defaultPortfolio = computed(() => defaultLibrary.value?.kind === 'portfolio'
+  ? portfolios.value?.find((p: HelpinatorPortfolioOption) => p.id === defaultLibrary.value?.portfolio_id) ?? null
+  : null)
+const sectionItems = computed(() => (defaultPortfolio.value?.sections ?? []).map((s: HelpinatorPortfolioOption['sections'][number]) => ({ label: s.title, value: s.key })))
 const positionItems = [
   { label: 'Bottom right', value: 'bottom-right' },
   { label: 'Bottom left', value: 'bottom-left' }
 ]
 
-watch(() => form.portfolio_id, () => {
-  if (!selectedPortfolio.value?.sections.some((s: HelpinatorPortfolioOption['sections'][number]) => s.key === form.default_section_key)) {
-    form.default_section_key = selectedPortfolio.value?.sections[0]?.key ?? ''
+watch(() => form.library_ids, (ids) => {
+  if (!ids.includes(form.default_library_id)) form.default_library_id = ids[0] ?? ''
+})
+watch(defaultPortfolio, (p) => {
+  if (!p) {
+    form.default_section_key = ''
+  } else if (!p.sections.some((s: HelpinatorPortfolioOption['sections'][number]) => s.key === form.default_section_key)) {
+    form.default_section_key = p.sections[0]?.key ?? ''
   }
 })
 
-const rebinding = computed(() => Boolean(saved.value?.portfolio_id) && saved.value?.portfolio_id !== form.portfolio_id)
+const rebinding = computed(() => {
+  if (!saved.value) return false
+  const a = [...saved.value.library_ids].sort().join(',')
+  const b = [...form.library_ids].sort().join(',')
+  return a !== b || (saved.value.default_library_id ?? '') !== form.default_library_id
+})
 
 async function save() {
   saving.value = true
   try {
     const body = {
       name: form.name,
-      portfolio_id: form.portfolio_id,
-      default_section_key: form.default_section_key,
+      library_ids: form.library_ids,
+      default_library_id: form.default_library_id,
+      default_section_key: defaultPortfolio.value ? form.default_section_key || null : null,
       allowed_origins: form.originsText.split('\n').map(s => s.trim()).filter(Boolean),
       daily_message_cap: Number(form.daily_message_cap),
       enabled: form.enabled,
@@ -199,22 +221,30 @@ async function togglePreview() {
             </UFormField>
 
             <UFormField
-              label="Portfolio"
-              help="The ONLY content this widget's assistant can read. Treat everything in it as public — visitors can get the assistant to reveal any of it."
+              label="Libraries"
+              help="The ONLY content this widget's assistant can search and read. Treat everything in them as public — visitors can get the assistant to reveal any of it."
               required
             >
-              <USelect v-model="form.portfolio_id" :items="portfolioItems" placeholder="Choose a portfolio" class="w-full" />
+              <USelectMenu v-model="form.library_ids" :items="libraryItems" value-key="value" multiple placeholder="Choose libraries" class="w-full" />
+              <p v-if="libraryItems.length === 0" class="text-xs text-(--ui-text-muted) mt-1">
+                No libraries yet —
+                <NuxtLink :to="pathTo('/helpinator/libraries/new')" class="underline">create one</NuxtLink> first.
+              </p>
+            </UFormField>
+
+            <UFormField label="Default library" help="Its page index is part of every chat; the other libraries are reached through search." required>
+              <USelect v-model="form.default_library_id" :items="defaultItems" :disabled="!form.library_ids.length" class="w-full" />
             </UFormField>
             <UAlert
               v-if="rebinding"
               color="warning"
               variant="subtle"
               icon="i-lucide-triangle-alert"
-              title="Changing the portfolio ends this widget's open conversations."
+              title="Changing the libraries ends this widget's open conversations."
             />
 
-            <UFormField label="Default section" help="Loaded into every chat — pick the one most relevant to this site. The assistant can read the rest of the portfolio when needed." required>
-              <USelect v-model="form.default_section_key" :items="sectionItems" :disabled="!form.portfolio_id" class="w-full" />
+            <UFormField v-if="defaultPortfolio" label="Default section" help="Loaded into every chat — pick the one most relevant to this site. The assistant can read the rest when needed.">
+              <USelect v-model="form.default_section_key" :items="sectionItems" class="w-full" />
             </UFormField>
 
             <UFormField label="Allowed sites" help="One origin per line, e.g. https://www.example.org. Localhost works in development without being listed.">

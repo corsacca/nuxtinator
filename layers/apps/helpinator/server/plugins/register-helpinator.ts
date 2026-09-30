@@ -2,8 +2,9 @@ import { registerPermissions } from '#core/server/utils/permissions-registry'
 import { registerDefaultGrants } from '#core/server/utils/default-grants-registry'
 import { registerApp } from '#core/server/utils/app-registry'
 import { registerNavItem } from '#core/server/utils/nav-registry'
-import { registerAiFeature } from '#ai/server'
-import { HELPINATOR_CHAT_FEATURE } from '../utils/helpinator-bot'
+import { registerAiFeature, registerAiReindexer } from '#ai/server'
+import { HELPINATOR_CHAT_FEATURE, HELPINATOR_EMBEDDINGS_FEATURE } from '../utils/helpinator-bot'
+import { HELPINATOR_REINDEXER } from '../utils/helpinator-crawl'
 import {
   HELPINATOR_PERMISSIONS,
   HELPINATOR_PERMISSION_META,
@@ -18,8 +19,17 @@ export default defineNitroPlugin(() => {
   registerAiFeature({
     key: HELPINATOR_CHAT_FEATURE,
     label: 'Helpinator — help chat',
-    description: 'Answers website visitors from a context portfolio.'
+    description: 'Answers website visitors from the widget\'s libraries.'
   })
+  // The library search index: switches the embedding-model section on in the
+  // AI settings pages, and lets them rebuild the index after a model change.
+  registerAiFeature({
+    key: HELPINATOR_EMBEDDINGS_FEATURE,
+    label: 'Helpinator — library search',
+    description: 'Vector index over crawled library pages.',
+    kind: 'embedding'
+  })
+  registerAiReindexer(HELPINATOR_REINDEXER)
 
   registerApp({
     id: 'helpinator',
@@ -37,6 +47,14 @@ export default defineNitroPlugin(() => {
     icon: 'i-lucide-messages-square',
     requiredPermission: 'helpinator.access',
     order: 10
+  })
+  registerNavItem({
+    appId: 'helpinator',
+    title: 'Libraries',
+    path: '/helpinator/libraries',
+    icon: 'i-lucide-library',
+    requiredPermission: 'helpinator.manage',
+    order: 15
   })
   registerNavItem({
     appId: 'helpinator',

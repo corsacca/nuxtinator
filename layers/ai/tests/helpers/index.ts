@@ -19,9 +19,9 @@ import {
   type AuthHeaders,
   type TestUser,
   type TestOrg
-} from 'layer-tenancy/test-helpers'
+} from '@nuxtinator/tenancy/test-helpers'
 
-export * from 'layer-tenancy/test-helpers'
+export * from '@nuxtinator/tenancy/test-helpers'
 
 // The ids of the fixed model list the booted host serves under VITEST
 // (server/utils/ai-model-list.ts AI_TEST_MODELS): alpha, beta, gamma.

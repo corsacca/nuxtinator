@@ -20,9 +20,9 @@ import {
   createTestOrg,
   addTestMembership,
   type TestOrg
-} from 'layer-tenancy/test-helpers'
+} from '@nuxtinator/tenancy/test-helpers'
 
-export * from 'layer-tenancy/test-helpers'
+export * from '@nuxtinator/tenancy/test-helpers'
 export { waitForMailTo, clearMailhog } from '../../../../core/tests/helpers/mailhog'
 
 export const INBOX_TEST_SIGNING_KEY = 'test-inbox-signing-key'

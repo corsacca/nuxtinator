@@ -126,9 +126,56 @@ export interface AiModelInfo {
 // A capability a consumer layer wants an admin-selectable model for (e.g. inbox
 // draft replies). Registered at boot via `registerAiFeature`; the admin UI lists
 // each and lets an operator pick which enabled model powers it.
+//
+// `kind: 'embedding'` declares that the layer builds a vector index. Such a
+// feature gets no per-feature chat model picker; instead its presence makes the
+// embedding-model section appear on the AI settings pages.
 export interface AiFeature {
   // Stable key, namespaced by the owning layer, e.g. 'inbox.draft'.
   key: string
   label: string
   description?: string
+  kind?: 'chat' | 'embedding'
+}
+
+// --- Embeddings ---
+
+// Every vector column is AI_EMBED_DIMENSIONS wide (vectors.ts); `embed()`
+// always requests that many dimensions so any embedding model an admin picks
+// fits the same column.
+
+export interface AiEmbedOptions {
+  // Same contract as AiCompleteOptions.tx: the org whose key and embedding
+  // model choice apply.
+  tx: AiDbClient
+  input: string[]
+}
+
+export interface AiEmbedResult {
+  // One vector per input, in order, each AI_EMBED_DIMENSIONS wide.
+  vectors: number[][]
+  model: string
+}
+
+// One embedding model as OpenRouter lists it.
+export interface AiEmbeddingModelInfo {
+  id: string
+  name: string
+  // USD per million input tokens; null when unreported.
+  promptPrice: number | null
+  contextLength: number | null
+}
+
+// A layer that owns a vector index registers one of these so the AI settings
+// pages can rebuild every index after the embedding model changes.
+// Both functions run inside an org-scoped transaction (or an unscoped one in
+// single-tenant mode) — the registrar iterates org scopes.
+export interface AiReindexer {
+  // Stable key, e.g. 'context.sections'.
+  key: string
+  label: string
+  // Distinct embedding model ids currently stored in this index for the scope.
+  currentModels: (tx: AiDbClient) => Promise<string[]>
+  // Re-embed everything in the scope with the model that resolves now.
+  run: (tx: AiDbClient) => Promise<{ chunks: number }>
 }

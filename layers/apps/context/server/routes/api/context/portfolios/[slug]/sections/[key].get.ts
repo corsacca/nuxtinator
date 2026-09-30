@@ -25,7 +25,9 @@ export default defineEventHandler(async (event) => {
       is_custom: def?.is_custom ?? false,
       content: section?.content ?? '',
       last_edited_at: section?.last_edited_at ?? null,
-      last_edited_by: section?.last_edited_by ?? null
+      last_edited_by: section?.last_edited_by ?? null,
+      index_state: section?.index_state ?? 'none',
+      index_error: section?.index_error ?? null
     }
   })
 })

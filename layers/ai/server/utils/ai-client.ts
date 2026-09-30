@@ -4,17 +4,20 @@ import type {
   AiCompleteResult,
   AiContent,
   AiDbClient,
+  AiEmbedOptions,
+  AiEmbedResult,
   AiGenerateOptions,
   AiGenerateResult,
   AiMessage,
   AiTextPart
 } from '#core/ai-fallback/types'
+import { AI_EMBED_DIMENSIONS } from '#core/ai-fallback/vectors'
 import { getOpenRouterConfig, getHostApiKey } from './ai-config'
 import { getModelList, supportsTemperature } from './ai-model-list'
-import { getOrgApiKey, getEffectiveApiKey, resolveFeatureModel } from './ai-settings'
+import { getOrgApiKey, getEffectiveApiKey, resolveFeatureModel, resolveEmbeddingModel } from './ai-settings'
 import { runCompletionLoop, type ProviderCall, type ProviderToolCall, type ProviderTurn } from './ai-tool-loop'
 import { readCompletionStream, type StreamedTurn } from './ai-stream'
-import { aiFakeComplete, aiFakeGenerate } from './ai-test-fake'
+import { aiFakeComplete, aiFakeGenerate, aiFakeEmbed } from './ai-test-fake'
 import { withAiRetries } from './ai-retry'
 
 // OpenRouter client. OpenRouter is OpenAI-compatible, so this is a plain fetch
@@ -141,12 +144,12 @@ function buildBody(
   return { ...body, ...extra }
 }
 
-async function openRouterRequest(apiKey: string, body: Record<string, unknown>): Promise<Response> {
+async function openRouterRequest(apiKey: string, body: Record<string, unknown>, path = '/chat/completions'): Promise<Response> {
   const cfg = getOpenRouterConfig()
 
   let res: Response
   try {
-    res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    res = await fetch(`${cfg.baseUrl}${path}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -353,4 +356,90 @@ export async function generate<T = Record<string, unknown>>(
     throw createError({ statusCode: 502, statusMessage: 'The AI returned an unparseable result. Try again.' })
   }
   return { input, model, finishReason }
+}
+
+// --- Embeddings ---
+
+// Whether this org can build or query a vector index: a key (org or host) and
+// an embedding model that resolves. Under VITEST the fake embeds model-less
+// (like `complete()`), so only the key check applies there.
+export async function isEmbeddingConfigured(tx: AiDbClient): Promise<boolean> {
+  try {
+    if (!(await isAiConfigured(tx))) return false
+    if (process.env.VITEST) return true
+    return (await resolveEmbeddingModel(tx)) !== ''
+  } catch {
+    return false
+  }
+}
+
+// OpenRouter batches: one request per this many inputs.
+const EMBED_BATCH = 64
+// Under VITEST an org with no embedding model set still embeds with the fake.
+const AI_TEST_FALLBACK_EMBED_MODEL = 'test/embed-small'
+
+async function embedBatch(apiKey: string, model: string, input: string[]): Promise<number[][]> {
+  const data = await withAiRetries(async () => {
+    const res = await openRouterRequest(apiKey, {
+      model,
+      input,
+      dimensions: AI_EMBED_DIMENSIONS,
+      encoding_format: 'float'
+    }, '/embeddings')
+    const json = await res.json()
+    if (json?.error) {
+      if (!process.env.VITEST) {
+        console.error(`[ai] OpenRouter embeddings upstream error (HTTP ${res.status}): ${JSON.stringify(json.error).slice(0, 500)}`)
+      }
+      throw createError({ statusCode: 502, statusMessage: 'The AI provider reported an upstream error. Try again in a moment.' })
+    }
+    return json
+  })
+  const rows: { index?: unknown, embedding?: unknown }[] = Array.isArray(data?.data) ? data.data : []
+  if (rows.length !== input.length) {
+    throw createError({ statusCode: 502, statusMessage: 'The AI provider returned an incomplete embedding response. Try again.' })
+  }
+  rows.sort((a, b) => Number(a.index ?? 0) - Number(b.index ?? 0))
+  const vectors = rows.map(r => (Array.isArray(r.embedding) ? (r.embedding as number[]) : []))
+  for (const v of vectors) {
+    if (v.length !== AI_EMBED_DIMENSIONS) {
+      console.error(`[ai] embedding model ${model} returned ${v.length} dimensions, expected ${AI_EMBED_DIMENSIONS}`)
+      throw createError({
+        statusCode: 500,
+        statusMessage: `The embedding model produces ${v.length}-dimension vectors; this deployment needs ${AI_EMBED_DIMENSIONS}. Pick another model.`
+      })
+    }
+  }
+  if (data?.usage) {
+    console.info(`[ai] ${model} embed inputs=${input.length} prompt=${data.usage.prompt_tokens ?? 0}`)
+  }
+  return vectors
+}
+
+// Embed `input` with the org's resolved embedding model. Empty input → empty
+// result without a network call. Same error contract as `complete()`.
+export async function embed(opts: AiEmbedOptions): Promise<AiEmbedResult> {
+  const model = await resolveEmbeddingModel(opts.tx)
+  if (process.env.VITEST) return aiFakeEmbed(opts, model || AI_TEST_FALLBACK_EMBED_MODEL)
+  const apiKey = await getEffectiveApiKey(opts.tx)
+  if (!apiKey) {
+    throw createError({ statusCode: 503, statusMessage: 'AI is not configured (no API key for this organization or the host).' })
+  }
+  if (!model) {
+    throw createError({ statusCode: 503, statusMessage: 'No embedding model is configured.' })
+  }
+  if (opts.input.length === 0) return { vectors: [], model }
+  const vectors: number[][] = []
+  for (let i = 0; i < opts.input.length; i += EMBED_BATCH) {
+    vectors.push(...await embedBatch(apiKey, model, opts.input.slice(i, i + EMBED_BATCH)))
+  }
+  return { vectors, model }
+}
+
+// One tiny embedding with a specific model and key, run before an admin's
+// choice is stored: proves the key can use the model and that it yields
+// AI_EMBED_DIMENSIONS-wide vectors. Throws the same errors `embed()` would.
+export async function probeEmbeddingModel(apiKey: string, model: string): Promise<void> {
+  if (process.env.VITEST) return
+  await embedBatch(apiKey, model, ['probe'])
 }
