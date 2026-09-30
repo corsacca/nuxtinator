@@ -177,5 +177,13 @@ export interface AiReindexer {
   // Distinct embedding model ids currently stored in this index for the scope.
   currentModels: (tx: AiDbClient) => Promise<string[]>
   // Re-embed everything in the scope with the model that resolves now.
-  run: (tx: AiDbClient) => Promise<{ chunks: number }>
+  // `progress` (optional to call) lets the settings pages show live counts:
+  // `total(n)` once the item count is known, `item(chunks)` after each
+  // section / page. The returned total is authoritative.
+  run: (tx: AiDbClient, progress?: AiReindexProgress) => Promise<{ chunks: number }>
+}
+
+export interface AiReindexProgress {
+  total: (items: number) => void
+  item: (chunks: number) => void
 }

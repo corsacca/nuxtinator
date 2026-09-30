@@ -18,6 +18,9 @@ export interface AiReindexScopeStatus {
   orgId: string | null
   state: 'pending' | 'running' | 'done' | 'error'
   chunks: number
+  items: number
+  total: number
+  current: string | null
   error?: string
 }
 

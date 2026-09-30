@@ -428,7 +428,8 @@ onBeforeUnmount(() => {
             v-for="scope in reindex.scopes"
             :key="scope.orgId ?? 'single'"
           >
-            {{ scope.orgId ?? 'this deployment' }} — {{ scope.state }}, {{ scope.chunks }} chunks
+            {{ scope.orgId ?? 'this deployment' }} — {{ scope.state }}<template v-if="scope.current">
+              ({{ scope.current }})</template>: {{ scope.items }} of {{ scope.total }} items, {{ scope.chunks }} chunks
             <span
               v-if="scope.error"
               class="text-(--ui-error)"

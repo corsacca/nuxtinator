@@ -18,7 +18,7 @@ import robotsParser from 'robots-parser'
 
 import type { Database } from '#core/server/database/schema'
 import { db } from '#core/server/utils/database'
-import { embed, chunkMarkdown, vectorSql, resolveEmbeddingModel, type AiReindexer } from '#ai/server'
+import { embed, chunkMarkdown, vectorSql, resolveEmbeddingModel, type AiReindexer, type AiReindexProgress } from '#ai/server'
 import type { HelpinatorSourceRow } from './helpinator-libraries'
 import { helpinatorNormalizeUrl } from './helpinator-libraries'
 
@@ -391,10 +391,15 @@ export function helpinatorSyncRunning(sourceId: string): boolean {
 
 // Re-embed every page in scope from its stored markdown (no re-fetch), for the
 // AI settings pages' "re-embed" after an embedding model change.
-export async function helpinatorReindexLibraries(tx: Tx): Promise<{ chunks: number }> {
+export async function helpinatorReindexLibraries(tx: Tx, progress?: AiReindexProgress): Promise<{ chunks: number }> {
   const pages = await tx.selectFrom('helpinator_library_pages').select(['id', 'library_id', 'title', 'content']).execute()
+  progress?.total(pages.length)
   let chunks = 0
-  for (const p of pages) chunks += await replaceChunks(tx, p.id, p.library_id, p.title, p.content)
+  for (const p of pages) {
+    const n = await replaceChunks(tx, p.id, p.library_id, p.title, p.content)
+    chunks += n
+    progress?.item(n)
+  }
   return { chunks }
 }
 
@@ -405,8 +410,8 @@ export const HELPINATOR_REINDEXER: AiReindexer = {
     const rows = await (tx as Tx).selectFrom('helpinator_library_chunks').select('model').distinct().execute()
     return rows.map(r => r.model)
   },
-  run: async (tx) => {
+  run: async (tx, progress) => {
     if (!(await resolveEmbeddingModel(tx))) return { chunks: 0 }
-    return await helpinatorReindexLibraries(tx as Tx)
+    return await helpinatorReindexLibraries(tx as Tx, progress)
   }
 }

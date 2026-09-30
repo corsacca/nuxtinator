@@ -99,4 +99,31 @@ describe('section vector index', () => {
     const chunks = await sql<{ id: string }[]>`SELECT id FROM context_section_chunks WHERE section_id = ${res.id}`
     expect(chunks).toHaveLength(0)
   })
+
+  it('an org re-embed reports each section as it goes and ends with items equal to the total', async () => {
+    const { p, opts } = await setup()
+    for (const key of ['identity', 'team']) {
+      await $fetch(`/api/context/portfolios/${p.slug}/sections/${key}`, { method: 'PUT', body: { content: `Content for ${key}.` }, ...opts })
+    }
+    // A re-embed runs only when a model resolves for the org.
+    await $fetch('/api/ai/org/config', { method: 'PUT', body: { embedding_model: 'test/embed-small' }, ...opts })
+    const start = await $fetch<{ started: boolean }>('/api/ai/org/reindex', { method: 'POST', ...opts })
+    expect(start.started).toBe(true)
+    type Scope = { state: string, items: number, total: number, chunks: number, current: string | null }
+    let scope: Scope | undefined
+    for (let i = 0; i < 100; i++) {
+      const status = await $fetch<{ running: boolean, scopes: Scope[] }>('/api/ai/org/reindex-status', { ...opts })
+      scope = status.scopes[0]
+      if (!status.running) break
+      await new Promise(r => setTimeout(r, 100))
+    }
+    expect(scope!.state).toBe('done')
+    expect(scope!.current).toBeNull()
+    // Every built-in section of the portfolio counts, written or not.
+    const [row] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM context_sections WHERE portfolio_id = ${p.id}`
+    expect(scope!.total).toBeGreaterThanOrEqual(row!.n)
+    expect(scope!.total).toBeGreaterThan(0)
+    expect(scope!.items).toBe(scope!.total)
+    expect(scope!.chunks).toBeGreaterThanOrEqual(2)
+  })
 })

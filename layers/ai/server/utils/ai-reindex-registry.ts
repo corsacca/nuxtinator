@@ -87,6 +87,12 @@ export interface AiReindexScopeStatus {
   orgId: string | null
   state: 'pending' | 'running' | 'done' | 'error'
   chunks: number
+  // Sections / pages re-embedded so far, and how many there are in all,
+  // summed over the index layers that have started.
+  items: number
+  total: number
+  // Label of the index being rebuilt right now.
+  current: string | null
   error?: string
 }
 
@@ -115,9 +121,20 @@ async function reindexScope(scope: AiReindexScopeStatus): Promise<void> {
   scope.state = 'running'
   try {
     for (const r of getAiReindexers()) {
-      const result = await withAiScopeTx(scope.orgId, tx => r.run(tx))
-      scope.chunks += result.chunks
+      scope.current = r.label
+      const chunksBefore = scope.chunks
+      const result = await withAiScopeTx(scope.orgId, tx => r.run(tx, {
+        total: (n) => {
+          scope.total += n
+        },
+        item: (chunks) => {
+          scope.items++
+          scope.chunks += chunks
+        }
+      }))
+      scope.chunks = chunksBefore + result.chunks
     }
+    scope.current = null
     scope.state = 'done'
   } catch (err) {
     scope.state = 'error'
@@ -140,7 +157,7 @@ export function startAiReindex(orgIds?: (string | null)[]): { started: boolean, 
   const done = (async () => {
     try {
       const scopes = orgIds ?? await listAiOrgScopes()
-      status.scopes = scopes.map(orgId => ({ orgId, state: 'pending' as const, chunks: 0 }))
+      status.scopes = scopes.map(orgId => ({ orgId, state: 'pending' as const, chunks: 0, items: 0, total: 0, current: null }))
       for (const scope of status.scopes) await reindexScope(scope)
     } catch (err) {
       console.error('[ai] reindex run failed:', err)

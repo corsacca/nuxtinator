@@ -465,7 +465,11 @@ onBeforeUnmount(() => {
               class="size-4"
               :class="{ 'animate-spin': reindexing }"
             />
-            <span v-if="reindexing">Rebuilding…</span>
+            <span v-if="reindexing">
+              Rebuilding{{ reindex.scopes[0]?.current ? ` ${reindex.scopes[0].current}` : '' }}…
+              {{ reindex.scopes[0]?.items ?? 0 }} of {{ reindex.scopes[0]?.total ?? 0 }} items,
+              {{ reindex.scopes[0]?.chunks ?? 0 }} chunks
+            </span>
             <span v-else>
               Rebuild finished — {{ reindex.scopes.reduce((n, s) => n + s.chunks, 0) }} chunks
               <span

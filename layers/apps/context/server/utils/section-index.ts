@@ -15,7 +15,8 @@ import {
   vectorSql,
   cosineDistance,
   resolveEmbeddingModel,
-  type AiReindexer
+  type AiReindexer,
+  type AiReindexProgress
 } from '#ai/server'
 import type { SectionRow } from './section-helpers'
 
@@ -87,7 +88,7 @@ export async function indexSection(
 }
 
 // Every section of a portfolio (or of every portfolio in scope with no id).
-export async function reindexSections(tx: Tx, portfolioId?: string): Promise<{ chunks: number }> {
+export async function reindexSections(tx: Tx, portfolioId?: string, progress?: AiReindexProgress): Promise<{ chunks: number }> {
   let q = tx
     .selectFrom('context_sections as s')
     .leftJoin('context_section_definitions as d', join => join
@@ -96,11 +97,13 @@ export async function reindexSections(tx: Tx, portfolioId?: string): Promise<{ c
     .select(['s.id', 's.portfolio_id', 's.section_key', 's.content', 'd.title'])
   if (portfolioId) q = q.where('s.portfolio_id', '=', portfolioId)
   const rows = await q.execute()
+  progress?.total(rows.length)
   let chunks = 0
   for (const row of rows) {
     const result = await indexSection(tx, row, row.title ?? row.section_key)
     if (result.state === 'stale') throw createError({ statusCode: 502, statusMessage: result.error ?? 'Embedding failed' })
     chunks += result.chunks
+    progress?.item(result.chunks)
   }
   return { chunks }
 }
@@ -163,9 +166,9 @@ export const CONTEXT_REINDEXER: AiReindexer = {
   key: CONTEXT_REINDEXER_KEY,
   label: 'Context — portfolio sections',
   currentModels: tx => sectionIndexModels(tx as Tx),
-  run: async (tx) => {
+  run: async (tx, progress) => {
     // Nothing to do when no model resolves: leave the index as it is.
     if (!(await resolveEmbeddingModel(tx))) return { chunks: 0 }
-    return await reindexSections(tx as Tx)
+    return await reindexSections(tx as Tx, undefined, progress)
   }
 }
