@@ -11,6 +11,7 @@
 // ping per card, only a daily summary.
 
 import type { Transaction } from 'kysely'
+import { sql } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { createNotification } from '#core/server/utils/notifications'
 import { getSetting } from '#core/server/utils/settings-store'
@@ -39,7 +40,30 @@ export function resolveFeedbackNotifyRecipientIds(
   return sanitizeNotifyUserIds(projectPostMeta?.notify_user_ids)
 }
 
+// A card's notification link. Core's notification rows carry no entity id, so
+// the link doubles as the key for marking a card's notices read.
+export function feedbackCardLink(cardId: string): string {
+  return `/feedback?card=${cardId}`
+}
+
+// Mark the user's unread notices about a card read, when they open or change it.
+export async function markCardNotificationsRead(
+  tx: Transaction<Database>,
+  userId: string,
+  cardId: string
+): Promise<void> {
+  await tx
+    .updateTable('notifications')
+    .set({ read_at: sql<Date>`now()` })
+    .where('user_id', '=', userId)
+    .where('app_id', '=', 'feedback')
+    .where('link', '=', feedbackCardLink(cardId))
+    .where('read_at', 'is', null)
+    .execute()
+}
+
 export interface NewFeedbackNotice {
+  cardId: string
   cardTitle: string
   projectName: string | null
   subType: 'bug' | 'idea'
@@ -70,7 +94,7 @@ export async function notifyNewFeedbackCard(
     appId: 'feedback',
     title: `New ${label}: ${notice.cardTitle}`,
     body: notice.projectName ? `In ${notice.projectName}` : null,
-    link: '/feedback',
+    link: feedbackCardLink(notice.cardId),
     actorId: notice.actorId,
     email: 'digest' as const
   })))

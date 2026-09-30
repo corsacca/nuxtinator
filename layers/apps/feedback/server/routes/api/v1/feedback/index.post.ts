@@ -259,6 +259,7 @@ export default defineEventHandler(async (event) => {
       // card. Writes in this txn so a card and its notices commit together;
       // core's daily digest sweep turns these into one email per recipient.
       await notifyNewFeedbackCard(tx, {
+        cardId: card.id,
         cardTitle: notificationTitle,
         projectName: project?.name ?? null,
         subType: sub,
