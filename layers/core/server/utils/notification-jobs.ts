@@ -29,6 +29,7 @@ import type { Database } from '#core/server/database/schema'
 import {
   sendImmediateNotificationEmail,
   sendNotificationDigestEmail,
+  type DigestOrgGroup,
   type NotificationEmailRow
 } from '#core/server/utils/notification-email'
 
@@ -44,13 +45,19 @@ function isTenancyMode(): boolean {
   }
 }
 
+interface OrgScope {
+  id: string
+  name: string
+  slug: string
+}
+
 // The set of org scopes a job must visit. `[null]` in single mode (no GUC);
 // one entry per org in multi mode.
-async function listOrgScopes(): Promise<(string | null)[]> {
+async function listOrgScopes(): Promise<(OrgScope | null)[]> {
   if (!isTenancyMode()) return [null]
   // Raw SQL — `orgs` is a tenancy-only table not in core's Kysely schema.
-  const res = await sql<{ id: string }>`select id from orgs`.execute(db)
-  return res.rows.map(r => r.id)
+  const res = await sql<OrgScope>`select id, name, slug from orgs`.execute(db)
+  return res.rows
 }
 
 async function withScopeTx<T>(
@@ -104,7 +111,7 @@ async function selectPending(
 ): Promise<NotificationEmailRow[]> {
   let qb = tx
     .selectFrom('notifications')
-    .select(['id', 'user_id', 'title', 'body', 'link'])
+    .select(['id', 'user_id', 'app_id', 'title', 'body', 'link'])
     .where('email_mode', '=', mode)
     .where('emailed_at', 'is', null)
     .where('read_at', 'is', null)
@@ -126,7 +133,8 @@ async function stampEmailed(orgId: string | null, ids: string[]): Promise<void> 
 
 export async function runImmediateSweep(): Promise<void> {
   await withAdvisoryLock(IMMEDIATE_LOCK_KEY, 'immediate', async () => {
-    for (const orgId of await listOrgScopes()) {
+    for (const org of await listOrgScopes()) {
+      const orgId = org?.id ?? null
       let rows: NotificationEmailRow[] = []
       await withScopeTx(orgId, async (tx) => {
         rows = await selectPending(tx, 'immediate', 200)
@@ -143,27 +151,35 @@ export async function runImmediateSweep(): Promise<void> {
 
 export async function runDigest(): Promise<void> {
   await withAdvisoryLock(DIGEST_LOCK_KEY, 'digest', async () => {
-    // One digest email per user, aggregated across all of that user's orgs.
-    const perUser = new Map<string, NotificationEmailRow[]>()
+    // One digest email per user, aggregated across all of that user's orgs
+    // and grouped by org inside the email.
+    const perUser = new Map<string, DigestOrgGroup[]>()
     const idsByOrg = new Map<string | null, string[]>()
 
-    for (const orgId of await listOrgScopes()) {
+    for (const org of await listOrgScopes()) {
+      const orgId = org?.id ?? null
       await withScopeTx(orgId, async (tx) => {
         const rows = await selectPending(tx, 'digest')
         const ids = idsByOrg.get(orgId) ?? []
+        const byUser = new Map<string, NotificationEmailRow[]>()
         for (const row of rows) {
-          const list = perUser.get(row.user_id) ?? []
+          const list = byUser.get(row.user_id) ?? []
           list.push(row)
-          perUser.set(row.user_id, list)
+          byUser.set(row.user_id, list)
           ids.push(row.id)
+        }
+        for (const [userId, userRows] of byUser.entries()) {
+          const groups = perUser.get(userId) ?? []
+          groups.push({ org: org ? { name: org.name, slug: org.slug } : null, rows: userRows })
+          perUser.set(userId, groups)
         }
         if (ids.length > 0) idsByOrg.set(orgId, ids)
       })
     }
 
     let sent = 0
-    for (const [userId, rows] of perUser.entries()) {
-      await sendNotificationDigestEmail(userId, rows)
+    for (const [userId, groups] of perUser.entries()) {
+      await sendNotificationDigestEmail(userId, groups)
       sent++
     }
     for (const [orgId, ids] of idsByOrg.entries()) {
@@ -176,8 +192,8 @@ export async function runDigest(): Promise<void> {
 export async function runRetention(): Promise<void> {
   await withAdvisoryLock(RETENTION_LOCK_KEY, 'retention', async () => {
     const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000)
-    for (const orgId of await listOrgScopes()) {
-      await withScopeTx(orgId, async (tx) => {
+    for (const org of await listOrgScopes()) {
+      await withScopeTx(org?.id ?? null, async (tx) => {
         await tx
           .deleteFrom('notifications')
           .where('created_at', '<', cutoff)
