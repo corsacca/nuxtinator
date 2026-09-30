@@ -1,5 +1,6 @@
 // GET /api/helpinator/conversations/:id — one transcript, read-only, with the
-// pages the bot read and the searches it ran for each reply.
+// pages the bot read, the searches it ran and the pages they surfaced for each
+// reply.
 import { withOrgPermission } from '#tenant/server'
 import { helpinatorAdminConversation, helpinatorGetConversationOr404 } from '../../../../utils/helpinator-admin'
 import { helpinatorListMessages } from '../../../../utils/helpinator-conversations'
@@ -17,7 +18,8 @@ export default defineEventHandler(async (event) => {
         model: m.model,
         created_at: m.created_at,
         pages_loaded: m.pages_loaded ?? [],
-        searches: m.searches ?? []
+        searches: m.searches ?? [],
+        search_hits: m.search_hits ?? []
       }))
     }
   })

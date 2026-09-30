@@ -78,10 +78,12 @@ describe('library search', () => {
     const both = await seedWidget(sql, { orgId: org.id, libraryIds: [docs.id, blog.id] })
     await resetAiFake()
     await primeAiFake({ text: 'ok' })
-    await sendTurn(both.id, 'tell me about zebra stripes')
+    const turn = await sendTurn(both.id, 'tell me about zebra stripes')
     const call2 = (await getAiFakeLog()).find(c => c.kind === 'complete')!
     expect(hitsPart(call2)).toContain('Zebras')
     expect(hitsPart(call2)).toContain(`page:${zebraPage.id}`)
+    const [row] = await sql`SELECT search_hits FROM helpinator_messages WHERE id = ${turn.assistantMessage.id}`
+    expect(row!.search_hits).toContainEqual({ ref: `page:${zebraPage.id}`, title: 'Zebras', url: `${site.origin}/blog/zebras` })
   })
 
   it('load_page reads a page ref from a listed library and refuses one from an unlisted library', async () => {
@@ -101,7 +103,7 @@ describe('library search', () => {
     expect(call.toolResults[0]!.result).toContain(`Source: ${site.origin}/docs/anvils`)
     expect(call.toolResults[1]!.result).toMatch(/unknown page/)
     const [row] = await sql`SELECT pages_loaded FROM helpinator_messages WHERE id = ${turn.assistantMessage.id}`
-    expect(row!.pages_loaded).toEqual([{ ref: `page:${anvils.id}`, title: 'Anvils' }])
+    expect(row!.pages_loaded).toEqual([{ ref: `page:${anvils.id}`, title: 'Anvils', url: `${site.origin}/docs/anvils` }])
   })
 
   it('mixes website pages and portfolio sections, and the website default lists its pages in the prompt', async () => {

@@ -166,6 +166,7 @@ export default defineEventHandler(async (event) => {
         content: reply,
         pagesLoaded: bot.pagesLoaded,
         searches: bot.searches,
+        searchHits: bot.searchHits,
         model: result.model
       })
 

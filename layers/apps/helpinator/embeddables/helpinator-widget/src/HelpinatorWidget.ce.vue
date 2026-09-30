@@ -374,6 +374,8 @@ async function handoff() {
  *   --helpinator-bg            panel background        --helpinator-text   panel text
  *   --helpinator-muted         secondary text          --helpinator-border borders
  *   --helpinator-bot-bubble    assistant bubble bg     --helpinator-font   font stack
+ *   --helpinator-user-bubble   visitor bubble bg (default: primary, darkened so it
+ *                              stays distinct from the header when scrolled under it)
  *   --helpinator-radius        corner radius           --helpinator-z-index
  *   --helpinator-offset-x / --helpinator-offset-y     distance from the corner
  *   --helpinator-width / --helpinator-height          panel size
@@ -392,6 +394,7 @@ async function handoff() {
   --hp-muted: var(--helpinator-muted, #71717a);
   --hp-border: var(--helpinator-border, #e4e4e7);
   --hp-bot-bubble: var(--helpinator-bot-bubble, #f4f4f5);
+  --hp-user-bubble: var(--helpinator-user-bubble, color-mix(in oklab, var(--hp-primary) 82%, black));
   --hp-radius: var(--helpinator-radius, 14px);
   position: fixed;
   bottom: var(--helpinator-offset-y, 20px);
@@ -484,7 +487,7 @@ svg {
   overflow-wrap: anywhere;
 }
 .hp-user .hp-bubble {
-  background: var(--hp-primary);
+  background: var(--hp-user-bubble);
   color: var(--hp-on-primary);
   white-space: pre-wrap;
   border-bottom-right-radius: 4px;

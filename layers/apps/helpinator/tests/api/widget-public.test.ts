@@ -96,7 +96,7 @@ describe('public widget API', () => {
   it('auto-searches every visitor message and injects the hits as a second, non-cached system part', async () => {
     const { widget } = await setup()
     await primeAiFake({ text: 'ok' })
-    await sendTurn(widget.id, 'opening hours')
+    const turn = await sendTurn(widget.id, 'opening hours')
     const call = (await getAiFakeLog()).find(c => c.kind === 'complete')!
     const parts = call.system as Array<{ text: string, cache?: boolean }>
     expect(parts).toHaveLength(2)
@@ -105,6 +105,9 @@ describe('public widget API', () => {
     expect(parts[1]!.text).toContain('Search hits')
     expect(parts[1]!.text).toContain(`section:${widget.libraryId}:faq`)
     expect(call.tools).toEqual(['search', 'load_page'])
+    // The hits are logged on the reply so the transcript can show them.
+    const [row] = await sql`SELECT search_hits FROM helpinator_messages WHERE id = ${turn.assistantMessage.id}`
+    expect(row!.search_hits).toContainEqual({ ref: `section:${widget.libraryId}:faq`, title: 'Title faq' })
   })
 
   it('streams a turn as server-sent events', async () => {

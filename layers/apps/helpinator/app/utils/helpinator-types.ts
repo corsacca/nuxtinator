@@ -112,8 +112,9 @@ export interface HelpinatorTranscriptMessage {
   content: string
   model: string | null
   created_at: string
-  pages_loaded: { ref: string, title: string }[]
+  pages_loaded: { ref: string, title: string, url?: string }[]
   searches: string[]
+  search_hits: { ref: string, title: string, url?: string }[]
 }
 
 export function helpinatorErrorMessage(err: unknown): string {

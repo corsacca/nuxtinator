@@ -342,9 +342,10 @@ async function togglePreview() {
             </div>
             <p class="text-xs text-(--ui-text-muted)">
               Also available: <code>--helpinator-bg</code>, <code>--helpinator-text</code>, <code>--helpinator-muted</code>,
-              <code>--helpinator-border</code>, <code>--helpinator-bot-bubble</code>, <code>--helpinator-width</code>,
-              <code>--helpinator-height</code>, <code>--helpinator-z-index</code>, and <code>::part()</code> selectors
-              (<code>launcher</code>, <code>panel</code>, <code>header</code>, <code>message</code>, <code>composer</code>).
+              <code>--helpinator-border</code>, <code>--helpinator-bot-bubble</code>, <code>--helpinator-user-bubble</code>,
+              <code>--helpinator-width</code>, <code>--helpinator-height</code>, <code>--helpinator-z-index</code>, and <code>::part()</code> selectors
+              (<code>launcher</code>, <code>panel</code>, <code>header</code>, <code>message</code>, <code>user-message</code>,
+              <code>bot-message</code>, <code>composer</code>, <code>send</code>, <code>form</code>, <code>banner</code>).
             </p>
           </div>
           <p v-if="previewOn" class="text-xs text-(--ui-text-muted)">

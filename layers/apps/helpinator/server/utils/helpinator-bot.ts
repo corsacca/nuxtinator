@@ -22,7 +22,7 @@ import type { Database } from '#core/server/database/schema'
 import { isAiConfigured, resolveFeatureModel, type AiMessage, type AiTextPart, type AiTool, type AiToolHandler } from '#ai/server'
 import type { HelpinatorLibraryRow } from './helpinator-libraries'
 import { helpinatorSearch, helpinatorPageRef, helpinatorSectionRef, HELPINATOR_SEARCH_HITS, type HelpinatorSearchHit } from './helpinator-search'
-import type { HelpinatorPageLoaded } from '../database/schema'
+import type { HelpinatorPageLoaded, HelpinatorSearchHitLogged } from '../database/schema'
 
 type Tx = Transaction<Database>
 
@@ -71,6 +71,8 @@ export interface HelpinatorBot {
   pagesLoaded: HelpinatorPageLoaded[]
   // Search queries the model ran this turn (not the auto-search).
   searches: string[]
+  // Pages every search this turn surfaced (auto-search first), one per ref.
+  searchHits: HelpinatorSearchHitLogged[]
   // Human label for a tool call, for the widget's progress line.
   describeToolCall: (name: string, input: Record<string, unknown>) => string | null
 }
@@ -136,7 +138,7 @@ async function resolveRef(
   tx: Tx,
   ref: string,
   libraries: Map<string, HelpinatorLibraryRow>
-): Promise<{ ref: string, title: string, body: string } | null> {
+): Promise<{ ref: string, title: string, url?: string, body: string } | null> {
   const page = /^page:([0-9a-f-]{36})$/i.exec(ref)
   if (page) {
     const websiteIds = [...libraries.values()].filter(l => l.kind === 'website').map(l => l.id)
@@ -148,7 +150,7 @@ async function resolveRef(
       .where('library_id', 'in', websiteIds)
       .executeTakeFirst()
     if (!row) return null
-    return { ref: helpinatorPageRef(row.id), title: row.title || row.url, body: `Source: ${row.url}\n\n${cap(row.content)}` }
+    return { ref: helpinatorPageRef(row.id), title: row.title || row.url, url: row.url, body: `Source: ${row.url}\n\n${cap(row.content)}` }
   }
   const section = /^section:([0-9a-f-]{36}):([a-z0-9][a-z0-9_-]{0,199})$/i.exec(ref)
   if (section) {
@@ -198,6 +200,12 @@ export async function helpinatorBuildBot(
   const defaultLibrary = (opts.defaultLibraryId && libraries.get(opts.defaultLibraryId)) || opts.libraries[0]!
   const pagesLoaded: HelpinatorPageLoaded[] = []
   const searches: string[] = []
+  const searchHits: HelpinatorSearchHitLogged[] = []
+  const logHits = (hits: HelpinatorSearchHit[]) => {
+    for (const h of hits) {
+      if (!searchHits.some(x => x.ref === h.ref)) searchHits.push(h.url ? { ref: h.ref, title: h.title, url: h.url } : { ref: h.ref, title: h.title })
+    }
+  }
 
   // The default library's index, plus the preloaded default section when it
   // is a portfolio.
@@ -255,6 +263,7 @@ export async function helpinatorBuildBot(
     } catch (err) {
       console.error('[helpinator] auto-search failed:', (err as Error)?.message ?? err)
     }
+    logHits(hits)
     system.push({ type: 'text', text: `## Search hits for the visitor's latest message\n${renderHits(hits)}` })
   }
 
@@ -269,6 +278,7 @@ export async function helpinatorBuildBot(
       searches.push(query.slice(0, 200))
       try {
         const hits = await helpinatorSearch(tx, { libraries: opts.libraries, query, limit: HELPINATOR_SEARCH_HITS })
+        logHits(hits)
         return `## Search hits for "${query}"\n${renderHits(hits)}`
       } catch (err) {
         return `Error: search is unavailable right now (${(err as { statusMessage?: string })?.statusMessage ?? 'embedding failed'}).`
@@ -283,7 +293,7 @@ export async function helpinatorBuildBot(
       if (!page) return `Error: unknown page '${ref}'. Use a ref from the index or from search hits.`
       if (pagesLoaded.some(p => p.ref === page.ref)) return `Page '${ref}' is already loaded.`
       loads++
-      pagesLoaded.push({ ref: page.ref, title: page.title })
+      pagesLoaded.push(page.url ? { ref: page.ref, title: page.title, url: page.url } : { ref: page.ref, title: page.title })
       return page.body ? `### ${page.title}\n\n${page.body}` : `Page '${ref}' has no content yet.`
     }
     return `Error: unknown tool '${name}'.`
@@ -296,7 +306,7 @@ export async function helpinatorBuildBot(
     return ref ? 'a page' : null
   }
 
-  return { system, tools: [HELPINATOR_SEARCH_TOOL, HELPINATOR_LOAD_PAGE_TOOL], onToolCall, pagesLoaded, searches, describeToolCall }
+  return { system, tools: [HELPINATOR_SEARCH_TOOL, HELPINATOR_LOAD_PAGE_TOOL], onToolCall, pagesLoaded, searches, searchHits, describeToolCall }
 }
 
 export function helpinatorHistoryToMessages(messages: { role: 'user' | 'assistant', content: string }[]): AiMessage[] {

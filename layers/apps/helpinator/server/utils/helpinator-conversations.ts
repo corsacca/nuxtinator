@@ -3,7 +3,7 @@
 import { sql, type Selectable, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { helpinatorInbox } from '#helpinator/inbox'
-import type { HelpinatorHandoffKind, HelpinatorPageLoaded } from '../database/schema'
+import type { HelpinatorHandoffKind, HelpinatorPageLoaded, HelpinatorSearchHitLogged } from '../database/schema'
 import { helpinatorSameBinding, type HelpinatorWidgetRow } from './helpinator-widgets'
 import { helpinatorCurrentScope } from './helpinator-guards'
 
@@ -73,6 +73,7 @@ export async function helpinatorInsertMessage(tx: Tx, data: {
   content: string
   pagesLoaded?: HelpinatorPageLoaded[]
   searches?: string[]
+  searchHits?: HelpinatorSearchHitLogged[]
   model?: string | null
 }): Promise<HelpinatorMessageRow> {
   const row = await tx
@@ -83,6 +84,7 @@ export async function helpinatorInsertMessage(tx: Tx, data: {
       content: data.content,
       pages_loaded: sql`${JSON.stringify(data.pagesLoaded ?? [])}::text::jsonb`,
       searches: sql`${JSON.stringify(data.searches ?? [])}::text::jsonb`,
+      search_hits: sql`${JSON.stringify(data.searchHits ?? [])}::text::jsonb`,
       model: data.model ?? null,
       // clock_timestamp, not now(): both turns of an exchange are inserted in
       // one transaction and must still sort in order.

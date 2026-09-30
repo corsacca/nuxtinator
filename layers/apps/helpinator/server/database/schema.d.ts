@@ -113,11 +113,16 @@ export interface HelpinatorConversationsTable {
 }
 
 // What the bot read for a reply: `ref` is the load_page ref (page:<id> or
-// section:<library>:<key>), `title` the human label.
+// section:<library>:<key>), `title` the human label, `url` a website page's
+// address (absent for portfolio sections).
 export interface HelpinatorPageLoaded {
   ref: string
   title: string
+  url?: string
 }
+
+// A page search surfaced for a reply; same shape as a loaded page.
+export type HelpinatorSearchHitLogged = HelpinatorPageLoaded
 
 export interface HelpinatorMessagesTable {
   id: Generated<string>
@@ -126,6 +131,7 @@ export interface HelpinatorMessagesTable {
   content: string
   pages_loaded: ColumnType<HelpinatorPageLoaded[], HelpinatorPageLoaded[] | string | undefined, HelpinatorPageLoaded[] | string>
   searches: ColumnType<string[], string[] | string | undefined, string[] | string>
+  search_hits: ColumnType<HelpinatorSearchHitLogged[], HelpinatorSearchHitLogged[] | string | undefined, HelpinatorSearchHitLogged[] | string>
   model: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }

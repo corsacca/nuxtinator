@@ -26,6 +26,11 @@ function when(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 }
 
+// Hits the bot also loaded already show under "pages read".
+function unreadHits(m: HelpinatorTranscriptMessage) {
+  return m.search_hits.filter(h => !m.pages_loaded.some(p => p.ref === h.ref))
+}
+
 function inboxLink(inboxId: string, reply = false): string {
   return pathTo(`/inbox/${inboxId}${reply ? '?reply=1' : ''}`)
 }
@@ -81,17 +86,31 @@ async function elevate() {
                     {{ q }}
                   </UBadge>
                 </div>
-                <div v-if="m.pages_loaded.length" class="mt-2 flex flex-wrap items-center gap-1">
+                <div v-if="m.pages_loaded.length" class="mt-2 flex flex-wrap items-center gap-1" title="Pages read in full">
                   <UIcon name="i-lucide-book-open" class="size-3.5 text-(--ui-text-dimmed)" />
-                  <UBadge
+                  <component
+                    :is="p.url ? 'a' : 'span'"
                     v-for="p in m.pages_loaded"
                     :key="p.ref"
-                    color="neutral"
-                    variant="outline"
-                    size="sm"
+                    v-bind="p.url ? { href: p.url, target: '_blank', rel: 'noopener noreferrer' } : {}"
                   >
-                    {{ p.title }}
-                  </UBadge>
+                    <UBadge color="neutral" variant="outline" size="sm">
+                      {{ p.title }}
+                    </UBadge>
+                  </component>
+                </div>
+                <div v-if="unreadHits(m).length" class="mt-2 flex flex-wrap items-center gap-1" title="Search hits the reply could draw on">
+                  <UIcon name="i-lucide-file-search" class="size-3.5 text-(--ui-text-dimmed)" />
+                  <component
+                    :is="h.url ? 'a' : 'span'"
+                    v-for="h in unreadHits(m)"
+                    :key="h.ref"
+                    v-bind="h.url ? { href: h.url, target: '_blank', rel: 'noopener noreferrer' } : {}"
+                  >
+                    <UBadge color="neutral" variant="soft" size="sm" class="text-(--ui-text-muted)">
+                      {{ h.title }}
+                    </UBadge>
+                  </component>
                 </div>
               </template>
               <p class="mt-1 text-[11px] opacity-60">
