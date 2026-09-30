@@ -6,15 +6,20 @@ definePageMeta({ middleware: 'auth' })
 
 const pathTo = useHelpinatorPath()
 const { data: status } = useHelpinatorStatus()
-const { data: widgets } = useFetch<{ id: string, name: string }[]>('/api/helpinator/widgets', { default: () => [] })
+const route = useRoute()
+// Shares the sidebar's fetch (same key) — no second request.
+const { data: widgets } = useFetch<{ id: string, name: string }[]>('/api/helpinator/widgets', {
+  key: 'helpinator-sidebar-widgets',
+  default: () => []
+})
 
-const widgetId = ref<string>('all')
+// The channel comes from the sidebar, via `?widget=<id>`.
+const widgetId = computed(() => typeof route.query.widget === 'string' ? route.query.widget : 'all')
 const state = ref<'all' | 'handed_off' | 'with_email' | 'bot_only'>('all')
 
-const widgetItems = computed(() => [
-  { label: 'All widgets', value: 'all' },
-  ...(widgets.value ?? []).map((w: { id: string, name: string }) => ({ label: w.name, value: w.id }))
-])
+const title = computed(() => widgetId.value === 'all'
+  ? 'All conversations'
+  : widgets.value?.find((w: { id: string, name: string }) => w.id === widgetId.value)?.name ?? 'Conversations')
 const stateItems = [
   { label: 'All conversations', value: 'all' },
   { label: 'Sent to inbox', value: 'handed_off' },
@@ -71,81 +76,70 @@ function pagePath(url: string | null): string {
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto space-y-6">
-    <div class="flex flex-wrap items-center gap-3">
-      <h1 class="text-2xl font-semibold flex-1">
-        Help conversations
-      </h1>
-      <USelect v-model="widgetId" :items="widgetItems" class="w-48" />
-      <USelect v-model="state" :items="stateItems" class="w-48" />
-      <UButton
-        v-if="status?.canManage"
-        :to="pathTo('/helpinator/widgets')"
-        icon="i-lucide-app-window"
-        variant="outline"
-        color="neutral"
-      >
-        Widgets
-      </UButton>
-    </div>
+  <HelpinatorShell :title="title">
+    <template #actions>
+      <USelect v-model="state" :items="stateItems" size="sm" class="w-44" />
+    </template>
 
-    <UAlert
-      v-if="status && !status.aiConfigured"
-      color="warning"
-      variant="subtle"
-      icon="i-lucide-triangle-alert"
-      title="AI isn't configured"
-      description="Widgets show an 'unavailable' message until an OpenRouter key and a model are set up in the AI settings."
-    />
+    <div class="max-w-5xl mx-auto space-y-6">
+      <UAlert
+        v-if="status && !status.aiConfigured"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="AI isn't configured"
+        description="Widgets show an 'unavailable' message until an OpenRouter key and a model are set up in the AI settings."
+      />
 
-    <div v-if="!loading && rows.length === 0" class="text-center py-16 text-(--ui-text-muted)">
-      <UIcon name="i-lucide-messages-square" class="size-10 mb-3" />
-      <p>No conversations yet.</p>
-      <p v-if="status?.canManage" class="text-sm mt-1">
-        Create a widget and embed it on a site to get started.
-        <NuxtLink :to="pathTo('/helpinator/widgets')" class="text-(--ui-primary) underline">
-          Manage widgets
-        </NuxtLink>
-      </p>
-    </div>
+      <div v-if="!loading && rows.length === 0" class="text-center py-16 text-(--ui-text-muted)">
+        <UIcon name="i-lucide-messages-square" class="size-10 mb-3" />
+        <p>No conversations yet.</p>
+        <p v-if="status?.canManage" class="text-sm mt-1">
+          Create a widget and embed it on a site to get started.
+          <NuxtLink :to="pathTo('/helpinator/widgets')" class="text-(--ui-primary) underline">
+            Manage widgets
+          </NuxtLink>
+        </p>
+      </div>
 
-    <ul v-else class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-lg overflow-hidden">
-      <li v-for="c in rows" :key="c.id">
-        <NuxtLink
-          :to="pathTo(`/helpinator/conversations/${c.id}`)"
-          class="flex gap-4 px-4 py-3 hover:bg-(--ui-bg-elevated) transition-colors"
-        >
-          <div class="flex-1 min-w-0">
-            <p class="font-medium truncate">
-              {{ c.first_question || '(no messages)' }}
-            </p>
-            <p class="text-sm text-(--ui-text-muted) truncate">
-              {{ c.widget_name }}<span v-if="c.page_url"> · {{ pagePath(c.page_url) }}</span>
-              <span v-if="c.visitor_email"> · {{ c.visitor_email }}</span>
-            </p>
-          </div>
-          <div class="flex flex-col items-end gap-1 shrink-0">
-            <span class="text-xs text-(--ui-text-muted)">{{ when(c.last_message_at) }}</span>
-            <div class="flex gap-1">
-              <UBadge v-if="c.inbox_conversation_id" color="success" variant="subtle" size="sm">
-                {{ c.handoff_kind === 'staff' ? 'Elevated' : 'Sent to inbox' }}
-              </UBadge>
-              <UBadge v-else-if="c.visitor_email" color="info" variant="subtle" size="sm">
-                Email
-              </UBadge>
-              <UBadge color="neutral" variant="subtle" size="sm">
-                {{ c.visitor_message_count }} {{ c.visitor_message_count === 1 ? 'message' : 'messages' }}
-              </UBadge>
+      <ul v-else class="divide-y divide-(--ui-border) border border-(--ui-border) rounded-lg overflow-hidden">
+        <li v-for="c in rows" :key="c.id">
+          <NuxtLink
+            :to="pathTo(`/helpinator/conversations/${c.id}`)"
+            class="flex gap-4 px-4 py-3 hover:bg-(--ui-bg-elevated) transition-colors"
+          >
+            <div class="flex-1 min-w-0">
+              <p class="font-medium truncate">
+                {{ c.first_question || '(no messages)' }}
+              </p>
+              <p class="text-sm text-(--ui-text-muted) truncate">
+                {{ c.widget_name }}<span v-if="c.page_url"> · {{ pagePath(c.page_url) }}</span>
+                <span v-if="c.visitor_email"> · {{ c.visitor_email }}</span>
+              </p>
             </div>
-          </div>
-        </NuxtLink>
-      </li>
-    </ul>
+            <div class="flex flex-col items-end gap-1 shrink-0">
+              <span class="text-xs text-(--ui-text-muted)">{{ when(c.last_message_at) }}</span>
+              <div class="flex gap-1">
+                <UBadge v-if="c.inbox_conversation_id" color="success" variant="subtle" size="sm">
+                  {{ c.handoff_kind === 'staff' ? 'Elevated' : 'Sent to inbox' }}
+                </UBadge>
+                <UBadge v-else-if="c.visitor_email" color="info" variant="subtle" size="sm">
+                  Email
+                </UBadge>
+                <UBadge color="neutral" variant="subtle" size="sm">
+                  {{ c.visitor_message_count }} {{ c.visitor_message_count === 1 ? 'message' : 'messages' }}
+                </UBadge>
+              </div>
+            </div>
+          </NuxtLink>
+        </li>
+      </ul>
 
-    <div v-if="hasMore" class="flex justify-center">
-      <UButton variant="outline" color="neutral" :loading="loading" @click="load(false)">
-        Load more
-      </UButton>
+      <div v-if="hasMore" class="flex justify-center">
+        <UButton variant="outline" color="neutral" :loading="loading" @click="load(false)">
+          Load more
+        </UButton>
+      </div>
     </div>
-  </div>
+  </HelpinatorShell>
 </template>

@@ -91,6 +91,7 @@ async function save() {
       : await $fetch<HelpinatorWidget>(`/api/helpinator/widgets/${saved.value!.id}`, { method: 'PUT', body })
     fill(w)
     previewKey.value++
+    refreshNuxtData('helpinator-sidebar-widgets') // name / enabled show in the sidebar
     toast.add({ title: 'Widget saved', color: 'success' })
     if (isNew.value) await navigateTo(pathTo(`/helpinator/widgets/${w.id}`), { replace: true })
   } catch (err) {
@@ -103,6 +104,7 @@ async function save() {
 async function remove() {
   try {
     await $fetch(`/api/helpinator/widgets/${saved.value!.id}`, { method: 'DELETE' })
+    refreshNuxtData('helpinator-sidebar-widgets')
     await navigateTo(pathTo('/helpinator/widgets'))
   } catch (err) {
     toast.add({ title: 'Could not delete', description: helpinatorErrorMessage(err), color: 'error' })
@@ -165,191 +167,189 @@ async function togglePreview() {
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto space-y-6">
-    <UButton
-      :to="pathTo('/helpinator/widgets')"
-      icon="i-lucide-arrow-left"
-      variant="ghost"
-      color="neutral"
-      size="sm"
-    >
-      All widgets
-    </UButton>
+  <HelpinatorShell :title="isNew ? 'New widget' : form.name || 'Widget'">
+    <div class="max-w-5xl mx-auto space-y-6">
+      <UButton
+        :to="pathTo('/helpinator/widgets')"
+        icon="i-lucide-arrow-left"
+        variant="ghost"
+        color="neutral"
+        size="sm"
+      >
+        All widgets
+      </UButton>
 
-    <h1 class="text-2xl font-semibold">
-      {{ isNew ? 'New widget' : form.name || 'Widget' }}
-    </h1>
-
-    <UAlert
-      v-if="status && !status.canManage"
-      color="warning"
-      variant="subtle"
-      title="You don't have permission to manage widgets."
-    />
-
-    <form v-else class="grid gap-6 lg:grid-cols-2" @submit.prevent="save">
-      <UCard>
-        <template #header>
-          <h2 class="font-semibold">
-            Setup
-          </h2>
-        </template>
-        <div class="space-y-4">
-          <UFormField label="Name" help="For your own reference, e.g. the site's name." required>
-            <UInput v-model="form.name" class="w-full" />
-          </UFormField>
-
-          <UFormField
-            label="Portfolio"
-            help="The ONLY content this widget's assistant can read. Treat everything in it as public — visitors can get the assistant to reveal any of it."
-            required
-          >
-            <USelect v-model="form.portfolio_id" :items="portfolioItems" placeholder="Choose a portfolio" class="w-full" />
-          </UFormField>
-          <UAlert
-            v-if="rebinding"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            title="Changing the portfolio ends this widget's open conversations."
-          />
-
-          <UFormField label="Default section" help="Loaded into every chat — pick the one most relevant to this site. The assistant can read the rest of the portfolio when needed." required>
-            <USelect v-model="form.default_section_key" :items="sectionItems" :disabled="!form.portfolio_id" class="w-full" />
-          </UFormField>
-
-          <UFormField label="Allowed sites" help="One origin per line, e.g. https://www.example.org. Localhost works in development without being listed.">
-            <UTextarea v-model="form.originsText" :rows="3" class="w-full font-mono text-xs" placeholder="https://www.example.org" />
-          </UFormField>
-
-          <UFormField label="Daily message limit" help="Visitor messages per 24 hours across all conversations on this widget. Protects your AI budget.">
-            <UInput v-model.number="form.daily_message_cap" type="number" :min="1" class="w-40" />
-          </UFormField>
-
-          <UFormField label="Extra instructions" help="Optional guidance for the assistant (tone, what to avoid, when to suggest a human). Visitors can extract this text, so don't put secrets here.">
-            <UTextarea v-model="form.extra_instructions" :rows="4" :maxlength="4000" class="w-full" />
-          </UFormField>
-
-          <USwitch v-model="form.enabled" label="Widget is live" />
-        </div>
-      </UCard>
-
-      <UCard>
-        <template #header>
-          <h2 class="font-semibold">
-            Appearance
-          </h2>
-        </template>
-        <div class="space-y-4">
-          <UFormField label="Colour">
-            <div class="flex items-center gap-2">
-              <input v-model="form.appearance.primary_color" type="color" class="h-9 w-12 rounded border border-(--ui-border) bg-transparent">
-              <UInput v-model="form.appearance.primary_color" class="w-32 font-mono" />
-            </div>
-          </UFormField>
-          <UFormField label="Position">
-            <USelect v-model="form.appearance.position" :items="positionItems" class="w-48" />
-          </UFormField>
-          <UFormField label="Title">
-            <UInput v-model="form.appearance.title" :maxlength="80" class="w-full" />
-          </UFormField>
-          <UFormField label="Greeting" help="The first message visitors see. Markdown allowed.">
-            <UTextarea v-model="form.appearance.greeting" :rows="2" :maxlength="500" class="w-full" />
-          </UFormField>
-          <UFormField label="Input placeholder">
-            <UInput v-model="form.appearance.placeholder" :maxlength="120" class="w-full" />
-          </UFormField>
-          <UFormField label="'Still need help?' prompt" help="Shown when a visitor asks for a person.">
-            <UTextarea v-model="form.appearance.handoff_prompt" :rows="2" :maxlength="500" class="w-full" />
-          </UFormField>
-        </div>
-      </UCard>
-
-      <div class="lg:col-span-2 flex items-center gap-2">
-        <UButton type="submit" :loading="saving">
-          {{ isNew ? 'Create widget' : 'Save' }}
-        </UButton>
-        <div class="flex-1" />
-        <UButton v-if="!isNew" color="error" variant="ghost" icon="i-lucide-trash-2" @click="confirmDelete = true">
-          Delete
-        </UButton>
-      </div>
-    </form>
-
-    <UCard v-if="saved">
-      <template #header>
-        <div class="flex items-center gap-2">
-          <h2 class="font-semibold flex-1">
-            Add it to your site
-          </h2>
-          <UButton size="sm" variant="outline" color="neutral" :icon="previewOn ? 'i-lucide-eye-off' : 'i-lucide-eye'" @click="togglePreview">
-            {{ previewOn ? 'Hide preview' : 'Preview on this page' }}
-          </UButton>
-        </div>
-      </template>
-      <div class="space-y-5">
-        <div class="space-y-2">
-          <p class="text-sm">
-            1. Paste this just before <code>&lt;/body&gt;</code> on every page that should show the help chat.
-          </p>
-          <div class="relative">
-            <pre class="text-xs bg-(--ui-bg-elevated) rounded-lg p-3 pr-12 overflow-x-auto whitespace-pre-wrap break-all">{{ snippet }}</pre>
-            <UButton class="absolute top-2 right-2" size="xs" variant="ghost" color="neutral" icon="i-lucide-copy" aria-label="Copy snippet" @click="copy(snippet)" />
-          </div>
-        </div>
-        <div class="space-y-2">
-          <p class="text-sm">
-            2. Make sure the site's address is in <strong>Allowed sites</strong> above
-            <span v-if="!saved.allowed_origins.length" class="text-(--ui-warning)">(none yet — the widget won't load anywhere else)</span>.
-          </p>
-        </div>
-        <div class="space-y-2">
-          <p class="text-sm">
-            3. Optional: match the site's look. These CSS variables override the colour set above on that site only.
-          </p>
-          <div class="relative">
-            <pre class="text-xs bg-(--ui-bg-elevated) rounded-lg p-3 pr-12 overflow-x-auto">{{ cssSnippet }}</pre>
-            <UButton class="absolute top-2 right-2" size="xs" variant="ghost" color="neutral" icon="i-lucide-copy" aria-label="Copy CSS" @click="copy(cssSnippet)" />
-          </div>
-          <p class="text-xs text-(--ui-text-muted)">
-            Also available: <code>--helpinator-bg</code>, <code>--helpinator-text</code>, <code>--helpinator-muted</code>,
-            <code>--helpinator-border</code>, <code>--helpinator-bot-bubble</code>, <code>--helpinator-width</code>,
-            <code>--helpinator-height</code>, <code>--helpinator-z-index</code>, and <code>::part()</code> selectors
-            (<code>launcher</code>, <code>panel</code>, <code>header</code>, <code>message</code>, <code>composer</code>).
-          </p>
-        </div>
-        <p v-if="previewOn" class="text-xs text-(--ui-text-muted)">
-          The preview is the saved widget, running on this page (bottom corner). Conversations you have here show up in the log.
-        </p>
-      </div>
-    </UCard>
-
-    <ClientOnly>
-      <helpinator-widget
-        v-if="previewOn && saved"
-        :key="previewKey"
-        :host="hostOrigin"
-        :widget-id="saved.id"
+      <UAlert
+        v-if="status && !status.canManage"
+        color="warning"
+        variant="subtle"
+        title="You don't have permission to manage widgets."
       />
-    </ClientOnly>
 
-    <UModal v-model:open="confirmDelete" title="Delete this widget?">
-      <template #body>
-        <p class="text-sm">
-          The widget stops working on every site, and its whole conversation log is deleted. Conversations
-          already sent to the inbox stay there.
-        </p>
-      </template>
-      <template #footer>
-        <div class="flex justify-end gap-2 w-full">
-          <UButton variant="ghost" color="neutral" @click="confirmDelete = false">
-            Cancel
+      <form v-else class="grid gap-6 lg:grid-cols-2" @submit.prevent="save">
+        <UCard>
+          <template #header>
+            <h2 class="font-semibold">
+              Setup
+            </h2>
+          </template>
+          <div class="space-y-4">
+            <UFormField label="Name" help="For your own reference, e.g. the site's name." required>
+              <UInput v-model="form.name" class="w-full" />
+            </UFormField>
+
+            <UFormField
+              label="Portfolio"
+              help="The ONLY content this widget's assistant can read. Treat everything in it as public — visitors can get the assistant to reveal any of it."
+              required
+            >
+              <USelect v-model="form.portfolio_id" :items="portfolioItems" placeholder="Choose a portfolio" class="w-full" />
+            </UFormField>
+            <UAlert
+              v-if="rebinding"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              title="Changing the portfolio ends this widget's open conversations."
+            />
+
+            <UFormField label="Default section" help="Loaded into every chat — pick the one most relevant to this site. The assistant can read the rest of the portfolio when needed." required>
+              <USelect v-model="form.default_section_key" :items="sectionItems" :disabled="!form.portfolio_id" class="w-full" />
+            </UFormField>
+
+            <UFormField label="Allowed sites" help="One origin per line, e.g. https://www.example.org. Localhost works in development without being listed.">
+              <UTextarea v-model="form.originsText" :rows="3" class="w-full font-mono text-xs" placeholder="https://www.example.org" />
+            </UFormField>
+
+            <UFormField label="Daily message limit" help="Visitor messages per 24 hours across all conversations on this widget. Protects your AI budget.">
+              <UInput v-model.number="form.daily_message_cap" type="number" :min="1" class="w-40" />
+            </UFormField>
+
+            <UFormField label="Extra instructions" help="Optional guidance for the assistant (tone, what to avoid, when to suggest a human). Visitors can extract this text, so don't put secrets here.">
+              <UTextarea v-model="form.extra_instructions" :rows="4" :maxlength="4000" class="w-full" />
+            </UFormField>
+
+            <USwitch v-model="form.enabled" label="Widget is live" />
+          </div>
+        </UCard>
+
+        <UCard>
+          <template #header>
+            <h2 class="font-semibold">
+              Appearance
+            </h2>
+          </template>
+          <div class="space-y-4">
+            <UFormField label="Colour">
+              <div class="flex items-center gap-2">
+                <input v-model="form.appearance.primary_color" type="color" class="h-9 w-12 rounded border border-(--ui-border) bg-transparent">
+                <UInput v-model="form.appearance.primary_color" class="w-32 font-mono" />
+              </div>
+            </UFormField>
+            <UFormField label="Position">
+              <USelect v-model="form.appearance.position" :items="positionItems" class="w-48" />
+            </UFormField>
+            <UFormField label="Title">
+              <UInput v-model="form.appearance.title" :maxlength="80" class="w-full" />
+            </UFormField>
+            <UFormField label="Greeting" help="The first message visitors see. Markdown allowed.">
+              <UTextarea v-model="form.appearance.greeting" :rows="2" :maxlength="500" class="w-full" />
+            </UFormField>
+            <UFormField label="Input placeholder">
+              <UInput v-model="form.appearance.placeholder" :maxlength="120" class="w-full" />
+            </UFormField>
+            <UFormField label="'Still need help?' prompt" help="Shown when a visitor asks for a person.">
+              <UTextarea v-model="form.appearance.handoff_prompt" :rows="2" :maxlength="500" class="w-full" />
+            </UFormField>
+          </div>
+        </UCard>
+
+        <div class="lg:col-span-2 flex items-center gap-2">
+          <UButton type="submit" :loading="saving">
+            {{ isNew ? 'Create widget' : 'Save' }}
           </UButton>
-          <UButton color="error" @click="remove">
-            Delete widget
+          <div class="flex-1" />
+          <UButton v-if="!isNew" color="error" variant="ghost" icon="i-lucide-trash-2" @click="confirmDelete = true">
+            Delete
           </UButton>
         </div>
-      </template>
-    </UModal>
-  </div>
+      </form>
+
+      <UCard v-if="saved">
+        <template #header>
+          <div class="flex items-center gap-2">
+            <h2 class="font-semibold flex-1">
+              Add it to your site
+            </h2>
+            <UButton size="sm" variant="outline" color="neutral" :icon="previewOn ? 'i-lucide-eye-off' : 'i-lucide-eye'" @click="togglePreview">
+              {{ previewOn ? 'Hide preview' : 'Preview on this page' }}
+            </UButton>
+          </div>
+        </template>
+        <div class="space-y-5">
+          <div class="space-y-2">
+            <p class="text-sm">
+              1. Paste this just before <code>&lt;/body&gt;</code> on every page that should show the help chat.
+            </p>
+            <div class="relative">
+              <pre class="text-xs bg-(--ui-bg-elevated) rounded-lg p-3 pr-12 overflow-x-auto whitespace-pre-wrap break-all">{{ snippet }}</pre>
+              <UButton class="absolute top-2 right-2" size="xs" variant="ghost" color="neutral" icon="i-lucide-copy" aria-label="Copy snippet" @click="copy(snippet)" />
+            </div>
+          </div>
+          <div class="space-y-2">
+            <p class="text-sm">
+              2. Make sure the site's address is in <strong>Allowed sites</strong> above
+              <span v-if="!saved.allowed_origins.length" class="text-(--ui-warning)">(none yet — the widget won't load anywhere else)</span>.
+            </p>
+          </div>
+          <div class="space-y-2">
+            <p class="text-sm">
+              3. Optional: match the site's look. These CSS variables override the colour set above on that site only.
+            </p>
+            <div class="relative">
+              <pre class="text-xs bg-(--ui-bg-elevated) rounded-lg p-3 pr-12 overflow-x-auto">{{ cssSnippet }}</pre>
+              <UButton class="absolute top-2 right-2" size="xs" variant="ghost" color="neutral" icon="i-lucide-copy" aria-label="Copy CSS" @click="copy(cssSnippet)" />
+            </div>
+            <p class="text-xs text-(--ui-text-muted)">
+              Also available: <code>--helpinator-bg</code>, <code>--helpinator-text</code>, <code>--helpinator-muted</code>,
+              <code>--helpinator-border</code>, <code>--helpinator-bot-bubble</code>, <code>--helpinator-width</code>,
+              <code>--helpinator-height</code>, <code>--helpinator-z-index</code>, and <code>::part()</code> selectors
+              (<code>launcher</code>, <code>panel</code>, <code>header</code>, <code>message</code>, <code>composer</code>).
+            </p>
+          </div>
+          <p v-if="previewOn" class="text-xs text-(--ui-text-muted)">
+            The preview is the saved widget, running on this page (bottom corner). Conversations you have here show up in the log.
+          </p>
+        </div>
+      </UCard>
+
+      <ClientOnly>
+        <helpinator-widget
+          v-if="previewOn && saved"
+          :key="previewKey"
+          :host="hostOrigin"
+          :widget-id="saved.id"
+        />
+      </ClientOnly>
+
+      <UModal v-model:open="confirmDelete" title="Delete this widget?">
+        <template #body>
+          <p class="text-sm">
+            The widget stops working on every site, and its whole conversation log is deleted. Conversations
+            already sent to the inbox stay there.
+          </p>
+        </template>
+        <template #footer>
+          <div class="flex justify-end gap-2 w-full">
+            <UButton variant="ghost" color="neutral" @click="confirmDelete = false">
+              Cancel
+            </UButton>
+            <UButton color="error" @click="remove">
+              Delete widget
+            </UButton>
+          </div>
+        </template>
+      </UModal>
+    </div>
+  </HelpinatorShell>
 </template>
