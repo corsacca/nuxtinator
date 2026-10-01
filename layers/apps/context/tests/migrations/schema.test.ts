@@ -44,6 +44,7 @@ describe('schema migrations', () => {
     expect(byName.get('key')).toBe('NO')
     expect(byName.get('title')).toBe('YES')
     expect(byName.get('created_by')).toBe('YES')
+    expect(byName.get('is_custom')).toBe('NO')
   })
 
   it('context_section_versions has a source column', async () => {

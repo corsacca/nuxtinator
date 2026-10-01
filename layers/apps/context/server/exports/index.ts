@@ -1,9 +1,5 @@
-// The `#context/server` alias surface: the context layer's public server API.
-// Semver-covered — removing an export or changing a signature here is a major
-// version bump. Every function takes the caller's tenant transaction.
-//
-// Lives in server/exports/ (not server/utils/) so nitro's auto-import scan
-// doesn't double-import these names.
+// `#context/server`: the layer's semver-covered public server API. Kept out of
+// server/utils/ so nitro's auto-import scan doesn't double-import these names.
 
 import type { createSuggestionSet, decideSuggestions, pendingForSection } from '../utils/suggestions'
 
@@ -17,7 +13,7 @@ export {
 export type { PortfolioRow, CreatePortfolioInput } from '../utils/portfolio-helpers'
 
 export { getPortfolioSections } from '../utils/section-settings'
-export type { MergedSection } from '../utils/section-settings'
+export type { MergedSection, PortfolioRef } from '../utils/section-settings'
 
 export { loadSection, saveSectionContent, addSection } from '../utils/section-helpers'
 export type { SectionRow, SaveSectionOptions, AddSectionInput } from '../utils/section-helpers'

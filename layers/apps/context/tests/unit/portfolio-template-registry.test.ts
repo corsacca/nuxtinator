@@ -37,6 +37,24 @@ describe('portfolio template registry', () => {
     expect(getRegisteredPortfolioTemplate('unit-keys')).toBeNull()
   })
 
+  it('rejects a missing sections array or malformed section fields', () => {
+    const bad = (sections: unknown) => () => registerPortfolioTemplate({ id: 'unit-bad-fields', label: 'Unit', sections } as never)
+    expect(bad(undefined)).toThrow(/sections array/)
+    expect(bad([{ ...section('a'), order: undefined }])).toThrow(/numeric order/)
+    expect(bad([{ ...section('a'), staleness_days: 0 }])).toThrow(/staleness_days/)
+    expect(bad([{ ...section('a'), title: '' }])).toThrow(/title/)
+    expect(bad([{ ...section('a'), description: undefined }])).toThrow(/description/)
+    expect(getRegisteredPortfolioTemplate('unit-bad-fields')).toBeNull()
+  })
+
+  it('returns frozen templates, including the default', () => {
+    const def = getRegisteredPortfolioTemplate(null)!
+    expect(Object.isFrozen(def)).toBe(true)
+    expect(Object.isFrozen(def.sections)).toBe(true)
+    expect(Object.isFrozen(def.sections[0])).toBe(true)
+    expect(Object.isFrozen(CONTEXT_SECTIONS[0])).toBe(false)
+  })
+
   it('rejects a malformed template id or a missing label', () => {
     expect(() => registerPortfolioTemplate({ id: 'Bad Id', label: 'Unit', sections: [] })).toThrow(/template id/)
     expect(() => registerPortfolioTemplate({ id: 'unit-no-label', label: '', sections: [] })).toThrow(/label/)

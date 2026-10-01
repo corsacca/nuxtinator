@@ -149,10 +149,10 @@ async function notifyReviewers(
     .executeTakeFirst()
   const portfolio = await tx
     .selectFrom('context_portfolios')
-    .select('name')
+    .select(['id', 'name', 'template'])
     .where('id', '=', input.portfolioId)
     .executeTakeFirstOrThrow()
-  const titles = new Map((await getPortfolioSections(tx, input.portfolioId)).map(s => [s.key, s.title]))
+  const titles = new Map((await getPortfolioSections(tx, portfolio)).map(s => [s.key, s.title]))
   const sections = input.keys.map(k => titles.get(k) ?? k).join(', ')
 
   await createNotification(tx, reviewers.map(userId => ({
@@ -255,8 +255,14 @@ export async function listSuggestionSets(
 
 async function sectionTitles(tx: Tx, portfolioIds: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>()
-  for (const id of portfolioIds) {
-    for (const s of await getPortfolioSections(tx, id)) out.set(`${id}:${s.key}`, s.title)
+  if (portfolioIds.length === 0) return out
+  const portfolios = await tx
+    .selectFrom('context_portfolios')
+    .select(['id', 'template'])
+    .where('id', 'in', portfolioIds)
+    .execute()
+  for (const p of portfolios) {
+    for (const s of await getPortfolioSections(tx, p)) out.set(`${p.id}:${s.key}`, s.title)
   }
   return out
 }

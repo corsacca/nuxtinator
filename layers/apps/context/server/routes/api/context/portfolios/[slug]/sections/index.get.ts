@@ -2,7 +2,7 @@
 // plus the portfolio template's sections it doesn't have (`missing_builtins`).
 import { withOrgPermission } from '#tenant/server'
 import { getPortfolioBySlugOr404 } from '../../../../../../utils/portfolio-helpers'
-import { getPortfolioSections, getPortfolioTemplateSections } from '../../../../../../utils/section-settings'
+import { getPortfolioSections, getTemplateSections } from '../../../../../../utils/section-settings'
 import { pendingCountsByKey } from '../../../../../../utils/suggestions'
 
 export default defineEventHandler(async (event) => {
@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
     const slug = getRouterParam(event, 'slug') ?? ''
     const p = await getPortfolioBySlugOr404(tx, slug)
 
-    const defs = await getPortfolioSections(tx, p.id)
+    const defs = await getPortfolioSections(tx, p)
     const rows = await tx
       .selectFrom('context_sections as s')
       .leftJoin('users as u', 'u.id', 's.last_edited_by')
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
     const byKey = new Map(rows.map(r => [r.section_key as string, r]))
     const pending = await pendingCountsByKey(tx, p.id)
     const present = new Set(defs.map(d => d.key))
-    const builtins = await getPortfolioTemplateSections(tx, p.id)
+    const builtins = getTemplateSections(p.template)
 
     return {
       portfolio_id: p.id,

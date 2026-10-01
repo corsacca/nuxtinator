@@ -1,10 +1,9 @@
-// Registers a portfolio template for the layer's test suite. A no-op outside
-// VITEST, so no other process ever sees this template. Imports through
+// Nitro plugin added to the test build by global-setup.ts; imports through
 // `#context/server` the way a consumer layer does.
+import { defineNitroPlugin } from 'nitropack/runtime'
 import { registerPortfolioTemplate } from '#context/server'
 
 export default defineNitroPlugin(() => {
-  if (!process.env.VITEST) return
   registerPortfolioTemplate({
     id: 'test-context-template',
     label: 'Test template',

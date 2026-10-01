@@ -76,14 +76,6 @@ export const CONTEXT_SECTIONS: readonly SectionDef[] = [
   }
 ] as const
 
-export const CONTEXT_SECTION_KEYS: ReadonlySet<string> = new Set(
-  CONTEXT_SECTIONS.map(s => s.key)
-)
-
-export function getDefaultSection(key: string): SectionDef | null {
-  return CONTEXT_SECTIONS.find(s => s.key === key) ?? null
-}
-
 export function slugifySectionTitle(title: string): string {
   return title
     .toLowerCase()

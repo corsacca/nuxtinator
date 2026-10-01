@@ -23,13 +23,13 @@ Every function takes the caller's tenant transaction (`tx` from
 | Sections | `getPortfolioSections`, `loadSection`, `saveSectionContent`, `addSection` |
 | Suggestions | `createSuggestionSet`, `decideSuggestions`, `withdrawSuggestions`, `pendingForSection` |
 | Templates | `registerPortfolioTemplate`, `getRegisteredPortfolioTemplate`, `getRegisteredPortfolioTemplates`, `DEFAULT_PORTFOLIO_TEMPLATE_ID` |
-| Types | `PortfolioRow`, `CreatePortfolioInput`, `SectionDef`, `MergedSection`, `SectionRow`, `SaveSectionOptions`, `AddSectionInput`, `PortfolioTemplate`, `NewSuggestion`, `SuggestionViewer`, `CreatedSuggestionSet`, `DecidedSuggestion`, `SectionPendingSuggestions`, `ContextSectionVersionSource`, `ContextSuggestionStatus` |
+| Types | `PortfolioRow`, `CreatePortfolioInput`, `SectionDef`, `MergedSection`, `PortfolioRef`, `SectionRow`, `SaveSectionOptions`, `AddSectionInput`, `PortfolioTemplate`, `NewSuggestion`, `SuggestionViewer`, `CreatedSuggestionSet`, `DecidedSuggestion`, `SectionPendingSuggestions`, `ContextSectionVersionSource`, `ContextSuggestionStatus` |
 
 ```ts
 import { getPortfolioBySlugOr404, getPortfolioSections, saveSectionContent } from '#context/server'
 
 const portfolio = await getPortfolioBySlugOr404(tx, slug)
-const sections = await getPortfolioSections(tx, portfolio.id)
+const sections = await getPortfolioSections(tx, portfolio) // a portfolio row or its id
 await saveSectionContent(tx, portfolio.id, 'team', markdown, userId, { source: 'user' })
 ```
 
@@ -59,7 +59,9 @@ export default defineNitroPlugin(() => {
 
 Create a portfolio from it with `template` on `POST /api/context/portfolios`,
 the `create_portfolio` MCP tool, or `createPortfolio(tx, { name, template }, userId)`.
-`builtin_sections` then picks from that template's keys.
+`builtin_sections` then picks from that template's keys. `GET /api/context/templates`
+lists the registered templates and their sections; the web app's new-portfolio
+dialog offers a template picker when more than one is registered.
 
 - The database stores only the portfolio's template id
   (`context_portfolios.template`, null for `default`) and each section's key.
@@ -70,7 +72,9 @@ the `create_portfolio` MCP tool, or `createPortfolio(tx, { name, template }, use
   Registering a duplicate id, or a template that repeats a section key, throws
   at boot.
 - Custom sections work the same in every portfolio; a custom key may not reuse
-  one of the portfolio's own template keys.
+  one of the portfolio's own template keys. A section created as custom is
+  flagged as such (`context_section_definitions.is_custom`) and stays custom
+  even if a later template version declares the same key.
 - A key the template no longer declares (or a portfolio whose template is no
   longer registered) reads as an orphan: listed under its key, as a custom
   section, until it is removed.

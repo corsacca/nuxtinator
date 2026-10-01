@@ -129,12 +129,12 @@ export const listSectionsTool = defineMcpTool({
       return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const exists = await tx
           .selectFrom('context_portfolios')
-          .select('id')
+          .select(['id', 'template'])
           .where('id', '=', input.portfolio_id)
           .executeTakeFirst()
         if (!exists) throw createError({ statusCode: 404, statusMessage: 'Portfolio not found.' })
 
-        const defs = await getPortfolioSections(tx, input.portfolio_id)
+        const defs = await getPortfolioSections(tx, exists)
         const rows = await tx
           .selectFrom('context_sections')
           .select(['section_key', 'content', 'last_edited_at'])
@@ -174,7 +174,7 @@ export const readSectionTool = defineMcpTool({
       return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const exists = await tx
           .selectFrom('context_portfolios')
-          .select('id')
+          .select(['id', 'template'])
           .where('id', '=', input.portfolio_id)
           .executeTakeFirst()
         if (!exists) throw createError({ statusCode: 404, statusMessage: 'Portfolio not found.' })
@@ -183,7 +183,7 @@ export const readSectionTool = defineMcpTool({
         if (!known) throw createError({ statusCode: 404, statusMessage: `Unknown section key: ${input.section_key}` })
 
         const section = await loadSection(tx, input.portfolio_id, input.section_key)
-        const defs = await getPortfolioSections(tx, input.portfolio_id)
+        const defs = await getPortfolioSections(tx, exists)
         const def = defs.find(d => d.key === input.section_key)
         const result = {
           key: input.section_key,
@@ -251,12 +251,12 @@ export const readOrganizationTool = defineMcpTool({
       return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
         const p = await tx
           .selectFrom('context_portfolios')
-          .select(['id', 'slug', 'name'])
+          .select(['id', 'slug', 'name', 'template'])
           .where('id', '=', input.portfolio_id)
           .executeTakeFirst()
         if (!p) throw createError({ statusCode: 404, statusMessage: 'Portfolio not found.' })
 
-        const defs = await getPortfolioSections(tx, input.portfolio_id)
+        const defs = await getPortfolioSections(tx, p)
         const rows = await tx
           .selectFrom('context_sections')
           .select(['section_key', 'content', 'last_edited_at'])
@@ -527,7 +527,7 @@ export const createSectionTool = defineMcpTool({
 
         const section = await addSection(
           tx,
-          input.portfolio_id,
+          portfolio,
           input.key !== undefined
             ? { key: input.key }
             : { title: input.title!, description: input.description, order: input.order },
@@ -589,7 +589,7 @@ export const bulkCreateSectionsTool = defineMcpTool({
           try {
             const section = await addSection(
               tx,
-              input.portfolio_id,
+              portfolio,
               entry.key !== undefined
                 ? { key: entry.key }
                 : { title: entry.title!, description: entry.description, order: entry.order },

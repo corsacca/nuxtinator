@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Checklist of catalog sections. Controlled: the parent owns `selected` and
+// Checklist of template sections. Controlled: the parent owns `selected` and
 // applies each `toggle`, so a parent that confirms before removing can leave
 // the box unchanged when the user cancels.
 interface ChecklistSection {

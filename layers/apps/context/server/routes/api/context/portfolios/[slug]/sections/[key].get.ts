@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     if (!known) throw createError({ statusCode: 404, statusMessage: `Unknown section key: ${key}` })
 
     const section = await loadSection(tx, p.id, key)
-    const defs = await getPortfolioSections(tx, p.id)
+    const defs = await getPortfolioSections(tx, p)
     const def = defs.find(d => d.key === key)
 
     return {
