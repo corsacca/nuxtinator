@@ -1,5 +1,6 @@
 // POST /api/context/portfolios — create a portfolio in the active org.
-// `builtin_sections` picks which catalog sections it starts with (omitted =
+// `template` picks a registered portfolio template (omitted = the default);
+// `builtin_sections` picks which of its sections it starts with (omitted =
 // all, [] = none).
 import { z } from 'zod'
 import { withOrgPermission } from '#tenant/server'
@@ -10,6 +11,7 @@ const Body = z.object({
   name: z.string().trim().min(1).max(120),
   color: z.string().trim().max(20).nullable().optional(),
   slug: z.string().trim().regex(/^[a-z][a-z0-9-]{1,39}$/).optional(),
+  template: z.string().min(1).max(64).optional(),
   builtin_sections: z.array(z.string().min(1).max(64)).max(50).optional()
 })
 

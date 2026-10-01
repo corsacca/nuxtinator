@@ -7,6 +7,8 @@ export interface ContextPortfoliosTable {
   color: string | null
   icon_url: string | null
   order: number | null
+  // Registered portfolio template id; null = the default template.
+  template: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }

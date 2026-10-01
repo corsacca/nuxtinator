@@ -5,8 +5,13 @@
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import type { ContextSectionVersionSource } from '../database/schema'
-import { CONTEXT_SECTION_KEYS, slugifySectionTitle } from './section-catalog'
-import { getPortfolioSections, nextExplicitOrder, type MergedSection } from './section-settings'
+import { slugifySectionTitle } from './section-catalog'
+import {
+  getPortfolioSections,
+  getPortfolioTemplateSections,
+  nextExplicitOrder,
+  type MergedSection
+} from './section-settings'
 
 export const MAX_SECTION_BYTES = 100 * 1024
 
@@ -44,11 +49,9 @@ export async function requireKnownSection(
   }
 }
 
-const BUILTIN_KEY_LIST = [...CONTEXT_SECTION_KEYS].join(', ')
-
-// `{ key }` adds a built-in section from the catalog; `{ title }` creates a
-// custom section keyed by the slugified title. Custom keys may not collide
-// with catalog keys, so the key alone tells the two apart.
+// `{ key }` adds a built-in section from the portfolio's template; `{ title }`
+// creates a custom section keyed by the slugified title. Custom keys may not
+// collide with the template's keys, so the key alone tells the two apart.
 export type AddSectionInput
   = { key: string }
     | { title: string, description?: string, order?: number }
@@ -59,20 +62,21 @@ export async function addSection(
   input: AddSectionInput,
   userId: string
 ): Promise<MergedSection> {
+  const builtinKeys = new Set((await getPortfolioTemplateSections(tx, portfolioId)).map(s => s.key))
   let key: string
   let values: { title?: string, description?: string } = {}
   if ('key' in input) {
-    if (!CONTEXT_SECTION_KEYS.has(input.key)) {
+    if (!builtinKeys.has(input.key)) {
       throw createError({
         statusCode: 400,
-        statusMessage: `"${input.key}" is not a built-in section (built-in keys: ${BUILTIN_KEY_LIST}). Pass a title to create a custom section.`
+        statusMessage: `"${input.key}" is not a built-in section (built-in keys: ${[...builtinKeys].join(', ') || 'none'}). Pass a title to create a custom section.`
       })
     }
     key = input.key
   } else {
     key = slugifySectionTitle(input.title)
     if (!key) throw createError({ statusCode: 400, statusMessage: 'Title must contain at least one alphanumeric character.' })
-    if (CONTEXT_SECTION_KEYS.has(key)) {
+    if (builtinKeys.has(key)) {
       throw createError({ statusCode: 409, statusMessage: `Key "${key}" collides with a built-in section — add the built-in "${key}" instead.` })
     }
     values = { title: input.title, description: input.description }
@@ -113,6 +117,7 @@ export async function deleteSection(
   if (!existing) throw createError({ statusCode: 404, statusMessage: `Unknown section key: ${key}` })
 
   const content = await loadSection(tx, portfolioId, key)
+  const builtins = await getPortfolioTemplateSections(tx, portfolioId)
   await tx
     .deleteFrom('context_section_definitions')
     .where('id', '=', existing.id)
@@ -120,7 +125,7 @@ export async function deleteSection(
 
   return {
     id: existing.id,
-    is_custom: !CONTEXT_SECTION_KEYS.has(key),
+    is_custom: !builtins.some(s => s.key === key),
     content_retained: (content?.content ?? '').trim().length > 0
   }
 }

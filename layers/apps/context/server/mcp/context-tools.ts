@@ -43,6 +43,8 @@ import {
 } from '../utils/suggestions'
 import { CONTEXT_SECTIONS } from '../utils/section-catalog'
 
+// Keys of the default template. A portfolio built from another template has
+// that template's keys; an unknown key's error lists the valid ones.
 const BUILTIN_KEY_LIST = CONTEXT_SECTIONS.map(s => s.key).join(', ')
 
 function asAuditExecutor(tx: unknown): Kysely<CoreDatabase> {
@@ -104,7 +106,7 @@ export const listOrgsTool = defineMcpTool({
 
 export const listPortfoliosTool = defineMcpTool({
   name: 'list_portfolios',
-  description: 'List portfolios in the active organization. Returns portfolio id, slug, name, color, icon_url, created_at, updated_at.',
+  description: 'List portfolios in the active organization. Returns portfolio id, slug, name, color, icon_url, template (null = the default template), created_at, updated_at.',
   scope: 'context.read',
   input: z.object({ org: orgInput }).strict(),
   handler: async (input, ctx) => {
@@ -477,13 +479,14 @@ export const bulkUpdateSectionsTool = defineMcpTool({
 
 export const createPortfolioTool = defineMcpTool({
   name: 'create_portfolio',
-  description: `Create a portfolio in the active organization. The slug is derived from the name unless one is given, and a colliding slug is auto-suffixed (-2, -3) — read the returned slug and id rather than assuming them. \`builtin_sections\` picks which built-in sections the portfolio starts with (omit for all, [] for none; keys: ${BUILTIN_KEY_LIST}). Sections start with no content; write content with update_section.`,
+  description: `Create a portfolio in the active organization. The slug is derived from the name unless one is given, and a colliding slug is auto-suffixed (-2, -3) — read the returned slug and id rather than assuming them. \`template\` picks a registered portfolio template (omit for the default template; an unknown id is rejected with the registered ids). \`builtin_sections\` picks which of the template's sections the portfolio starts with (omit for all, [] for none; default template keys: ${BUILTIN_KEY_LIST}). Sections start with no content; write content with update_section.`,
   scope: 'context.portfolio.create',
   input: z.object({
     org: orgInput,
     name: z.string().trim().min(1).max(120),
     color: z.string().trim().max(20).nullable().optional(),
     slug: z.string().trim().regex(/^[a-z][a-z0-9-]{1,39}$/).optional(),
+    template: z.string().min(1).max(64).optional(),
     builtin_sections: z.array(z.string().min(1).max(64)).max(50).optional()
   }).strict(),
   handler: async (input, ctx) => {
@@ -504,7 +507,7 @@ export const createPortfolioTool = defineMcpTool({
 
 export const createSectionTool = defineMcpTool({
   name: 'create_section',
-  description: `Add a section to a portfolio. Pass \`key\` to add a built-in section from the catalog (keys: ${BUILTIN_KEY_LIST}) — this is also how a deleted built-in is brought back, with its earlier content. Or pass \`title\` (plus optional description/order) to create a custom section; its key is slugified from the title and may not collide with a built-in key. Creates the definition only — write content afterwards with update_section.`,
+  description: `Add a section to a portfolio. Pass \`key\` to add a built-in section from the portfolio's template (default template keys: ${BUILTIN_KEY_LIST}) — this is also how a deleted built-in is brought back, with its earlier content. Or pass \`title\` (plus optional description/order) to create a custom section; its key is slugified from the title and may not collide with a built-in key. Creates the definition only — write content afterwards with update_section.`,
   scope: 'context.section.custom',
   input: z.object({
     org: orgInput,
@@ -558,7 +561,7 @@ function rejectedEntryReason(err: unknown): string | null {
 
 export const bulkCreateSectionsTool = defineMcpTool({
   name: 'bulk_create_sections',
-  description: `Add several sections to a portfolio in one call. Each entry takes what create_section takes: \`key\` for a built-in from the catalog (keys: ${BUILTIN_KEY_LIST}), or \`title\` (plus optional description/order) for a custom section. Entries are applied in the order given and reported one by one — an entry that fails (not a built-in key, key already in the portfolio, title colliding with a built-in) comes back with status "error" and the rest still apply. Creates definitions only — write content afterwards with bulk_update_sections.`,
+  description: `Add several sections to a portfolio in one call. Each entry takes what create_section takes: \`key\` for a built-in from the portfolio's template (default template keys: ${BUILTIN_KEY_LIST}), or \`title\` (plus optional description/order) for a custom section. Entries are applied in the order given and reported one by one — an entry that fails (not a built-in key, key already in the portfolio, title colliding with a built-in) comes back with status "error" and the rest still apply. Creates definitions only — write content afterwards with bulk_update_sections.`,
   scope: 'context.section.custom',
   input: z.object({
     org: orgInput,
