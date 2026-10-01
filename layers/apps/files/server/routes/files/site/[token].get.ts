@@ -40,7 +40,9 @@ export default defineEventHandler(async (event) => {
       }
 
       setHeader(event, 'Content-Type', 'text/html; charset=utf-8')
-      setHeader(event, 'Content-Security-Policy', 'sandbox allow-scripts allow-forms allow-popups allow-modals')
+      // allow-downloads lets ?download=1 links to /files/raw/:token work;
+      // allow-popups-to-escape-sandbox lets target=_blank links open as normal pages.
+      setHeader(event, 'Content-Security-Policy', 'sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox')
       setHeader(event, 'X-Content-Type-Options', 'nosniff')
       setHeader(event, 'Referrer-Policy', 'no-referrer')
       // Saves go live immediately — don't let intermediaries serve stale copies.

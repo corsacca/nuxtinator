@@ -120,6 +120,13 @@ export function useFiles() {
     return `${origin}/files/site/${token}`
   }
 
+  // Embeddable URL for a shared file (redirects to the stored bytes);
+  // `download` serves it as an attachment.
+  function rawUrl(token: string, download = false): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return `${origin}/files/raw/${token}${download ? '?download=1' : ''}`
+  }
+
   // The link to hand out for an item's share token, by kind.
   function shareUrl(item: { kind: FilesItemKind }, token: string): string {
     return item.kind === 'site' ? siteUrl(token) : publicUrl(token)
@@ -128,7 +135,7 @@ export function useFiles() {
   return {
     list, get, createDoc, createSite, update, remove, replaceFile,
     listVersions, restoreVersion, issueLink, revokeLink, search,
-    publicUrl, siteUrl, shareUrl
+    publicUrl, siteUrl, shareUrl, rawUrl
   }
 }
 

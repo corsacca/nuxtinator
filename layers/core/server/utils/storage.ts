@@ -1,4 +1,4 @@
-import { S3Client } from '@bradenmacdonald/s3-lite-client'
+import { S3Client, S3Errors, type S3ResponseOverrideParams } from '@bradenmacdonald/s3-lite-client'
 import { randomBytes } from 'crypto'
 
 // S3 Client instance (will be initialized lazily)
@@ -163,16 +163,36 @@ export async function deleteFromS3(key: string, visibility: 'public' | 'private'
 }
 
 /**
- * Generate a signed URL for accessing a file in private bucket
+ * Generate a signed URL for accessing a file in private bucket.
+ * `responseParams` (e.g. `response-content-disposition`) are signed into the
+ * URL and override the headers S3 sends back for that request.
  */
-export async function generateSignedUrl(key: string, expiresIn: number = SIGNED_URL_EXPIRATION): Promise<string> {
+export async function generateSignedUrl(
+  key: string,
+  expiresIn: number = SIGNED_URL_EXPIRATION,
+  responseParams?: S3ResponseOverrideParams
+): Promise<string> {
   try {
     const client = getS3Client()
-    const url = await client.presignedGetObject(key, { expirySeconds: expiresIn })
+    const url = await client.presignedGetObject(key, { expirySeconds: expiresIn, responseParams })
     return url
   } catch (error: any) {
     console.error('S3 signed URL generation error:', error)
     throw new Error(`Failed to generate signed URL: ${error.message}`)
+  }
+}
+
+/**
+ * Look up an object in the private bucket. Returns null when it doesn't exist.
+ */
+export async function statS3Object(key: string): Promise<{ size: number, contentType: string | null } | null> {
+  const client = getS3Client()
+  try {
+    const stat = await client.statObject(key)
+    return { size: stat.size, contentType: stat.metadata['Content-Type'] ?? null }
+  } catch (error: unknown) {
+    if (error instanceof S3Errors.ServerError && error.statusCode === 404) return null
+    throw error
   }
 }
 
