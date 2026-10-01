@@ -4,6 +4,35 @@ Context portfolios: structured markdown sections that describe an organization
 (or anything else a template defines), edited in the web app, reviewed through
 suggestions, and read by AI clients over MCP.
 
+## Public server API: `#context/server`
+
+`#context/server` is the context layer's public, semver-covered server surface
+for consumer layers. Removing an export or changing a signature in it is a
+breaking change and requires a major version of `@nuxtinator/context`.
+Anything not exported here (other files under `server/utils/`, routes, MCP
+tool internals) is private and may change in any release.
+
+A layer that imports it lists `"@nuxtinator/context": "*"` in its
+`optionalDependencies` and extends the context layer; core ships no fallback.
+Every function takes the caller's tenant transaction (`tx` from
+`defineTenantHandler` / `withOrgPermission`).
+
+| Area | Exports |
+|---|---|
+| Portfolios | `createPortfolio`, `getPortfolioById`, `getPortfolioBySlug`, `getPortfolioBySlugOr404`, `listPortfolios` |
+| Sections | `getPortfolioSections`, `loadSection`, `saveSectionContent`, `addSection` |
+| Suggestions | `createSuggestionSet`, `decideSuggestions`, `withdrawSuggestions`, `pendingForSection` |
+| Templates | `registerPortfolioTemplate`, `getRegisteredPortfolioTemplate`, `getRegisteredPortfolioTemplates`, `DEFAULT_PORTFOLIO_TEMPLATE_ID` |
+| Types | `PortfolioRow`, `CreatePortfolioInput`, `SectionDef`, `MergedSection`, `SectionRow`, `SaveSectionOptions`, `AddSectionInput`, `PortfolioTemplate`, `NewSuggestion`, `SuggestionViewer`, `CreatedSuggestionSet`, `DecidedSuggestion`, `SectionPendingSuggestions`, `ContextSectionVersionSource`, `ContextSuggestionStatus` |
+
+```ts
+import { getPortfolioBySlugOr404, getPortfolioSections, saveSectionContent } from '#context/server'
+
+const portfolio = await getPortfolioBySlugOr404(tx, slug)
+const sections = await getPortfolioSections(tx, portfolio.id)
+await saveSectionContent(tx, portfolio.id, 'team', markdown, userId, { source: 'user' })
+```
+
 ## Portfolio templates
 
 A portfolio template is the code-owned set of sections a portfolio starts with.
@@ -13,6 +42,8 @@ and values, team, …). Another layer adds its own template from a Nitro plugin:
 
 ```ts
 // layers/translate/server/plugins/register-translate-template.ts
+import { registerPortfolioTemplate } from '#context/server'
+
 export default defineNitroPlugin(() => {
   registerPortfolioTemplate({
     id: 'translate',

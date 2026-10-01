@@ -1,6 +1,7 @@
 // Registers a portfolio template for the layer's test suite. A no-op outside
-// VITEST, so no other process ever sees this template.
-import { registerPortfolioTemplate } from '../utils/portfolio-template-registry'
+// VITEST, so no other process ever sees this template. Imports through
+// `#context/server` the way a consumer layer does.
+import { registerPortfolioTemplate } from '#context/server'
 
 export default defineNitroPlugin(() => {
   if (!process.env.VITEST) return
