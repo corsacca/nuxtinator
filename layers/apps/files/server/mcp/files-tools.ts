@@ -8,15 +8,15 @@
 // membership, and sets the `app.current_org` GUC; in single mode it is a
 // plain transaction.
 //
-// Only documents are exposed for create/update — binary upload over MCP is
-// out of scope.
+// Documents and sites are exposed for create/update — binary upload over MCP
+// is out of scope.
 
 import { z } from 'zod'
 import { sql, type Kysely } from 'kysely'
 import { defineMcpTool, mcpError, mcpLog, type McpToolContext } from '#mcp-layer'
 import type { Database as CoreDatabase } from '#core/server/database/schema'
 import { runInOrgTransaction } from '#tenant/server'
-import { loadItem, saveDocContent, MAX_DOC_BYTES } from '../utils/file-helpers'
+import { loadItem, saveDocContent, MAX_DOC_BYTES, MAX_SITE_BYTES } from '../utils/file-helpers'
 
 // The mcp-audit layer types its executor as `Kysely<CoreDatabase>` (core-only
 // schema), while files-layer transactions carry the augmented Database type.
@@ -30,6 +30,14 @@ function asAuditExecutor(tx: unknown): Kysely<CoreDatabase> {
 const orgInput = z.string().min(1).max(64).optional()
   .describe('Org slug to operate in. Defaults to the X-Active-Org header sent by the client.')
 
+// Public URL a shared site is served at. Absolute when NUXT_PUBLIC_SITE_URL
+// is configured, otherwise a root-relative path.
+function siteShareUrl(token: string | null): string | null {
+  if (!token) return null
+  const siteUrl = (useRuntimeConfig().public as { siteUrl?: string }).siteUrl ?? ''
+  return `${siteUrl.replace(/\/$/, '')}/files/site/${token}`
+}
+
 function textResult(text: string, structured?: Record<string, unknown>) {
   return {
     content: [{ type: 'text' as const, text }],
@@ -41,7 +49,7 @@ function textResult(text: string, structured?: Record<string, unknown>) {
 
 export const listFilesTool = defineMcpTool({
   name: 'files_list',
-  description: 'List documents and uploaded files in the active org, newest first.',
+  description: 'List documents, sites, and uploaded files in the active org, newest first.',
   scope: 'files.read',
   input: z.object({
     org: orgInput,
@@ -97,6 +105,29 @@ export const readDocTool = defineMcpTool({
         title: item.title,
         body_md: item.body_md ?? '',
         tags: item.tags
+      })
+    })
+  }
+})
+
+export const readSiteTool = defineMcpTool({
+  name: 'files_read_site',
+  description: 'Read a single site, returning its self-contained HTML and public share URL (null when not shared).',
+  scope: 'files.read',
+  input: z.object({ org: orgInput, id: z.string().uuid() }).strict(),
+  handler: async (input, ctx) => {
+    return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+      const item = await loadItem(tx, input.id)
+      if (!item) throw createError({ statusCode: 404, statusMessage: 'Site not found.' })
+      if (item.kind !== 'site') {
+        throw createError({ statusCode: 400, statusMessage: 'Not a site.' })
+      }
+      return textResult(`Site "${item.title}"`, {
+        id: item.id,
+        title: item.title,
+        html: item.body_md ?? '',
+        tags: item.tags,
+        share_url: siteShareUrl(item.share_token)
       })
     })
   }
@@ -185,9 +216,95 @@ export const updateDocTool = defineMcpTool({
   }
 })
 
+export const createSiteTool = defineMcpTool({
+  name: 'files_create_site',
+  description: 'Create a new site: a self-contained HTML page (inline CSS/JS/images) in the active org. '
+    + 'Set share=true to issue a public link; the page is served in a sandboxed, opaque origin.',
+  scope: 'files.write',
+  input: z.object({
+    org: orgInput,
+    title: z.string().min(1).max(500),
+    html: z.string().max(MAX_SITE_BYTES).optional(),
+    tags: z.array(z.string().min(1).max(64)).max(50).optional(),
+    share: z.boolean().optional()
+  }).strict(),
+  handler: async (input, ctx) => {
+    try {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+        const html = input.html ?? ''
+        if (Buffer.byteLength(html, 'utf8') > MAX_SITE_BYTES) {
+          throw createError({ statusCode: 413, statusMessage: 'Site content exceeds 2MB limit.' })
+        }
+        const tags = [...new Set((input.tags ?? []).map(t => t.trim()).filter(Boolean))]
+        const item = await tx
+          .insertInto('files_items')
+          .values({
+            kind: 'site',
+            title: input.title.trim(),
+            body_md: html,
+            tags,
+            share_token: input.share ? sql<string>`gen_random_uuid()` : null,
+            created_by: ctx.auth.userId,
+            last_edited_by: ctx.auth.userId,
+            last_edited_at: sql<Date>`now()`
+          })
+          .returning(['id', 'share_token'])
+          .executeTakeFirstOrThrow()
+
+        await tx.insertInto('files_versions')
+          .values({ item_id: item.id, title: input.title.trim(), content: html, edited_by: ctx.auth.userId })
+          .execute()
+
+        await mcpLog('CREATE', 'files_items', item.id, ctx, { kind: 'site', shared: !!input.share }, asAuditExecutor(tx))
+        return { id: item.id, share_url: siteShareUrl(item.share_token) }
+      })
+      return textResult(`Created site ${result.id}`, result)
+    } catch (err) {
+      return mcpError(err)
+    }
+  }
+})
+
+export const updateSiteTool = defineMcpTool({
+  name: 'files_update_site',
+  description: 'Replace a site\'s title and/or full HTML. Creates a new version snapshot; '
+    + 'changes go live immediately at its share URL.',
+  scope: 'files.write',
+  input: z.object({
+    org: orgInput,
+    id: z.string().uuid(),
+    title: z.string().min(1).max(500).optional(),
+    html: z.string().max(MAX_SITE_BYTES).optional()
+  }).strict(),
+  handler: async (input, ctx) => {
+    try {
+      const result = await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+        const item = await loadItem(tx, input.id)
+        if (!item) throw createError({ statusCode: 404, statusMessage: 'Site not found.' })
+        if (item.kind !== 'site') {
+          throw createError({ statusCode: 400, statusMessage: 'Not a site.' })
+        }
+        const { versionId } = await saveDocContent(tx, input.id, {
+          title: input.title?.trim() ?? item.title,
+          body_md: input.html ?? item.body_md ?? ''
+        }, ctx.auth.userId)
+
+        await mcpLog('UPDATE', 'files_items', input.id, ctx, { version_id: versionId }, asAuditExecutor(tx))
+        return { id: input.id, version_id: versionId, share_url: siteShareUrl(item.share_token) }
+      })
+      return textResult(`Updated site ${result.id}`, result)
+    } catch (err) {
+      return mcpError(err)
+    }
+  }
+})
+
 export const filesMcpTools = [
   listFilesTool,
   readDocTool,
+  readSiteTool,
   createDocTool,
-  updateDocTool
+  updateDocTool,
+  createSiteTool,
+  updateSiteTool
 ]
