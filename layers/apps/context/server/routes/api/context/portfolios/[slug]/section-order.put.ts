@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Invalid body', data: parsed.error.flatten() })
     }
 
-    const sections = await reorderSections(tx, p.id, parsed.data.keys)
+    const sections = await reorderSections(tx, p, parsed.data.keys)
 
     logUpdate('context_portfolios', p.id, ctx.userId, {
       action: 'reorder_sections', keys: parsed.data.keys

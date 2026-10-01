@@ -7,6 +7,8 @@ export interface ContextPortfoliosTable {
   color: string | null
   icon_url: string | null
   order: number | null
+  // Registered portfolio template id; null = the default template.
+  template: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
@@ -36,8 +38,9 @@ export interface ContextSectionVersionsTable {
 }
 
 // One row per section a portfolio has. A built-in row stores only its key
-// (title/description/order resolve from the catalog); a custom row stores
-// its own. `created_by` is null for rows backfilled by migration.
+// (title/description/order resolve from the portfolio's template unless
+// overridden); a custom row stores its own. `created_by` is null for rows
+// backfilled by migration.
 export interface ContextSectionDefinitionsTable {
   id: Generated<string>
   portfolio_id: string
@@ -45,6 +48,7 @@ export interface ContextSectionDefinitionsTable {
   title: string | null
   description: string | null
   order: number | null
+  is_custom: Generated<boolean>
   created_by: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>

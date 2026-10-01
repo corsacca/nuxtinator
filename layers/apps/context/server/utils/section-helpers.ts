@@ -5,8 +5,15 @@
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import type { ContextSectionVersionSource } from '../database/schema'
-import { CONTEXT_SECTION_KEYS, slugifySectionTitle } from './section-catalog'
-import { getPortfolioSections, nextExplicitOrder, type MergedSection } from './section-settings'
+import { slugifySectionTitle } from './section-catalog'
+import {
+  getPortfolioTemplateSections,
+  mergePortfolioSections,
+  nextExplicitOrder,
+  portfolioIdOf,
+  type MergedSection,
+  type PortfolioRef
+} from './section-settings'
 
 export const MAX_SECTION_BYTES = 100 * 1024
 
@@ -44,38 +51,39 @@ export async function requireKnownSection(
   }
 }
 
-const BUILTIN_KEY_LIST = [...CONTEXT_SECTION_KEYS].join(', ')
-
-// `{ key }` adds a built-in section from the catalog; `{ title }` creates a
-// custom section keyed by the slugified title. Custom keys may not collide
-// with catalog keys, so the key alone tells the two apart.
+// `{ key }` adds a built-in section from the portfolio's template; `{ title }`
+// creates a custom section keyed by the slugified title. Custom keys may not
+// collide with the template's current keys.
 export type AddSectionInput
   = { key: string }
     | { title: string, description?: string, order?: number }
 
 export async function addSection(
   tx: Transaction<Database>,
-  portfolioId: string,
+  portfolio: PortfolioRef,
   input: AddSectionInput,
   userId: string
 ): Promise<MergedSection> {
+  const portfolioId = portfolioIdOf(portfolio)
+  const builtins = await getPortfolioTemplateSections(tx, portfolio)
+  const builtinKeys = new Set(builtins.map(s => s.key))
   let key: string
-  let values: { title?: string, description?: string } = {}
+  let values: { title?: string, description?: string, is_custom?: true } = {}
   if ('key' in input) {
-    if (!CONTEXT_SECTION_KEYS.has(input.key)) {
+    if (!builtinKeys.has(input.key)) {
       throw createError({
         statusCode: 400,
-        statusMessage: `"${input.key}" is not a built-in section (built-in keys: ${BUILTIN_KEY_LIST}). Pass a title to create a custom section.`
+        statusMessage: `"${input.key}" is not a built-in section (built-in keys: ${[...builtinKeys].join(', ') || 'none'}). Pass a title to create a custom section.`
       })
     }
     key = input.key
   } else {
     key = slugifySectionTitle(input.title)
     if (!key) throw createError({ statusCode: 400, statusMessage: 'Title must contain at least one alphanumeric character.' })
-    if (CONTEXT_SECTION_KEYS.has(key)) {
+    if (builtinKeys.has(key)) {
       throw createError({ statusCode: 409, statusMessage: `Key "${key}" collides with a built-in section — add the built-in "${key}" instead.` })
     }
-    values = { title: input.title, description: input.description }
+    values = { title: input.title, description: input.description, is_custom: true }
   }
 
   if (await isKnownSectionKey(tx, portfolioId, key)) {
@@ -85,14 +93,14 @@ export async function addSection(
   // The caller's explicit position, else the end of a portfolio the user has
   // already ordered, else none — the code default places it.
   const order = ('order' in input ? input.order : undefined)
-    ?? await nextExplicitOrder(tx, portfolioId)
+    ?? await nextExplicitOrder(tx, portfolioId, builtins)
 
   await tx
     .insertInto('context_section_definitions')
     .values({ portfolio_id: portfolioId, key, ...values, order, created_by: userId })
     .execute()
 
-  const sections = await getPortfolioSections(tx, portfolioId)
+  const sections = await mergePortfolioSections(tx, portfolioId, builtins)
   return sections.find(s => s.key === key)!
 }
 
@@ -106,7 +114,7 @@ export async function deleteSection(
 ): Promise<{ id: string, is_custom: boolean, content_retained: boolean }> {
   const existing = await tx
     .selectFrom('context_section_definitions')
-    .select('id')
+    .select(['id', 'is_custom'])
     .where('portfolio_id', '=', portfolioId)
     .where('key', '=', key)
     .executeTakeFirst()
@@ -120,7 +128,7 @@ export async function deleteSection(
 
   return {
     id: existing.id,
-    is_custom: !CONTEXT_SECTION_KEYS.has(key),
+    is_custom: existing.is_custom,
     content_retained: (content?.content ?? '').trim().length > 0
   }
 }
@@ -131,10 +139,12 @@ export async function deleteSection(
 // the order by a client working from an old view.
 export async function reorderSections(
   tx: Transaction<Database>,
-  portfolioId: string,
+  portfolio: PortfolioRef,
   keys: string[]
 ): Promise<MergedSection[]> {
-  const current = await getPortfolioSections(tx, portfolioId)
+  const portfolioId = portfolioIdOf(portfolio)
+  const builtins = await getPortfolioTemplateSections(tx, portfolio)
+  const current = await mergePortfolioSections(tx, portfolioId, builtins)
   const currentKeys = new Set(current.map(s => s.key))
   const given = new Set(keys)
 
@@ -163,7 +173,7 @@ export async function reorderSections(
       .execute()
   }
 
-  return await getPortfolioSections(tx, portfolioId)
+  return await mergePortfolioSections(tx, portfolioId, builtins)
 }
 
 export async function loadSection(

@@ -1,6 +1,6 @@
 // PATCH /api/context/portfolios/:slug/sections/:key — update a section
 // definition's title/description/order. Key is immutable once created. On a
-// built-in row the stored values override the catalog defaults.
+// built-in row the stored values override the template defaults.
 import { z } from 'zod'
 import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
       portfolio_id: p.id, key, patch
     })
 
-    const sections = await getPortfolioSections(tx, p.id)
+    const sections = await getPortfolioSections(tx, p)
     return sections.find(s => s.key === key)
   })
 })

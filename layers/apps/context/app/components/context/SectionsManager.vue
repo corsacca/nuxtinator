@@ -3,7 +3,6 @@
 // custom) with reorder and remove actions, rename for custom sections, plus
 // controls to add a missing built-in or a new custom section. `list` off shows
 // only the add controls, for pages that already render the sections themselves.
-import { CONTEXT_SECTIONS } from '../../utils/section-catalog'
 
 const props = withDefaults(defineProps<{ slug: string, list?: boolean }>(), { list: true })
 const emit = defineEmits(['changed'])
@@ -22,13 +21,12 @@ const canManage = computed(() => hasPermission('context.section.custom'))
 
 const { data, refresh } = await useAsyncData(
   () => `context-manage-sections-${props.slug}`,
-  () => $fetch<{ sections: SectionDef[] }, string>(`/api/context/portfolios/${props.slug}/sections`)
+  () => $fetch<{ sections: SectionDef[], missing_builtins: Array<{ key: string, title: string }> }, string>(`/api/context/portfolios/${props.slug}/sections`)
 )
 const sections = computed(() => data.value?.sections ?? [])
-const missingBuiltins = computed(() => {
-  const present = new Set(sections.value.map(s => s.key))
-  return CONTEXT_SECTIONS.filter(s => !present.has(s.key)).map(s => ({ label: s.title, value: s.key }))
-})
+const missingBuiltins = computed(() =>
+  (data.value?.missing_builtins ?? []).map(s => ({ label: s.title, value: s.key }))
+)
 
 // Local copy the reorder controls mutate, so a drag or a move shows
 // immediately and rolls back if the save fails.
