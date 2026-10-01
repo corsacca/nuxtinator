@@ -130,12 +130,15 @@ export default defineEventHandler(async (event) => {
     return
   }
 
-  // Must be logged in — if not, redirect to login page with resume URL.
+  // Must be logged in — if not, redirect to login page with resume URL. The
+  // login page resumes with a client-side navigation, which can't reach this
+  // server route, so it resumes through the /oauth/continue page, which
+  // reloads this URL for real.
+  const url = getRequestURL(event)
+  const self = url.pathname + url.search
   const authUser = getAuthUser(event)
   if (!authUser) {
-    const url = getRequestURL(event)
-    const self = url.pathname + url.search
-    const resumeUrl = `${cfg.loginPath}?redirect=${encodeURIComponent(self)}`
+    const resumeUrl = `${cfg.loginPath}?redirect=${encodeURIComponent(`/oauth/continue?to=${encodeURIComponent(self)}`)}`
     await sendRedirect(event, resumeUrl)
     return
   }
@@ -224,11 +227,18 @@ export default defineEventHandler(async (event) => {
     })
   } catch (err) {
     // The kernel rejects an unresolvable org with a 4xx: the user belongs to
-    // no active org, or to several with nothing selecting one. Report that to
-    // the client as an OAuth error instead of letting it render as an error
-    // page mid-flow. Anything else (a DB fault) propagates.
+    // no active org, or to several with nothing selecting one. The second is
+    // sent to the org picker; the rest are reported to the client as an OAuth
+    // error instead of rendering as an error page mid-flow. Anything else (a
+    // DB fault) propagates.
     const status = (err as { statusCode?: number }).statusCode
     if (typeof status !== 'number' || status < 400 || status >= 500) throw err
+    // 400 = nothing selected an org. Let the user pick one on /oauth/continue,
+    // which sets the active-org cookie this request resolves the org from.
+    if (status === 400) {
+      await sendRedirect(event, `/oauth/continue?pick_org=1&to=${encodeURIComponent(self)}`)
+      return
+    }
     logOauthEvent({
       event: OAUTH_EVENTS.AUTHORIZE_ORG_UNRESOLVED,
       userId: authUser.userId,
@@ -262,7 +272,11 @@ export default defineEventHandler(async (event) => {
   // CSRF plaintext goes in the signed cookie below.
   const pendingRow = { id: pendingRequestId }
 
-  // Signed HttpOnly cookie carries the CSRF plaintext to the consent SSR.
+  // Signed HttpOnly cookie carries the CSRF plaintext to the consent SSR. Lax,
+  // not Strict: a native app or CLI opens this flow from outside the browser,
+  // and Chrome withholds Strict cookies for the whole redirect chain of such a
+  // navigation. Lax is still never sent on a cross-site POST, and the consent
+  // POST checks the token against this cookie.
   const cookieValue = signCookiePayload(
     { rid: pendingRow.id, csrf: csrfPlaintext, exp: Date.now() + cfg.pendingRequestTtl * 1000 },
     cfg.consentCookieSecret
@@ -270,7 +284,7 @@ export default defineEventHandler(async (event) => {
   setCookie(event, `oauth_consent_token_${pendingRow.id}`, cookieValue, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: 'lax',
     path: '/oauth/',
     maxAge: cfg.pendingRequestTtl
   })
