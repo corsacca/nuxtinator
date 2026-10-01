@@ -32,6 +32,7 @@ const onToggle = async (app: OrgApp) => {
   const verb = app.enabled ? 'disable' : 'enable'
   try {
     await $fetch(`/api/o/${orgSlug.value}/apps/${app.appId}/${verb}`, { method: 'POST' })
+    invalidateAppAccess(orgSlug.value)
     await Promise.all([refresh(), refreshRailApps()])
   } catch (err: unknown) {
     toast.add({

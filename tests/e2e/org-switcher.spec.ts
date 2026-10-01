@@ -43,3 +43,21 @@ test('multi-org user: picker shows all orgs; dropdown switches to another', asyn
   await expect(page).toHaveURL(new RegExp(`/@${b!.slug}/?$`), { timeout: 5000 })
   await expect(page.locator('body')).toContainText(b!.name)
 })
+
+test('switching from an app into an org that has it disabled lands on that org\'s home', async ({ page }) => {
+  const { orgs } = await loginIntoMultipleOrgs(page, 2)
+  const [a, b] = orgs
+  const sql = getHostAdminDb()
+  await sql`
+    INSERT INTO org_apps (org_id, app_id, enabled, source)
+    VALUES (${b!.id}, 'messages', false, 'org_admin')
+    ON CONFLICT (org_id, app_id) DO UPDATE SET enabled = false, source = 'org_admin'
+  `
+
+  await page.goto(`/@${a!.slug}/messages`)
+  await expect(page).toHaveURL(new RegExp(`/@${a!.slug}/messages$`))
+
+  await page.getByRole('button', { name: new RegExp(`Active organization: ${a!.name}`, 'i') }).click()
+  await page.locator(`a[href="/@${b!.slug}/messages"]`).first().click()
+  await expect(page).toHaveURL(new RegExp(`/@${b!.slug}/?$`), { timeout: 5000 })
+})
