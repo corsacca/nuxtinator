@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
   const parsed = Body.safeParse(await readBody(event))
   if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'Please enter a valid email address.' })
   return await helpinatorWithWidget(event, async (tx, widget) => {
+    if (!widget.enabled) throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
     const conversation = await helpinatorFindSession(tx, widget.id, helpinatorHashSessionToken(token))
     if (!conversation) throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
     await helpinatorSetVisitorEmail(tx, conversation.id, parsed.data.email?.toLowerCase() ?? null)

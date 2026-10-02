@@ -182,6 +182,39 @@ describe('public widget API', () => {
     expect(codes.filter(c => c === 429)).toHaveLength(2)
   })
 
+  it('a widget of an org with helpinator disabled, or a suspended org, answers nothing', async () => {
+    const { org, widget } = await setup()
+    await primeAiFake({ text: 'ok' })
+    const turn = await sendTurn(widget.id, 'hi')
+
+    await sql`UPDATE org_apps SET enabled = false WHERE org_id = ${org.id} AND app_id = 'helpinator'`
+    expect((await sendTurn(widget.id, 'again', turn.token).catch(e => e)).statusCode).toBe(410)
+    expect((await $fetch(`/api/v1/helpinator/widgets/${widget.id}/config`, { headers: widgetHeaders() }).catch(e => e)).statusCode).toBe(410)
+
+    await sql`UPDATE org_apps SET enabled = true WHERE org_id = ${org.id} AND app_id = 'helpinator'`
+    await sql`UPDATE orgs SET suspended_at = now() WHERE id = ${org.id}`
+    expect((await sendTurn(widget.id, 'again', turn.token).catch(e => e)).statusCode).toBe(423)
+    const handoff = await $fetch(`/api/v1/helpinator/widgets/${widget.id}/handoff`, {
+      method: 'POST', headers: widgetHeaders(turn.token), body: { email: 'v@example.com' }
+    }).catch(e => e)
+    expect(handoff.statusCode).toBe(423)
+  })
+
+  it('a disabled widget refuses handoff and the visitor email too', async () => {
+    const { widget } = await setup()
+    await primeAiFake({ text: 'ok' })
+    const turn = await sendTurn(widget.id, 'hi')
+    await sql`UPDATE helpinator_widgets SET enabled = false WHERE id = ${widget.id}`
+    const handoff = await $fetch(`/api/v1/helpinator/widgets/${widget.id}/handoff`, {
+      method: 'POST', headers: widgetHeaders(turn.token), body: { email: 'v@example.com' }
+    }).catch(e => e)
+    expect(handoff.statusCode).toBe(503)
+    const email = await $fetch(`/api/v1/helpinator/widgets/${widget.id}/email`, {
+      method: 'PUT', headers: widgetHeaders(turn.token), body: { email: 'v@example.com' }
+    }).catch(e => e)
+    expect(email.statusCode).toBe(503)
+  })
+
   it('a disabled widget reports unavailable and refuses turns', async () => {
     const { widget } = await setup({ enabled: false })
     const cfg = await $fetch<{ aiAvailable: boolean }>(`/api/v1/helpinator/widgets/${widget.id}/config`, { headers: widgetHeaders() })

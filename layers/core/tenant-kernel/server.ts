@@ -253,7 +253,8 @@ export async function withProjectOrgContext<T>(
 // without an authenticated tenant request.
 export async function withRecordOrgContext<T>(
   _event: H3Event,
-  _opts: { table: string, id: string, idColumn?: string, notFoundMessage?: string, validateUuid?: boolean },
+  // `appId` is ignored here: single deploys have no per-org app switch.
+  _opts: { table: string, id: string, idColumn?: string, notFoundMessage?: string, validateUuid?: boolean, appId?: string },
   fn: (tx: Transaction<Database>) => Promise<T>
 ): Promise<T> {
   return await runTransaction(db, fn)

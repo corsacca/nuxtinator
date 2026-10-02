@@ -36,6 +36,7 @@ export default defineEventHandler(async (event) => {
   let result: HelpinatorHandoffResult
   try {
     result = await helpinatorWithWidget(event, async (tx, widget) => {
+      if (!widget.enabled) throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
       const conversation = await helpinatorFindSession(tx, widget.id, helpinatorHashSessionToken(token))
       if (!conversation) throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
       return await helpinatorHandOff(tx, {

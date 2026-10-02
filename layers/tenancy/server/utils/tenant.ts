@@ -510,6 +510,9 @@ export async function withRecordOrgContext<T>(
     idColumn?: string
     notFoundMessage?: string
     validateUuid?: boolean
+    // Public routes serving an app's records: refuse when the owning org is
+    // suspended or has the app disabled, as `defineTenantHandler` does.
+    appId?: string
   },
   fn: (tx: Transaction<Database>) => Promise<T>
 ): Promise<T> {
@@ -529,9 +532,18 @@ export async function withRecordOrgContext<T>(
   if (!orgId) {
     throw createError({ statusCode: 404, statusMessage: notFoundMessage })
   }
+  if (opts.appId) {
+    const org = await adminDb.selectFrom('orgs').select('suspended_at').where('id', '=', orgId).executeTakeFirst()
+    if (!org || org.suspended_at) {
+      throw createError({ statusCode: 423, statusMessage: 'This organization is suspended.' })
+    }
+  }
 
   return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
+    if (opts.appId && !(await isAppEnabledForOrg(tx, orgId, opts.appId))) {
+      throw createError({ statusCode: 410, statusMessage: `App "${opts.appId}" is not enabled for this organization.` })
+    }
     return await fn(tx)
   })
 }
