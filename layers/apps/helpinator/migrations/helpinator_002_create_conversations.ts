@@ -2,16 +2,17 @@ import type { Kysely } from 'kysely'
 import { sql } from 'kysely'
 
 // One visitor chat. The visitor holds an opaque session token; only its sha256
-// is stored. `portfolio_id` snapshots the widget's binding at creation — a
-// widget rebound to another portfolio ends its old conversations rather than
-// silently switching their grounding. `inbox_conversation_id` has no FK: the
-// inbox layer is optional.
+// is stored. `library_ids` / `default_library_id` snapshot the widget's
+// binding at creation — a widget rebound to other libraries ends its old
+// conversations rather than silently switching their grounding.
+// `inbox_conversation_id` has no FK: the inbox layer is optional.
 export async function up(db: Kysely<unknown>): Promise<void> {
   await db.schema
     .createTable('helpinator_conversations')
     .addColumn('id', 'uuid', col => col.primaryKey().defaultTo(sql`gen_random_uuid()`))
     .addColumn('widget_id', 'uuid', col => col.notNull().references('helpinator_widgets.id').onDelete('cascade'))
-    .addColumn('portfolio_id', 'uuid', col => col.notNull())
+    .addColumn('library_ids', sql`uuid[]`, col => col.notNull().defaultTo(sql`'{}'::uuid[]`))
+    .addColumn('default_library_id', 'uuid')
     .addColumn('session_hash', 'text', col => col.notNull().unique())
     .addColumn('visitor_email', 'text')
     .addColumn('page_url', 'text')

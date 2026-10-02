@@ -3,8 +3,9 @@ import { sql } from 'kysely'
 
 // Vector index over library pages (see `#ai/server` chunkMarkdown). Same shape
 // as context_section_chunks; `model` records the embedding model so a change
-// can be detected and the index rebuilt. pgvector must be present — see
-// context_013 for the extension handling this repeats.
+// can be detected and the index rebuilt. Needs pgvector: helpinator's
+// nuxt.config declares it, so without the extension core's runner holds back
+// every helpinator_* migration (the guard below covers a runner that doesn't).
 export async function up(db: Kysely<unknown>): Promise<void> {
   const present = await sql<{ n: number }>`select count(*)::int as n from pg_extension where extname = 'vector'`.execute(db)
   if (!present.rows[0]?.n) {

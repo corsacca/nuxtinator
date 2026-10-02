@@ -24,14 +24,20 @@ async function disableTenantScoping(db: Kysely<unknown>, table: string): Promise
   await sql`ALTER TABLE ${sql.ref(table)} DROP COLUMN org_id`.execute(db)
 }
 
+const TABLES = [
+  'helpinator_widgets',
+  'helpinator_conversations',
+  'helpinator_messages',
+  'helpinator_libraries',
+  'helpinator_library_sources',
+  'helpinator_library_pages',
+  'helpinator_library_chunks'
+]
+
 export async function up(db: Kysely<unknown>): Promise<void> {
-  await enableTenantScoping(db, 'helpinator_widgets')
-  await enableTenantScoping(db, 'helpinator_conversations')
-  await enableTenantScoping(db, 'helpinator_messages')
+  for (const t of TABLES) await enableTenantScoping(db, t)
 }
 
 export async function down(db: Kysely<unknown>): Promise<void> {
-  await disableTenantScoping(db, 'helpinator_messages')
-  await disableTenantScoping(db, 'helpinator_conversations')
-  await disableTenantScoping(db, 'helpinator_widgets')
+  for (const t of [...TABLES].reverse()) await disableTenantScoping(db, t)
 }
