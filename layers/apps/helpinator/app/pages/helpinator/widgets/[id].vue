@@ -16,14 +16,10 @@ const { data: status } = useHelpinatorStatus()
 const { data: portfolios } = useFetch<HelpinatorPortfolioOption[]>('/api/helpinator/portfolios', { default: () => [] })
 const { data: libraries } = useFetch<HelpinatorLibrarySummary[]>('/api/helpinator/libraries', { default: () => [] })
 
-const DEFAULT_APPEARANCE: HelpinatorAppearanceForm = {
-  primary_color: '#2563eb',
-  position: 'bottom-right',
-  title: 'Need help?',
-  greeting: 'Hi! Ask me anything about this site.',
-  placeholder: 'Type your question…',
-  handoff_prompt: 'Still need help? Leave your email and someone from our team will get back to you.'
-}
+// The server's defaults (one source of truth). The form shows them filled in
+// and saves only the fields that differ, so untouched fields keep following
+// the defaults.
+const defaults = computed<HelpinatorAppearanceForm | null>(() => saved.value?.appearance_defaults ?? status.value?.appearanceDefaults ?? null)
 
 const form = reactive({
   name: '',
@@ -33,7 +29,7 @@ const form = reactive({
   originsText: '',
   daily_message_cap: 500,
   enabled: true,
-  appearance: { ...DEFAULT_APPEARANCE },
+  appearance: {} as HelpinatorAppearanceForm,
   extra_instructions: ''
 })
 const saved = ref<HelpinatorWidget | null>(null)
@@ -50,7 +46,7 @@ function fill(w: HelpinatorWidget) {
   form.originsText = w.allowed_origins.join('\n')
   form.daily_message_cap = w.daily_message_cap
   form.enabled = w.enabled
-  form.appearance = { ...DEFAULT_APPEARANCE, ...w.appearance }
+  form.appearance = { ...w.appearance_defaults, ...w.appearance }
   form.extra_instructions = w.extra_instructions
 }
 
@@ -94,6 +90,22 @@ const rebinding = computed(() => {
   return a !== b || (saved.value.default_library_id ?? '') !== form.default_library_id
 })
 
+function appearanceOverrides(): Partial<HelpinatorAppearanceForm> {
+  const base = defaults.value
+  if (!base) return {}
+  const out: Partial<HelpinatorAppearanceForm> = {}
+  for (const k of Object.keys(form.appearance) as (keyof HelpinatorAppearanceForm)[]) {
+    const v = form.appearance[k]
+    if (v && v !== base[k]) (out as Record<string, string>)[k] = v
+  }
+  return out
+}
+
+// A new widget starts from the defaults once the status call returns them.
+watch(defaults, (d) => {
+  if (d && Object.keys(form.appearance).length === 0) form.appearance = { ...d }
+}, { immediate: true })
+
 async function save() {
   saving.value = true
   try {
@@ -105,7 +117,7 @@ async function save() {
       allowed_origins: form.originsText.split('\n').map(s => s.trim()).filter(Boolean),
       daily_message_cap: Number(form.daily_message_cap),
       enabled: form.enabled,
-      appearance: form.appearance,
+      appearance: appearanceOverrides(),
       extra_instructions: form.extra_instructions
     }
     const w = isNew.value

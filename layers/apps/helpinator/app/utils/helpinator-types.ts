@@ -75,7 +75,9 @@ export interface HelpinatorWidget {
   allowed_origins: string[]
   daily_message_cap: number
   enabled: boolean
-  appearance: HelpinatorAppearanceForm
+  // Stored overrides only.
+  appearance: Partial<HelpinatorAppearanceForm>
+  appearance_defaults: HelpinatorAppearanceForm
   extra_instructions: string
   created_at: string
   updated_at: string

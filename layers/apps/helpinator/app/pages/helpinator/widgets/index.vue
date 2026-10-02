@@ -47,7 +47,7 @@ const librariesLabel = (w: HelpinatorWidget) => {
             :to="pathTo(`/helpinator/widgets/${w.id}`)"
             class="flex items-center gap-4 px-4 py-3 hover:bg-(--ui-bg-elevated) transition-colors"
           >
-            <span class="size-4 rounded-full shrink-0" :style="{ background: w.appearance.primary_color }" />
+            <span class="size-4 rounded-full shrink-0" :style="{ background: w.appearance.primary_color ?? w.appearance_defaults.primary_color }" />
             <div class="flex-1 min-w-0">
               <p class="font-medium truncate">
                 {{ w.name }}

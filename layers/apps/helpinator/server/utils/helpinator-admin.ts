@@ -2,7 +2,7 @@
 // conversation log.
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import { HELPINATOR_UUID_RE, helpinatorResolvedAppearance, type HelpinatorWidgetRow } from './helpinator-widgets'
+import { HELPINATOR_DEFAULT_APPEARANCE, HELPINATOR_UUID_RE, helpinatorAppearanceOverrides, type HelpinatorWidgetRow } from './helpinator-widgets'
 import type { HelpinatorConversationRow } from './helpinator-conversations'
 import type { HelpinatorLibraryRow, HelpinatorSourceRow } from './helpinator-libraries'
 
@@ -18,7 +18,9 @@ export function helpinatorAdminWidget(w: HelpinatorWidgetRow) {
     allowed_origins: w.allowed_origins,
     daily_message_cap: w.daily_message_cap,
     enabled: w.enabled,
-    appearance: helpinatorResolvedAppearance(w.appearance),
+    // Overrides only; the form layers them on `appearance_defaults`.
+    appearance: helpinatorAppearanceOverrides(w.appearance),
+    appearance_defaults: HELPINATOR_DEFAULT_APPEARANCE,
     extra_instructions: w.extra_instructions,
     created_at: w.created_at,
     updated_at: w.updated_at

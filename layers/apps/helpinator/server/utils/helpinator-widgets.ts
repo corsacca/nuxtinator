@@ -46,6 +46,16 @@ export function helpinatorSanitizeAppearance(raw: unknown): HelpinatorAppearance
   return out
 }
 
+// What gets stored: only the fields that differ from the code defaults, so a
+// later change to a default reaches every widget that never overrode it.
+export function helpinatorAppearanceOverrides(raw: unknown): HelpinatorAppearance {
+  const out: HelpinatorAppearance = {}
+  for (const [k, v] of Object.entries(helpinatorSanitizeAppearance(raw)) as [keyof HelpinatorAppearance, string][]) {
+    if (v !== HELPINATOR_DEFAULT_APPEARANCE[k]) (out as Record<string, string>)[k] = v
+  }
+  return out
+}
+
 export function helpinatorResolvedAppearance(stored: unknown): Required<HelpinatorAppearance> {
   return { ...HELPINATOR_DEFAULT_APPEARANCE, ...helpinatorSanitizeAppearance(stored) }
 }
@@ -147,7 +157,7 @@ export async function helpinatorCreateWidget(
       allowed_origins: helpinatorNormalizeOrigins(input.allowed_origins),
       daily_message_cap: input.daily_message_cap,
       enabled: input.enabled,
-      appearance: sql`${JSON.stringify(helpinatorSanitizeAppearance(input.appearance))}::text::jsonb`,
+      appearance: sql`${JSON.stringify(helpinatorAppearanceOverrides(input.appearance))}::text::jsonb`,
       extra_instructions: input.extra_instructions.trim(),
       created_by: userId
     })
@@ -173,7 +183,7 @@ export async function helpinatorUpdateWidget(
       allowed_origins: helpinatorNormalizeOrigins(input.allowed_origins),
       daily_message_cap: input.daily_message_cap,
       enabled: input.enabled,
-      appearance: sql`${JSON.stringify(helpinatorSanitizeAppearance(input.appearance))}::text::jsonb`,
+      appearance: sql`${JSON.stringify(helpinatorAppearanceOverrides(input.appearance))}::text::jsonb`,
       extra_instructions: input.extra_instructions.trim(),
       updated_at: sql`now()`
     })

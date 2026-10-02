@@ -41,7 +41,8 @@ describe('admin + handoff', () => {
       default_library_id: la.id,
       default_section_key: 'faq',
       allowed_origins: [`${SITE_ORIGIN}/some/path`],
-      appearance: { primary_color: '#FF0000', title: 'Help!', bogus: 'dropped' }
+      // position is sent at its default value, as an older form would.
+      appearance: { primary_color: '#FF0000', title: 'Help!', position: 'bottom-right', bogus: 'dropped' }
     }
     const w = await $fetch<{ id: string, allowed_origins: string[], appearance: Record<string, string> }>(
       '/api/helpinator/widgets', { method: 'POST', body, ...opts })
@@ -49,6 +50,9 @@ describe('admin + handoff', () => {
     expect(w.appearance.primary_color).toBe('#ff0000')
     expect(w.appearance.title).toBe('Help!')
     expect(w.appearance).not.toHaveProperty('bogus')
+    // Only overrides are stored: a value equal to the default keeps following it.
+    const [stored] = await sql`SELECT appearance FROM helpinator_widgets WHERE id = ${w.id}`
+    expect(stored!.appearance).toEqual({ primary_color: '#ff0000', title: 'Help!' })
 
     await primeAiFake({ text: 'hi' })
     const turn = await sendTurn(w.id, 'hello')
