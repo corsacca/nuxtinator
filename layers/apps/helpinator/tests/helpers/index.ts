@@ -8,6 +8,7 @@ import type postgres from 'postgres'
 import { createHash, randomUUID } from 'node:crypto'
 import { $fetch } from '@nuxt/test-utils/e2e'
 import {
+  getAppUserDb,
   createTestUser,
   getAuthHeaders,
   withOrgHeader,
@@ -183,7 +184,7 @@ export interface AiFakeCall {
   toolResults: Array<{ name: string, input: Record<string, unknown>, result: string }>
 }
 
-export async function primeAiFake(script: { text?: string, toolCalls?: Array<{ name: string, input: Record<string, unknown> }>, delayMs?: number }): Promise<void> {
+export async function primeAiFake(script: { text?: string, toolCalls?: Array<{ name: string, input: Record<string, unknown> }>, delayMs?: number, embedDelayMs?: number }): Promise<void> {
   await $fetch('/api/_test/ai', { method: 'POST', body: script })
 }
 
@@ -241,4 +242,14 @@ export async function waitForSync(opts: object, libraryId: string, timeoutMs = 3
     if (Date.now() - start > timeoutMs) throw new Error(`sync of ${libraryId} did not finish in ${timeoutMs}ms`)
     await new Promise(r => setTimeout(r, 300))
   }
+}
+
+// Transactions the server (app_user) has held open for more than `ms`. Read
+// as app_user: pg_stat_activity hides other roles' session state.
+export async function longOpenTransactions(ms = 400): Promise<number> {
+  const rows = await getAppUserDb()<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM pg_stat_activity
+    WHERE state LIKE 'idle in transaction%' AND now() - xact_start > ${`${ms} milliseconds`}::interval
+  `
+  return rows[0]!.n
 }

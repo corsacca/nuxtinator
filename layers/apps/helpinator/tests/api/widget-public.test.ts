@@ -5,7 +5,7 @@ import { $fetch, url as nuxtUrl } from '@nuxt/test-utils/e2e'
 import { randomUUID } from 'node:crypto'
 import {
   getHostAdminDb,
-  getAppUserDb,
+  longOpenTransactions,
   cleanupHelpinatorTestData,
   createHelpinatorOrgWith,
   seedPortfolio,
@@ -158,12 +158,7 @@ describe('public widget API', () => {
     await primeAiFake({ text: 'slow answer', toolCalls: [{ name: 'search', input: { query: 'opening hours' } }], delayMs: 1500 })
     const turn = sendTurn(widget.id, 'opening hours?')
     await new Promise(r => setTimeout(r, 700))
-    // As app_user: pg_stat_activity hides other roles' session state.
-    const open = await getAppUserDb()<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM pg_stat_activity
-      WHERE state LIKE 'idle in transaction%' AND now() - xact_start > interval '400 milliseconds'
-    `
-    expect(open[0]!.n).toBe(0)
+    expect(await longOpenTransactions()).toBe(0)
     expect((await turn).assistantMessage.content).toBe('slow answer')
   })
 

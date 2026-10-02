@@ -36,6 +36,8 @@ export interface AiFakeScript {
   // `complete()` waits this long before answering, like a slow model, so a
   // suite can observe what the caller holds open during a turn.
   delayMs?: number
+  // Same for each `embed()` call.
+  embedDelayMs?: number
 }
 
 export interface AiFakeToolResult extends AiToolCallRecord {
@@ -192,5 +194,6 @@ export async function aiFakeEmbed(opts: AiEmbedOptions, model: string): Promise<
   if (opts.input.some(t => t.includes('[[fail]]'))) {
     throw createError({ statusCode: 502, statusMessage: 'The AI provider is busy. Try again in a moment.' })
   }
+  if (state.script.embedDelayMs) await new Promise(r => setTimeout(r, state.script.embedDelayMs))
   return { vectors: opts.input.map(aiFakeEmbedVector), model }
 }

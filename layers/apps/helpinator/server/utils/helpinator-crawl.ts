@@ -17,12 +17,12 @@ import TurndownService from 'turndown'
 import robotsParser from 'robots-parser'
 
 import type { Database } from '#core/server/database/schema'
-import { db } from '#core/server/utils/database'
 import { isMigrationHeldBack } from '#core/server/utils/migration-status'
-import { embed, chunkMarkdown, vectorSql, resolveEmbeddingModel, type AiReindexer, type AiReindexProgress } from '#ai/server'
+import { embed, chunkMarkdown, vectorSql, resolveEmbeddingModel, resolveAiEmbedRun, type AiEmbeddingRun, type AiReindexer, type AiReindexProgress } from '#ai/server'
 import type { HelpinatorSourceRow } from './helpinator-libraries'
 import { helpinatorNormalizeUrl } from './helpinator-libraries'
 import { helpinatorSafeFetch } from './helpinator-safe-fetch'
+import { helpinatorScope } from './helpinator-guards'
 
 type Tx = Transaction<Database>
 
@@ -57,10 +57,7 @@ const SKIP_EXT_RE = /\.(pdf|jpe?g|png|gif|webp|svg|ico|css|js|mjs|json|xml|rss|a
 // --- Scope transactions (the crawl has no request) ---
 
 export async function helpinatorScopeTx<T>(orgId: string | null, fn: (tx: Tx) => Promise<T>): Promise<T> {
-  return await db.transaction().execute(async (tx) => {
-    if (orgId) await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
-    return await fn(tx)
-  })
+  return await helpinatorScope(orgId)(fn)
 }
 
 // --- Discovery ---
@@ -194,12 +191,16 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 // --- Indexing one page ---
 
-async function replaceChunks(tx: Tx, pageId: string, libraryId: string, title: string, markdown: string): Promise<number> {
-  const pieces = chunkMarkdown(markdown).map(c => ({
+interface ChunkPiece { heading: string, text: string }
+
+function chunkPage(title: string, markdown: string): ChunkPiece[] {
+  return chunkMarkdown(markdown).map(c => ({
     heading: c.heading,
     text: `${title}${c.heading ? ` › ${c.heading}` : ''}\n\n${c.text}`
   }))
-  const { vectors, model } = await embed({ tx, input: pieces.map(p => p.text) })
+}
+
+async function writeChunks(tx: Tx, pageId: string, libraryId: string, pieces: ChunkPiece[], vectors: number[][], model: string): Promise<void> {
   await tx.deleteFrom('helpinator_library_chunks').where('page_id', '=', pageId).execute()
   for (let i = 0; i < pieces.length; i++) {
     await tx
@@ -215,6 +216,13 @@ async function replaceChunks(tx: Tx, pageId: string, libraryId: string, title: s
       })
       .execute()
   }
+}
+
+// Embeds inside `tx` — only for the AI settings re-embed, which runs per scope.
+async function replaceChunks(tx: Tx, pageId: string, libraryId: string, title: string, markdown: string): Promise<number> {
+  const pieces = chunkPage(title, markdown)
+  const { vectors, model } = await embed({ tx, input: pieces.map(p => p.text) })
+  await writeChunks(tx, pageId, libraryId, pieces, vectors, model)
   return pieces.length
 }
 
@@ -234,7 +242,10 @@ interface RunCounters {
   failed: string[]
 }
 
-async function processUrl(orgId: string | null, source: HelpinatorSourceRow, token: string, url: string, startedAt: Date, counters: RunCounters): Promise<void> {
+// Fetch, extract and store one page. Three steps so no tx spans the network:
+// a short tx decides what the page needs, the embedding call runs outside any
+// tx, and a short tx writes (re-checking the run token and URL ownership).
+async function processUrl(orgId: string | null, source: HelpinatorSourceRow, token: string, url: string, startedAt: Date, embedRun: AiEmbeddingRun, counters: RunCounters): Promise<void> {
   let fetched: Awaited<ReturnType<typeof fetchHtml>>
   try {
     fetched = await fetchHtml(url)
@@ -253,46 +264,65 @@ async function processUrl(orgId: string | null, source: HelpinatorSourceRow, tok
   }
   const hash = helpinatorContentHash(extracted.title, extracted.markdown)
   const bytes = Buffer.byteLength(extracted.markdown, 'utf8')
+  const pageValues = { title: extracted.title, content: extracted.markdown, content_hash: hash, bytes, fetched_at: startedAt }
 
-  await helpinatorScopeTx(orgId, async (tx) => {
+  const findPage = (tx: Tx) => tx
+    .selectFrom('helpinator_library_pages')
+    .select(['id', 'source_id', 'content_hash'])
+    .where('library_id', '=', source.library_id)
+    .where('url', '=', url)
+    .executeTakeFirst()
+
+  const plan = await helpinatorScopeTx(orgId, async (tx) => {
     await assertToken(tx, source.id, token)
-    const existing = await tx
-      .selectFrom('helpinator_library_pages')
-      .select(['id', 'source_id', 'content_hash'])
-      .where('library_id', '=', source.library_id)
-      .where('url', '=', url)
-      .executeTakeFirst()
+    const existing = await findPage(tx)
     // Another source in this library crawled the URL first: it owns the page.
-    if (existing && existing.source_id !== source.id) {
-      counters.skipped++
-      return
-    }
-    const currentModel = await resolveEmbeddingModel(tx)
+    if (existing && existing.source_id !== source.id) return 'skip' as const
+    if (!existing) return 'embed' as const
+    const chunkModels = await tx.selectFrom('helpinator_library_chunks').select('model').distinct().where('page_id', '=', existing.id).execute()
+    const upToDate = existing.content_hash === hash && chunkModels.length === 1 && chunkModels[0]!.model === embedRun.model
+    if (!upToDate) return 'embed' as const
+    await tx.updateTable('helpinator_library_pages').set(pageValues).where('id', '=', existing.id).execute()
+    return 'kept' as const
+  })
+  if (plan === 'skip') {
+    counters.skipped++
+    return
+  }
+  if (plan === 'kept') {
+    counters.pages++
+    counters.bytes += bytes
+    return
+  }
+
+  const pieces = chunkPage(extracted.title, extracted.markdown)
+  const { vectors, model } = await embed({ run: embedRun, input: pieces.map(p => p.text) })
+
+  const stored = await helpinatorScopeTx(orgId, async (tx) => {
+    await assertToken(tx, source.id, token)
+    const existing = await findPage(tx)
+    if (existing && existing.source_id !== source.id) return false
     let pageId: string
     if (existing) {
       pageId = existing.id
-      const chunkModels = await tx.selectFrom('helpinator_library_chunks').select('model').distinct().where('page_id', '=', pageId).execute()
-      const upToDate = existing.content_hash === hash && chunkModels.length === 1 && (!currentModel || chunkModels[0]!.model === currentModel)
-      await tx
-        .updateTable('helpinator_library_pages')
-        .set({ title: extracted.title, content: extracted.markdown, content_hash: hash, bytes, fetched_at: startedAt })
-        .where('id', '=', pageId)
-        .execute()
-      counters.pages++
-      counters.bytes += bytes
-      if (upToDate) return
+      await tx.updateTable('helpinator_library_pages').set(pageValues).where('id', '=', pageId).execute()
     } else {
       const inserted = await tx
         .insertInto('helpinator_library_pages')
-        .values({ library_id: source.library_id, source_id: source.id, url, title: extracted.title, content: extracted.markdown, content_hash: hash, bytes, fetched_at: startedAt })
+        .values({ library_id: source.library_id, source_id: source.id, url, ...pageValues })
         .returning('id')
         .executeTakeFirstOrThrow()
       pageId = inserted.id
-      counters.pages++
-      counters.bytes += bytes
     }
-    await replaceChunks(tx, pageId, source.library_id, extracted.title, extracted.markdown)
+    await writeChunks(tx, pageId, source.library_id, pieces, vectors, model)
+    return true
   })
+  if (!stored) {
+    counters.skipped++
+    return
+  }
+  counters.pages++
+  counters.bytes += bytes
 }
 
 // Progress writes are token-guarded but never throw: a superseded run finds
@@ -334,6 +364,8 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
       await finish(orgId, source.id, token, { status: 'error', last_error: `Start page returned ${first.status}${first.html === null ? ' or was not HTML' : ''}` })
       return
     }
+    // Resolved once per run, in its own short tx; embeds then run outside any.
+    const embedRun = await helpinatorScopeTx(orgId, tx => resolveAiEmbedRun(tx))
     const plan = helpinatorDiscoverLinks(first.html, source.url, { restrictToPath: source.restrict_to_path, maxPages: source.max_pages })
     const queue = plan.urls.filter(u => robots.isAllowed(u))
     await setProgress(orgId, source.id, token, { run_total: queue.length })
@@ -344,7 +376,7 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       while (next < queue.length) {
         const url = queue[next++]!
-        await processUrl(orgId, source, token, url, startedAt, counters)
+        await processUrl(orgId, source, token, url, startedAt, embedRun, counters)
         await setProgress(orgId, source.id, token, { run_done: ++done })
         await sleep(GAP_MS)
       }

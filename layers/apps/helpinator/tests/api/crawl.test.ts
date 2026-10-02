@@ -16,6 +16,8 @@ import {
   seedDocsTree,
   article,
   resetAiFake,
+  primeAiFake,
+  longOpenTransactions,
   type FixtureSite
 } from '../helpers'
 
@@ -196,5 +198,17 @@ describe('website crawl', () => {
     const urls = (await pagesOf(lib.id)).map(p => p.url)
     expect(urls).toContain(`${site.origin}/docs`)
     expect(urls).not.toContain(`${site.origin}/docs/anvils`)
+  })
+
+  it('holds no DB transaction open while embedding a page', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    await primeAiFake({ embedDelayMs: 1500 })
+    await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    await new Promise(r => setTimeout(r, 1200))
+    expect(await longOpenTransactions()).toBe(0)
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+    expect(done.sources[0]!.page_count).toBe(3)
   })
 })
