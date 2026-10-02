@@ -88,9 +88,12 @@ export async function indexSection(
 }
 
 // Every section of a portfolio (or of every portfolio in scope with no id).
+// context_sections has no org_id or RLS of its own; the join to
+// context_portfolios (RLS-scoped) is what limits the rows to the current org.
 export async function reindexSections(tx: Tx, portfolioId?: string, progress?: AiReindexProgress): Promise<{ chunks: number }> {
   let q = tx
     .selectFrom('context_sections as s')
+    .innerJoin('context_portfolios as p', 'p.id', 's.portfolio_id')
     .leftJoin('context_section_definitions as d', join => join
       .onRef('d.portfolio_id', '=', 's.portfolio_id')
       .onRef('d.key', '=', 's.section_key'))

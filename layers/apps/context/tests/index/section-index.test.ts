@@ -105,6 +105,12 @@ describe('section vector index', () => {
     for (const key of ['identity', 'team']) {
       await $fetch(`/api/context/portfolios/${p.slug}/sections/${key}`, { method: 'PUT', body: { content: `Content for ${key}.` }, ...opts })
     }
+    // Another org's sections must stay out of this org's re-embed.
+    const other = await setup()
+    await $fetch(`/api/context/portfolios/${other.p.slug}/sections/identity`, { method: 'PUT', body: { content: 'Other org content.' }, ...other.opts })
+    const [otherBefore] = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM context_section_chunks WHERE portfolio_id = ${other.p.id}
+    `
     // A re-embed runs only when a model resolves for the org.
     await $fetch('/api/ai/org/config', { method: 'PUT', body: { embedding_model: 'test/embed-small' }, ...opts })
     const start = await $fetch<{ started: boolean }>('/api/ai/org/reindex', { method: 'POST', ...opts })
@@ -121,9 +127,17 @@ describe('section vector index', () => {
     expect(scope!.current).toBeNull()
     // Every built-in section of the portfolio counts, written or not.
     const [row] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM context_sections WHERE portfolio_id = ${p.id}`
-    expect(scope!.total).toBeGreaterThanOrEqual(row!.n)
+    expect(scope!.total).toBe(row!.n)
     expect(scope!.total).toBeGreaterThan(0)
     expect(scope!.items).toBe(scope!.total)
     expect(scope!.chunks).toBeGreaterThanOrEqual(2)
+    const leaked = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM context_section_chunks WHERE portfolio_id = ${other.p.id} AND org_id <> ${other.org.id}
+    `
+    expect(leaked[0]!.n).toBe(0)
+    const [otherAfter] = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM context_section_chunks WHERE portfolio_id = ${other.p.id}
+    `
+    expect(otherAfter!.n).toBe(otherBefore!.n)
   })
 })
