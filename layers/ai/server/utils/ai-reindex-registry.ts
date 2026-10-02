@@ -132,7 +132,8 @@ async function reindexScope(scope: AiReindexScopeStatus): Promise<void> {
     for (const r of await getAvailableAiReindexers()) {
       scope.current = r.label
       const chunksBefore = scope.chunks
-      const result = await withAiScopeTx(scope.orgId, tx => r.run(tx, {
+      // One short tx per step the reindexer takes, never one for the scope.
+      const result = await r.run(fn => withAiScopeTx(scope.orgId, fn), {
         total: (n) => {
           scope.total += n
         },
@@ -140,7 +141,7 @@ async function reindexScope(scope: AiReindexScopeStatus): Promise<void> {
           scope.items++
           scope.chunks += chunks
         }
-      }))
+      })
       scope.chunks = chunksBefore + result.chunks
     }
     scope.current = null

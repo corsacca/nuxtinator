@@ -22,7 +22,7 @@ import { embed, chunkMarkdown, vectorSql, resolveEmbeddingModel, resolveAiEmbedR
 import type { HelpinatorSourceRow } from './helpinator-libraries'
 import { helpinatorNormalizeUrl } from './helpinator-libraries'
 import { helpinatorSafeFetch } from './helpinator-safe-fetch'
-import { helpinatorScope } from './helpinator-guards'
+import { helpinatorScope, type HelpinatorScope } from './helpinator-guards'
 
 type Tx = Transaction<Database>
 
@@ -216,14 +216,6 @@ async function writeChunks(tx: Tx, pageId: string, libraryId: string, pieces: Ch
       })
       .execute()
   }
-}
-
-// Embeds inside `tx` — only for the AI settings re-embed, which runs per scope.
-async function replaceChunks(tx: Tx, pageId: string, libraryId: string, title: string, markdown: string): Promise<number> {
-  const pieces = chunkPage(title, markdown)
-  const { vectors, model } = await embed({ tx, input: pieces.map(p => p.text) })
-  await writeChunks(tx, pageId, libraryId, pieces, vectors, model)
-  return pieces.length
 }
 
 // --- The run ---
@@ -444,15 +436,27 @@ export function helpinatorSyncRunning(sourceId: string): boolean {
 }
 
 // Re-embed every page in scope from its stored markdown (no re-fetch), for the
-// AI settings pages' "re-embed" after an embedding model change.
-export async function helpinatorReindexLibraries(tx: Tx, progress?: AiReindexProgress): Promise<{ chunks: number }> {
-  const pages = await tx.selectFrom('helpinator_library_pages').select(['id', 'library_id', 'title', 'content']).execute()
+// AI settings pages' "re-embed" after an embedding model change. Per page: a
+// short tx reads it, the embedding runs with no tx, a short tx writes — unless
+// a crawl changed the page meanwhile (that crawl embedded it already).
+export async function helpinatorReindexLibraries(scope: HelpinatorScope, progress?: AiReindexProgress): Promise<{ chunks: number }> {
+  const { pages, run } = await scope(async tx => ({
+    pages: await tx.selectFrom('helpinator_library_pages').select(['id', 'library_id', 'title', 'content', 'content_hash']).execute(),
+    run: await resolveAiEmbedRun(tx)
+  }))
   progress?.total(pages.length)
   let chunks = 0
   for (const p of pages) {
-    const n = await replaceChunks(tx, p.id, p.library_id, p.title, p.content)
-    chunks += n
-    progress?.item(n)
+    const pieces = chunkPage(p.title, p.content)
+    const { vectors, model } = await embed({ run, input: pieces.map(x => x.text) })
+    const written = await scope(async (tx) => {
+      const now = await tx.selectFrom('helpinator_library_pages').select('content_hash').where('id', '=', p.id).executeTakeFirst()
+      if (!now || now.content_hash !== p.content_hash) return 0
+      await writeChunks(tx, p.id, p.library_id, pieces, vectors, model)
+      return pieces.length
+    })
+    chunks += written
+    progress?.item(written)
   }
   return { chunks }
 }
@@ -466,8 +470,8 @@ export const HELPINATOR_REINDEXER: AiReindexer = {
     const rows = await (tx as Tx).selectFrom('helpinator_library_chunks').select('model').distinct().execute()
     return rows.map(r => r.model)
   },
-  run: async (tx, progress) => {
-    if (!(await resolveEmbeddingModel(tx))) return { chunks: 0 }
-    return await helpinatorReindexLibraries(tx as Tx, progress)
+  run: async (scope, progress) => {
+    if (!(await scope(tx => resolveEmbeddingModel(tx)))) return { chunks: 0 }
+    return await helpinatorReindexLibraries(scope as HelpinatorScope, progress)
   }
 }

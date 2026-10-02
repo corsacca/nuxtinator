@@ -163,4 +163,25 @@ describe('section vector index', () => {
     `
     expect(otherAfter!.n).toBe(otherBefore!.n)
   })
+
+  it('an org re-embed holds no transaction across embedding calls', async () => {
+    const { p, opts } = await setup()
+    for (const key of ['identity', 'team']) {
+      await $fetch(`/api/context/portfolios/${p.slug}/sections/${key}`, { method: 'PUT', body: { content: `Content for ${key}.` }, ...opts })
+    }
+    await $fetch('/api/ai/org/config', { method: 'PUT', body: { embedding_model: 'test/embed-small' }, ...opts })
+    await $fetch('/api/_test/ai', { method: 'POST', body: { embedDelayMs: 1000 } })
+    await $fetch('/api/ai/org/reindex', { method: 'POST', ...opts })
+    await new Promise(r => setTimeout(r, 1500))
+    const open = await getAppUserDb()<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE state LIKE 'idle in transaction%' AND now() - xact_start > interval '400 milliseconds'
+    `
+    expect(open[0]!.n).toBe(0)
+    for (let i = 0; i < 200; i++) {
+      const status = await $fetch<{ running: boolean }>('/api/ai/org/reindex-status', { ...opts })
+      if (!status.running) break
+      await new Promise(r => setTimeout(r, 100))
+    }
+  })
 })

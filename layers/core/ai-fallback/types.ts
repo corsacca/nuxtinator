@@ -186,8 +186,11 @@ export interface AiEmbeddingModelInfo {
 
 // A layer that owns a vector index registers one of these so the AI settings
 // pages can rebuild every index after the embedding model changes.
-// Both functions run inside an org-scoped transaction (or an unscoped one in
-// single-tenant mode) — the registrar iterates org scopes.
+// The registrar iterates org scopes. `currentModels` runs inside one scoped
+// transaction; `run` gets a runner for short scoped transactions instead, so
+// it can embed between them without holding a connection for the whole scope.
+export type AiTxScope = <T>(fn: (tx: AiDbClient) => Promise<T>) => Promise<T>
+
 export interface AiReindexer {
   // Stable key, e.g. 'context.sections'.
   key: string
@@ -201,7 +204,7 @@ export interface AiReindexer {
   // `progress` (optional to call) lets the settings pages show live counts:
   // `total(n)` once the item count is known, `item(chunks)` after each
   // section / page. The returned total is authoritative.
-  run: (tx: AiDbClient, progress?: AiReindexProgress) => Promise<{ chunks: number }>
+  run: (scope: AiTxScope, progress?: AiReindexProgress) => Promise<{ chunks: number }>
 }
 
 export interface AiReindexProgress {

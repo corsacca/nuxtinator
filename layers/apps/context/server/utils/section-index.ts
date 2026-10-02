@@ -135,20 +135,20 @@ export async function indexSectionAfterCommit(tx: Tx, sectionId: string): Promis
 // Every section of a portfolio (or of every portfolio in scope with no id).
 // context_sections has no org_id or RLS of its own; the join to
 // context_portfolios (RLS-scoped) is what limits the rows to the current org.
-export async function reindexSections(tx: Tx, portfolioId?: string, progress?: AiReindexProgress): Promise<{ chunks: number }> {
-  let q = tx
-    .selectFrom('context_sections as s')
-    .innerJoin('context_portfolios as p', 'p.id', 's.portfolio_id')
-    .leftJoin('context_section_definitions as d', join => join
-      .onRef('d.portfolio_id', '=', 's.portfolio_id')
-      .onRef('d.key', '=', 's.section_key'))
-    .select(['s.id', 's.portfolio_id', 's.section_key', 's.content', 'd.title'])
-  if (portfolioId) q = q.where('s.portfolio_id', '=', portfolioId)
-  const rows = await q.execute()
+// Each section is read, embedded and written in its own short transactions.
+export async function reindexSections(scope: TxScope, portfolioId?: string, progress?: AiReindexProgress): Promise<{ chunks: number }> {
+  const rows = await scope((tx) => {
+    let q = tx
+      .selectFrom('context_sections as s')
+      .innerJoin('context_portfolios as p', 'p.id', 's.portfolio_id')
+      .select('s.id')
+    if (portfolioId) q = q.where('s.portfolio_id', '=', portfolioId)
+    return q.execute()
+  })
   progress?.total(rows.length)
   let chunks = 0
   for (const row of rows) {
-    const result = await indexSectionScoped(inner => inner(tx), row.id)
+    const result = await indexSectionScoped(scope, row.id)
     if (result.state === 'stale') throw createError({ statusCode: 502, statusMessage: result.error ?? 'Embedding failed' })
     chunks += result.chunks
     progress?.item(result.chunks)
@@ -216,9 +216,9 @@ export const CONTEXT_REINDEXER: AiReindexer = {
   label: 'Context — portfolio sections',
   available: sectionIndexAvailable,
   currentModels: tx => sectionIndexModels(tx as Tx),
-  run: async (tx, progress) => {
+  run: async (scope, progress) => {
     // Nothing to do when no model resolves: leave the index as it is.
-    if (!(await resolveEmbeddingModel(tx))) return { chunks: 0 }
-    return await reindexSections(tx as Tx, undefined, progress)
+    if (!(await scope(tx => resolveEmbeddingModel(tx)))) return { chunks: 0 }
+    return await reindexSections(scope as TxScope, undefined, progress)
   }
 }
