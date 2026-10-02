@@ -68,6 +68,10 @@ export default defineNuxtConfig({
   // tenancy-only tables (orgs, memberships) or endpoints (/api/admin/orgs/*)
   // must check `useRuntimeConfig().public.tenancy` and degrade gracefully.
   runtimeConfig: {
+    // How many reverse proxies in front of the app append to X-Forwarded-For
+    // (NUXT_TRUSTED_PROXY_HOPS). getClientIp trusts only the entries they
+    // added; 0 = no proxy, use the socket address.
+    trustedProxyHops: 1,
     public: {
       tenancy: false
     }

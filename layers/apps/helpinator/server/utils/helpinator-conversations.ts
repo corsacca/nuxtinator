@@ -181,8 +181,15 @@ export async function helpinatorHandOff(tx: Tx, opts: {
   const messages = await helpinatorListMessages(tx, opts.conversationId)
   if (messages.length === 0) throw createError({ statusCode: 400, statusMessage: 'Nothing to hand off yet.' })
 
+  // A visitor handoff mails an address the visitor typed, so nothing the
+  // visitor wrote goes into what that address receives: the subject is the
+  // org's widget name (it is also the auto-ack's subject), and the transcript
+  // copy is only attached for an address that has already verified (below).
+  // Staff elevations can carry the visitor's first question.
   const firstQuestion = messages.find(m => m.role === 'user')?.content.split('\n').find(l => l.trim())?.trim() ?? ''
-  const subject = `Help chat: ${firstQuestion || opts.widget.name}`.slice(0, 120)
+  const subject = (opts.kind === 'visitor'
+    ? `Help chat: ${opts.widget.name}`
+    : `Help chat: ${firstQuestion || opts.widget.name}`).slice(0, 120)
   const header = locked.page_url ? `Help chat from ${locked.page_url}` : `Help chat (${opts.widget.name})`
   const transcriptText = `${header}\n\n${helpinatorTranscriptText(messages)}`
   const transcriptHtml = `<p><strong>${escapeHtml(header)}</strong></p>\n${helpinatorTranscriptHtml(messages)}`
@@ -211,7 +218,7 @@ export async function helpinatorHandOff(tx: Tx, opts: {
   const scope = await helpinatorCurrentScope(tx)
   // Visitor handoff: notify staff, and the auto-ack carries the transcript.
   // Staff elevation: the elevating admin owns it and writes the first reply.
-  const extraAckHtml = opts.kind === 'visitor'
+  const extraAckHtml = opts.kind === 'visitor' && record.addressVerified
     ? `<p style="margin-top:20px;">Here's a copy of your conversation:</p>\n${helpinatorTranscriptHtml(messages)}`
     : null
   return {

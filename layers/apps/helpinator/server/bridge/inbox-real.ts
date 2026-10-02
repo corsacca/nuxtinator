@@ -17,7 +17,7 @@ export const helpinatorInbox: HelpinatorInboxBridge = {
       userAgent: input.userAgent,
       originLabel: 'Help chat handoff'
     })
-    return { inboxConversationId: intake.conversationId, intake }
+    return { inboxConversationId: intake.conversationId, addressVerified: intake.verificationToken === null, intake }
   },
 
   async afterHandoff(scope, record, opts) {

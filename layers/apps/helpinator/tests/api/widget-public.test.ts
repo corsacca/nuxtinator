@@ -170,6 +170,18 @@ describe('public widget API', () => {
     expect(codes.filter(c => c !== 429)).toHaveLength(8)
   })
 
+  it('a forged X-Forwarded-For entry does not dodge the per-client limit', async () => {
+    const { widget } = await setup({ enabled: false })
+    const codes: number[] = []
+    for (let i = 0; i < 10; i++) {
+      // The client controls the leftmost entry; the trusted proxy appended the last.
+      const headers = { ...widgetHeaders(), 'x-forwarded-for': `10.9.${i}.1, 203.0.113.77` }
+      const err = await $fetch(`/api/v1/helpinator/widgets/${widget.id}/messages`, { method: 'POST', headers, body: { message: 'hi' } }).catch(e => e)
+      codes.push(err.statusCode)
+    }
+    expect(codes.filter(c => c === 429)).toHaveLength(2)
+  })
+
   it('a disabled widget reports unavailable and refuses turns', async () => {
     const { widget } = await setup({ enabled: false })
     const cfg = await $fetch<{ aiAvailable: boolean }>(`/api/v1/helpinator/widgets/${widget.id}/config`, { headers: widgetHeaders() })

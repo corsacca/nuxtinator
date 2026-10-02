@@ -114,7 +114,10 @@ describe('admin + handoff', () => {
     expect(conv!.handoff_kind).toBe('visitor')
     const [inbox] = await sql`SELECT status, source, assigned_user_id, subject FROM inbox_conversations WHERE id = ${conv!.inbox_conversation_id}`
     expect(inbox).toMatchObject({ status: 'open', source: 'helpinator', assigned_user_id: null })
-    expect(inbox!.subject).toContain('Can I get a refund?')
+    // The subject also heads the auto-ack to the typed address: nothing the
+    // visitor wrote goes in it.
+    expect(inbox!.subject).not.toContain('refund')
+    expect(inbox!.subject).toMatch(/^Help chat: /)
     const [msg] = await sql`SELECT body_text FROM inbox_messages WHERE conversation_id = ${conv!.inbox_conversation_id}`
     expect(msg!.body_text).toContain('Can I get a refund?')
     expect(msg!.body_text).toContain('I am not sure.')
@@ -146,5 +149,21 @@ describe('admin + handoff', () => {
 
     const dup = await $fetch(`/api/helpinator/conversations/${turn.conversationId}/elevate`, { method: 'POST', ...opts }).catch(e => e)
     expect(dup.statusCode).toBe(409)
+  })
+
+  it('limits visitor handoffs per email address, whichever client asks', async () => {
+    const { org } = await createHelpinatorOrgWith(sql)
+    const p = await seedPortfolio(sql, org.id, 'P', { faq: 'x' })
+    const widget = await seedWidget(sql, { orgId: org.id, portfolioId: p.id, sectionKey: 'faq' })
+    const codes: number[] = []
+    for (let i = 0; i < 4; i++) {
+      await primeAiFake({ text: 'ok' })
+      const turn = await sendTurn(widget.id, `question ${i}`)
+      const res = await $fetch<{ status: string }>(`/api/v1/helpinator/widgets/${widget.id}/handoff`, {
+        method: 'POST', headers: widgetHeaders(turn.token), body: { email: 'Target@Example.com' }
+      }).catch(e => e)
+      codes.push(res.statusCode ?? 200)
+    }
+    expect(codes).toEqual([200, 200, 200, 429])
   })
 })

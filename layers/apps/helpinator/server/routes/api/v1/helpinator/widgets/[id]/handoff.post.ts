@@ -8,6 +8,7 @@ import { helpinatorWithWidget } from '../../../../../../utils/helpinator-public'
 import {
   helpinatorBearer,
   helpinatorClientKey,
+  helpinatorEmailKey,
   helpinatorHashSessionToken,
   helpinatorRateLimit
 } from '../../../../../../utils/helpinator-guards'
@@ -25,7 +26,12 @@ export default defineEventHandler(async (event) => {
   if (!token) throw createError({ statusCode: 401, statusMessage: 'Session token required' })
   const parsed = Body.safeParse(await readBody(event))
   if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'Please enter a valid email address.' })
+  // Each handoff mails the typed address, so it is limited three ways: per
+  // client, per address (however many clients ask), and per widget.
+  const email = parsed.data.email.toLowerCase()
   await helpinatorRateLimit(event, 'ratelimit.helpinator.handoff', 'client', helpinatorClientKey(event), 5, 60 * 60_000)
+  await helpinatorRateLimit(event, 'ratelimit.helpinator.handoff.email', 'email', helpinatorEmailKey(email), 3, 24 * 60 * 60_000)
+  await helpinatorRateLimit(event, 'ratelimit.helpinator.handoff.widget', 'widget', getRouterParam(event, 'id') ?? '', 50, 24 * 60 * 60_000)
 
   let result: HelpinatorHandoffResult
   try {
@@ -35,7 +41,7 @@ export default defineEventHandler(async (event) => {
       return await helpinatorHandOff(tx, {
         conversationId: conversation.id,
         widget,
-        email: parsed.data.email.toLowerCase(),
+        email,
         kind: 'visitor',
         userId: null,
         userAgent: getHeader(event, 'user-agent') ?? null

@@ -4,11 +4,12 @@
 // the per-widget daily cap are what actually bound the AI spend.
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import type { H3Event } from 'h3'
-import { getHeader, getRequestIP, getRequestURL, setResponseHeader } from 'h3'
+import { getHeader, getRequestURL, setResponseHeader } from 'h3'
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { db } from '#core/server/utils/database'
 import { consumeRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
+import { getClientIp } from '#core/server/utils/client-ip'
 import type { HelpinatorWidgetRow } from './helpinator-widgets'
 
 type Tx = Transaction<Database>
@@ -89,9 +90,15 @@ export function helpinatorBearer(event: H3Event): string | null {
 // (the limiter counts rows in activity_logs).
 
 export function helpinatorClientKey(event: H3Event): string {
-  const ip = getRequestIP(event, { xForwardedFor: true }) || 'unknown'
+  const ip = getClientIp(event)
   const secret = String(useRuntimeConfig().jwtSecret || 'helpinator')
   return createHmac('sha256', secret).update(`helpinator:${ip}`).digest('hex').slice(0, 32)
+}
+
+// A stable, non-reversible key for a visitor-supplied email address.
+export function helpinatorEmailKey(email: string): string {
+  const secret = String(useRuntimeConfig().jwtSecret || 'helpinator')
+  return createHmac('sha256', secret).update(`helpinator-email:${email.toLowerCase()}`).digest('hex').slice(0, 32)
 }
 
 export async function helpinatorRateLimit(
