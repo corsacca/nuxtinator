@@ -183,7 +183,7 @@ export interface AiFakeCall {
   toolResults: Array<{ name: string, input: Record<string, unknown>, result: string }>
 }
 
-export async function primeAiFake(script: { text?: string, toolCalls?: Array<{ name: string, input: Record<string, unknown> }> }): Promise<void> {
+export async function primeAiFake(script: { text?: string, toolCalls?: Array<{ name: string, input: Record<string, unknown> }>, delayMs?: number }): Promise<void> {
   await $fetch('/api/_test/ai', { method: 'POST', body: script })
 }
 

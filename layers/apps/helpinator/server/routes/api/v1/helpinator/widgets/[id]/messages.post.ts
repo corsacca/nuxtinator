@@ -13,7 +13,7 @@
 // the JSON payload once committed, or `error` ({ statusCode, message }).
 import { z } from 'zod'
 import { createEventStream, getHeader, getRequestHeader, type H3Event } from 'h3'
-import { complete } from '#ai/server'
+import { complete, resolveAiRun } from '#ai/server'
 import { helpinatorInbox } from '#helpinator/inbox'
 import { helpinatorWithWidget } from '../../../../../../utils/helpinator-public'
 import {
@@ -21,11 +21,13 @@ import {
   HELPINATOR_MAX_VISITOR_MESSAGES,
   helpinatorBearer,
   helpinatorClientKey,
+  helpinatorCurrentScope,
   helpinatorHashSessionToken,
   helpinatorMessagesToday,
   helpinatorNewSessionToken,
   helpinatorPageUrl,
-  helpinatorRateLimit
+  helpinatorRateLimit,
+  helpinatorScope
 } from '../../../../../../utils/helpinator-guards'
 import {
   helpinatorCreateConversation,
@@ -42,6 +44,7 @@ import {
   helpinatorHistoryToMessages
 } from '../../../../../../utils/helpinator-bot'
 import { helpinatorGetLibraries } from '../../../../../../utils/helpinator-libraries'
+import { helpinatorEmbedRun } from '../../../../../../utils/helpinator-search'
 
 const Body = z.object({
   message: z.string().trim().min(1).max(HELPINATOR_MAX_MESSAGE_CHARS),
@@ -86,7 +89,10 @@ export default defineEventHandler(async (event) => {
   const live: { sse: Sse | null } = { sse: null }
 
   try {
-    const payload = await helpinatorWithWidget(event, async (tx, widget, origin) => {
+    // Phase 1, one short tx: gates, the conversation, its history and
+    // libraries, and the AI runs. Nothing below holds a DB connection while
+    // waiting on the model; each read or write opens its own short tx.
+    const prep = await helpinatorWithWidget(event, async (tx, widget, origin) => {
       if (!widget.enabled || widget.library_ids.length === 0 || !(await helpinatorAiReady(tx))) {
         throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
       }
@@ -113,7 +119,6 @@ export default defineEventHandler(async (event) => {
       if (conversation.visitor_message_count >= HELPINATOR_MAX_VISITOR_MESSAGES) {
         throw createError({ statusCode: 429, statusMessage: 'This conversation has reached its limit — please start a new one.' })
       }
-      const session = { token: token!, conversationId: conversation.id, reset }
 
       const history = helpinatorHistoryToMessages(await helpinatorListMessages(tx, conversation.id))
       // The conversation's snapshot of the binding; RLS hides any library
@@ -122,47 +127,63 @@ export default defineEventHandler(async (event) => {
       if (libraries.length === 0) {
         throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
       }
-      const bot = await helpinatorBuildBot(tx, {
+      return {
+        widget,
+        conversation,
+        session: { token: token!, conversationId: conversation.id, reset },
+        history,
         libraries,
-        defaultLibraryId: conversation.default_library_id,
-        defaultSectionKey: widget.default_section_key,
-        extraInstructions: widget.extra_instructions,
-        handoffAvailable: helpinatorInbox.available,
-        userMessage: parsed.data.message
-      })
+        chatRun: await resolveAiRun(tx, HELPINATOR_CHAT_FEATURE),
+        embedRun: await helpinatorEmbedRun(tx),
+        scope: helpinatorScope(await helpinatorCurrentScope(tx))
+      }
+    })
+
+    const bot = await helpinatorBuildBot(prep.scope, {
+      libraries: prep.libraries,
+      defaultLibraryId: prep.conversation.default_library_id,
+      defaultSectionKey: prep.widget.default_section_key,
+      extraInstructions: prep.widget.extra_instructions,
+      handoffAvailable: helpinatorInbox.available,
+      userMessage: parsed.data.message,
+      embedRun: prep.embedRun
+    })
+
+    let sse: Sse | null = null
+    if (wantsStream) {
+      sse = openSse(event)
+      live.sse = sse
+      await sse.push('session', prep.session)
+    }
+
+    const result = await complete({
+      run: prep.chatRun,
+      feature: HELPINATOR_CHAT_FEATURE,
+      system: bot.system,
+      messages: [...prep.history, { role: 'user', content: parsed.data.message }],
+      tools: bot.tools,
+      onToolCall: (name, input) => {
+        const what = bot.describeToolCall(name, input)
+        if (sse && what) sse.push('status', { text: `Reading ${what}…` })
+        return bot.onToolCall(name, input)
+      },
+      maxTokens: 1500,
+      maxToolRounds: 3,
+      onTextDelta: sse ? (text) => { sse!.push('delta', { text }) } : undefined,
+      onTextDiscard: sse ? () => { sse!.push('discard', {}) } : undefined
+    })
+
+    // Phase 3, one short tx: the exchange is stored only once the reply
+    // exists, so a failed turn leaves no unanswered message behind.
+    const reply = result.text.trim() || 'Sorry — I could not come up with an answer to that.'
+    const payload = await prep.scope(async (tx) => {
       const userMessage = await helpinatorInsertMessage(tx, {
-        conversationId: conversation.id,
+        conversationId: prep.conversation.id,
         role: 'user',
         content: parsed.data.message
       })
-
-      let sse: Sse | null = null
-      if (wantsStream) {
-        sse = openSse(event)
-        live.sse = sse
-        await sse.push('session', session)
-      }
-
-      const result = await complete({
-        tx,
-        feature: HELPINATOR_CHAT_FEATURE,
-        system: bot.system,
-        messages: [...history, { role: 'user', content: parsed.data.message }],
-        tools: bot.tools,
-        onToolCall: (name, input) => {
-          const what = bot.describeToolCall(name, input)
-          if (sse && what) sse.push('status', { text: `Reading ${what}…` })
-          return bot.onToolCall(name, input)
-        },
-        maxTokens: 1500,
-        maxToolRounds: 3,
-        onTextDelta: sse ? (text) => { sse!.push('delta', { text }) } : undefined,
-        onTextDiscard: sse ? () => { sse!.push('discard', {}) } : undefined
-      })
-
-      const reply = result.text.trim() || 'Sorry — I could not come up with an answer to that.'
       const assistantMessage = await helpinatorInsertMessage(tx, {
-        conversationId: conversation.id,
+        conversationId: prep.conversation.id,
         role: 'assistant',
         content: reply,
         pagesLoaded: bot.pagesLoaded,
@@ -170,9 +191,8 @@ export default defineEventHandler(async (event) => {
         searchHits: bot.searchHits,
         model: result.model
       })
-
       return {
-        ...session,
+        ...prep.session,
         userMessage: helpinatorPublicMessage(userMessage),
         assistantMessage: helpinatorPublicMessage(assistantMessage)
       }

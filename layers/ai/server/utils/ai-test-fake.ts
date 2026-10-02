@@ -33,6 +33,9 @@ export interface AiFakeScript {
   // Text a streaming `complete()` receives before the tool calls and then
   // discards, exercising a consumer's `onTextDiscard`. Needs `toolCalls`.
   discardedText?: string
+  // `complete()` waits this long before answering, like a slow model, so a
+  // suite can observe what the caller holds open during a turn.
+  delayMs?: number
 }
 
 export interface AiFakeToolResult extends AiToolCallRecord {
@@ -112,6 +115,7 @@ export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Pr
     toolCalls.push(tc)
   }
   if (preface) opts.onTextDiscard?.()
+  if (state.script.delayMs) await new Promise(r => setTimeout(r, state.script.delayMs))
 
   const text = state.script.text ?? `[[stub:${model}]]`
   if (opts.onTextDelta) {

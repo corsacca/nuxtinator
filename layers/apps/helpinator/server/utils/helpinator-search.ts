@@ -9,10 +9,22 @@
 // opaque `ref` the load tool accepts: `page:<id>` or `section:<library>:<key>`.
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import { isEmbeddingConfigured, embed, cosineDistance, vectorSql } from '#ai/server'
+import { isEmbeddingConfigured, resolveAiEmbedRun, embed, cosineDistance, vectorSql, type AiEmbeddingRun } from '#ai/server'
 import type { HelpinatorLibraryRow } from './helpinator-libraries'
+import type { HelpinatorScope } from './helpinator-guards'
 
 type Tx = Transaction<Database>
+
+// The embedding run for this org's searches, or null when search is off (no
+// key / no embedding model). Resolved once per turn, inside its first tx.
+export async function helpinatorEmbedRun(tx: Tx): Promise<AiEmbeddingRun | null> {
+  try {
+    if (!(await isEmbeddingConfigured(tx))) return null
+    return await resolveAiEmbedRun(tx)
+  } catch {
+    return null
+  }
+}
 
 export interface HelpinatorSearchHit {
   ref: string
@@ -32,21 +44,24 @@ export function helpinatorSectionRef(libraryId: string, key: string): string {
   return `section:${libraryId}:${key}`
 }
 
+// The query is embedded outside any transaction; the ranking runs in one
+// short scoped tx.
 export async function helpinatorSearch(
-  tx: Tx,
-  opts: { libraries: HelpinatorLibraryRow[], query: string, limit?: number }
+  scope: HelpinatorScope,
+  opts: { libraries: HelpinatorLibraryRow[], query: string, limit?: number, embedRun: AiEmbeddingRun | null }
 ): Promise<HelpinatorSearchHit[]> {
   const limit = opts.limit ?? HELPINATOR_SEARCH_HITS
   const query = opts.query.trim()
-  if (!query || opts.libraries.length === 0) return []
-  if (!(await isEmbeddingConfigured(tx))) return []
+  if (!query || opts.libraries.length === 0 || !opts.embedRun) return []
+  const vector = (await embed({ run: opts.embedRun, input: [query] })).vectors[0]!
+  return await scope(tx => rankHits(tx, opts.libraries, vector, limit))
+}
 
-  const websiteIds = opts.libraries.filter(l => l.kind === 'website').map(l => l.id)
-  const portfolioLibs = opts.libraries.filter(l => l.kind === 'portfolio' && l.portfolio_id)
+async function rankHits(tx: Tx, libraries: HelpinatorLibraryRow[], vector: number[], limit: number): Promise<HelpinatorSearchHit[]> {
+  const websiteIds = libraries.filter(l => l.kind === 'website').map(l => l.id)
+  const portfolioLibs = libraries.filter(l => l.kind === 'portfolio' && l.portfolio_id)
   const libraryByPortfolio = new Map(portfolioLibs.map(l => [l.portfolio_id!, l]))
-  const libraryById = new Map(opts.libraries.map(l => [l.id, l]))
-
-  const vector = (await embed({ tx, input: [query] })).vectors[0]!
+  const libraryById = new Map(libraries.map(l => [l.id, l]))
   const hits: HelpinatorSearchHit[] = []
 
   if (websiteIds.length) {

@@ -7,6 +7,7 @@ import type { H3Event } from 'h3'
 import { getHeader, getRequestIP, getRequestURL, setResponseHeader } from 'h3'
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
+import { db } from '#core/server/utils/database'
 import { consumeRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
 import type { HelpinatorWidgetRow } from './helpinator-widgets'
 
@@ -121,6 +122,18 @@ export async function helpinatorMessagesToday(tx: Tx, widgetId: string): Promise
     .where('m.created_at', '>', sql<Date>`now() - interval '24 hours'`)
     .executeTakeFirst()
   return row?.n ?? 0
+}
+
+// Opens a short transaction scoped to one org (no GUC in single mode). Work
+// that waits on the network (model turns, embeddings, page fetches) runs
+// between these instead of inside one, so it never pins a pool connection.
+export type HelpinatorScope = <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>
+
+export function helpinatorScope(orgId: string | null): HelpinatorScope {
+  return async fn => await db.transaction().execute(async (tx) => {
+    if (orgId) await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
+    return await fn(tx)
+  })
 }
 
 // The org this transaction is scoped to (null in single mode) — needed for
