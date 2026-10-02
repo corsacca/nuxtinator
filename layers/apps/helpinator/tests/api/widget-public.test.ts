@@ -84,6 +84,20 @@ describe('public widget API', () => {
     expect(conv.messages.map(m => m.content)).toEqual(['When do you open?', 'We open at 9.', 'And close?', 'Until 5.'])
   })
 
+  it('stores only http(s) page URLs (no javascript: links into the admin app)', async () => {
+    const { widget } = await setup()
+    const stored: (string | null)[] = []
+    for (const pageUrl of ['javascript:alert(document.cookie)', 'data:text/html,<script>1</script>', 'not a url', 'https://site.example/a b']) {
+      await primeAiFake({ text: 'ok' })
+      const turn = await $fetch<{ conversationId: string }>(`/api/v1/helpinator/widgets/${widget.id}/messages`, {
+        method: 'POST', headers: widgetHeaders(), body: { message: 'hi', pageUrl }
+      })
+      const [row] = await sql`SELECT page_url FROM helpinator_conversations WHERE id = ${turn.conversationId}`
+      stored.push(row!.page_url)
+    }
+    expect(stored).toEqual([null, null, null, 'https://site.example/a%20b'])
+  })
+
   it('records the pages the bot grounded on and the searches it ran', async () => {
     const { widget } = await setup()
     await primeAiFake({ text: 'ok', toolCalls: [{ name: 'search', input: { query: 'opening hours' } }] })

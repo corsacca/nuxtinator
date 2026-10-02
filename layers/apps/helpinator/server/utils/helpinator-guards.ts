@@ -33,6 +33,19 @@ function originOf(raw: string | undefined | null): string | null {
   }
 }
 
+// The visitor-reported page URL, kept only when it is a plain http(s) URL.
+// It is rendered as a link in the admin app, so anything else (javascript:,
+// data:, …) is dropped rather than stored.
+export function helpinatorPageUrl(raw: string | undefined | null): string | null {
+  if (!raw) return null
+  try {
+    const u = new URL(raw)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href.slice(0, 2000) : null
+  } catch {
+    return null
+  }
+}
+
 // The embedding page's origin: the Origin header, else the Referer's origin
 // (same-origin GETs carry no Origin header).
 export function helpinatorRequestOrigin(event: H3Event): string | null {

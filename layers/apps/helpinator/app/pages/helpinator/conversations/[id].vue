@@ -19,6 +19,9 @@ const { data, error, refresh } = useFetch<{
 }>(() => `/api/helpinator/conversations/${id.value}`)
 
 const conversation = computed(() => data.value?.conversation)
+// The server only stores http(s) page URLs; older rows may hold anything, so
+// only those render as a link.
+const pageHref = computed(() => /^https?:\/\//i.test(conversation.value?.page_url ?? '') ? conversation.value!.page_url! : null)
 const confirmElevate = ref(false)
 const elevating = ref(false)
 
@@ -137,7 +140,8 @@ async function elevate() {
                   Page
                 </dt>
                 <dd class="break-all">
-                  <a :href="conversation.page_url" target="_blank" rel="noopener noreferrer" class="underline">{{ conversation.page_url }}</a>
+                  <a v-if="pageHref" :href="pageHref" target="_blank" rel="noopener noreferrer" class="underline">{{ conversation.page_url }}</a>
+                  <span v-else>{{ conversation.page_url }}</span>
                 </dd>
               </div>
               <div>

@@ -24,6 +24,7 @@ import {
   helpinatorHashSessionToken,
   helpinatorMessagesToday,
   helpinatorNewSessionToken,
+  helpinatorPageUrl,
   helpinatorRateLimit
 } from '../../../../../../utils/helpinator-guards'
 import {
@@ -104,7 +105,7 @@ export default defineEventHandler(async (event) => {
         conversation = await helpinatorCreateConversation(tx, {
           widget,
           sessionHash: helpinatorHashSessionToken(token),
-          pageUrl: parsed.data.pageUrl ?? null,
+          pageUrl: helpinatorPageUrl(parsed.data.pageUrl),
           origin,
           userAgent: getHeader(event, 'user-agent') ?? null
         })
