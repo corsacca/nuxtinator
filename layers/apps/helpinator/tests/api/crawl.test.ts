@@ -165,4 +165,36 @@ describe('website crawl', () => {
     expect(done.sources[0]!.page_count).toBe(1)
     expect(await getLibrary(opts, lib.id)).toMatchObject({ stats: { pages: 1 } })
   })
+
+  it('refuses internal addresses as sources', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    for (const url of ['http://169.254.169.254/latest/meta-data', 'http://10.0.0.1/', 'http://[::ffff:169.254.169.254]/', 'http://[fd00::1]/']) {
+      const err = await addSource(opts, lib.id, url).catch(e => e)
+      expect(err.statusCode, url).toBe(400)
+    }
+  })
+
+  it('does not follow a redirect to an internal address', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    site.pages.set('/docs', { html: '', redirect: 'http://169.254.169.254/latest/meta-data/' })
+    await addSource(opts, lib.id, `${site.origin}/docs`)
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('error')
+    expect(done.sources[0]!.last_error).toMatch(/not a public address/)
+    expect(await pagesOf(lib.id)).toHaveLength(0)
+  })
+
+  it('stops reading a page body past the size cap', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    site.pages.set('/docs/anvils', { html: '<p>filler filler filler</p>', streamBytes: 50 * 1024 * 1024 })
+    await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+    const urls = (await pagesOf(lib.id)).map(p => p.url)
+    expect(urls).toContain(`${site.origin}/docs`)
+    expect(urls).not.toContain(`${site.origin}/docs/anvils`)
+  })
 })

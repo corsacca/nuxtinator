@@ -22,6 +22,7 @@ import { isMigrationHeldBack } from '#core/server/utils/migration-status'
 import { embed, chunkMarkdown, vectorSql, resolveEmbeddingModel, type AiReindexer, type AiReindexProgress } from '#ai/server'
 import type { HelpinatorSourceRow } from './helpinator-libraries'
 import { helpinatorNormalizeUrl } from './helpinator-libraries'
+import { helpinatorSafeFetch } from './helpinator-safe-fetch'
 
 type Tx = Transaction<Database>
 
@@ -47,6 +48,7 @@ function parseDom(html: string): DomDocument {
 export const HELPINATOR_CRAWL_USER_AGENT = 'NuxtinatorHelpinator/1.0 (+https://github.com/corsacca/nuxtinator)'
 const FETCH_TIMEOUT_MS = 10_000
 const MAX_HTML_BYTES = 2 * 1024 * 1024
+const MAX_ROBOTS_BYTES = 512 * 1024
 const CONCURRENCY = 3
 const GAP_MS = 250
 // Extensions that are never HTML pages.
@@ -162,24 +164,26 @@ export function helpinatorContentHash(title: string, markdown: string): string {
 // --- Fetching ---
 
 async function fetchHtml(url: string): Promise<{ status: number, html: string | null, finalUrl: string }> {
-  const res = await fetch(url, {
+  const res = await helpinatorSafeFetch(url, {
     headers: { 'user-agent': HELPINATOR_CRAWL_USER_AGENT, 'accept': 'text/html,application/xhtml+xml' },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    timeoutMs: FETCH_TIMEOUT_MS,
+    maxBytes: MAX_HTML_BYTES,
+    wantBody: (status, type) => status >= 200 && status < 300 && /text\/html|application\/xhtml/i.test(type)
   })
-  const type = res.headers.get('content-type') ?? ''
-  if (!res.ok || !/text\/html|application\/xhtml/i.test(type)) return { status: res.status, html: null, finalUrl: res.url || url }
-  const buf = await res.arrayBuffer()
-  if (buf.byteLength > MAX_HTML_BYTES) return { status: res.status, html: null, finalUrl: res.url || url }
-  return { status: res.status, html: new TextDecoder().decode(buf), finalUrl: res.url || url }
+  return { status: res.status, html: res.body, finalUrl: res.finalUrl }
 }
 
 async function robotsFor(start: URL): Promise<{ isAllowed: (url: string) => boolean }> {
   const robotsUrl = `${start.origin}/robots.txt`
   try {
-    const res = await fetch(robotsUrl, { headers: { 'user-agent': HELPINATOR_CRAWL_USER_AGENT }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-    if (!res.ok) return { isAllowed: () => true }
-    const parsed = robotsParser(robotsUrl, await res.text())
+    const res = await helpinatorSafeFetch(robotsUrl, {
+      headers: { 'user-agent': HELPINATOR_CRAWL_USER_AGENT },
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxBytes: MAX_ROBOTS_BYTES,
+      wantBody: status => status >= 200 && status < 300
+    })
+    if (res.body === null) return { isAllowed: () => true }
+    const parsed = robotsParser(robotsUrl, res.body)
     return { isAllowed: url => parsed.isAllowed(url, HELPINATOR_CRAWL_USER_AGENT) !== false }
   } catch {
     return { isAllowed: () => true }

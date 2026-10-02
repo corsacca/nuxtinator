@@ -6,6 +6,7 @@ import { sql, type Selectable, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import type { HelpinatorLibraryKind } from '../database/schema'
 import { HELPINATOR_UUID_RE } from './helpinator-widgets'
+import { helpinatorUrlLooksPublic } from './helpinator-safe-fetch'
 
 type Tx = Transaction<Database>
 
@@ -28,7 +29,7 @@ const HTTP_URL = z.string().trim().max(2000).refine((v) => {
   } catch {
     return false
   }
-}, 'Enter an http(s) URL')
+}, 'Enter an http(s) URL').refine(helpinatorUrlLooksPublic, 'That address is not reachable from the internet')
 
 export const HelpinatorSourceInput = z.object({
   url: HTTP_URL,
