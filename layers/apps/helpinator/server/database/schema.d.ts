@@ -34,6 +34,7 @@ export interface HelpinatorLibrarySourcesTable {
   status: Generated<HelpinatorSourceStatus>
   run_token: string | null
   run_started_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
+  run_heartbeat_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
   page_count: Generated<number>
   bytes: Generated<number>
   run_total: Generated<number>

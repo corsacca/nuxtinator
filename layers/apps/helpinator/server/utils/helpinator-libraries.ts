@@ -176,11 +176,15 @@ export async function helpinatorAddSource(tx: Tx, library: HelpinatorLibraryRow,
     .where('url', '=', url)
     .executeTakeFirst()
   if (dup) throw createError({ statusCode: 409, statusMessage: 'That URL is already in this library.' })
-  return await tx
+  // A concurrent add of the same URL lands on the unique key: same 409.
+  const row = await tx
     .insertInto('helpinator_library_sources')
     .values({ library_id: library.id, url, restrict_to_path: input.restrict_to_path, max_pages: input.max_pages })
+    .onConflict(oc => oc.columns(['library_id', 'url']).doNothing())
     .returningAll()
-    .executeTakeFirstOrThrow()
+    .executeTakeFirst()
+  if (!row) throw createError({ statusCode: 409, statusMessage: 'That URL is already in this library.' })
+  return row
 }
 
 export async function helpinatorUpdateSource(tx: Tx, source: HelpinatorSourceRow, input: Pick<HelpinatorSourceInputValue, 'restrict_to_path' | 'max_pages'>): Promise<HelpinatorSourceRow> {

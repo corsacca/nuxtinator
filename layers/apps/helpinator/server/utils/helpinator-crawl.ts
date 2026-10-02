@@ -23,6 +23,7 @@ import type { HelpinatorSourceRow } from './helpinator-libraries'
 import { helpinatorNormalizeUrl } from './helpinator-libraries'
 import { helpinatorSafeFetch } from './helpinator-safe-fetch'
 import { helpinatorScope, type HelpinatorScope } from './helpinator-guards'
+import { helpinatorEmbedRun } from './helpinator-search'
 
 type Tx = Transaction<Database>
 
@@ -232,17 +233,28 @@ interface RunCounters {
   bytes: number
   skipped: number
   failed: string[]
+  // URLs that failed transiently this run: their stored pages are kept.
+  keep: Set<string>
 }
 
 // Fetch, extract and store one page. Three steps so no tx spans the network:
 // a short tx decides what the page needs, the embedding call runs outside any
 // tx, and a short tx writes (re-checking the run token and URL ownership).
-async function processUrl(orgId: string | null, source: HelpinatorSourceRow, token: string, url: string, startedAt: Date, embedRun: AiEmbeddingRun, counters: RunCounters): Promise<void> {
+// With no embedding run (no model configured) pages are stored unindexed;
+// the AI settings re-embed indexes them once a model is set.
+async function processUrl(orgId: string | null, source: HelpinatorSourceRow, token: string, url: string, startedAt: Date, embedRun: AiEmbeddingRun | null, counters: RunCounters): Promise<void> {
   let fetched: Awaited<ReturnType<typeof fetchHtml>>
   try {
     fetched = await fetchHtml(url)
   } catch (err) {
+    // Timeouts and network errors are transient: keep the stored copy.
     counters.failed.push(`${url}: ${(err as Error)?.message ?? 'fetch failed'}`)
+    counters.keep.add(url)
+    return
+  }
+  if (fetched.status === 429 || fetched.status >= 500) {
+    counters.failed.push(`${url}: HTTP ${fetched.status}`)
+    counters.keep.add(url)
     return
   }
   if (!fetched.html) {
@@ -272,7 +284,9 @@ async function processUrl(orgId: string | null, source: HelpinatorSourceRow, tok
     if (existing && existing.source_id !== source.id) return 'skip' as const
     if (!existing) return 'embed' as const
     const chunkModels = await tx.selectFrom('helpinator_library_chunks').select('model').distinct().where('page_id', '=', existing.id).execute()
-    const upToDate = existing.content_hash === hash && chunkModels.length === 1 && chunkModels[0]!.model === embedRun.model
+    const upToDate = existing.content_hash === hash && (embedRun
+      ? chunkModels.length === 1 && chunkModels[0]!.model === embedRun.model
+      : true)
     if (!upToDate) return 'embed' as const
     await tx.updateTable('helpinator_library_pages').set(pageValues).where('id', '=', existing.id).execute()
     return 'kept' as const
@@ -288,7 +302,7 @@ async function processUrl(orgId: string | null, source: HelpinatorSourceRow, tok
   }
 
   const pieces = chunkPage(extracted.title, extracted.markdown)
-  const { vectors, model } = await embed({ run: embedRun, input: pieces.map(p => p.text) })
+  const embedded = embedRun ? await embed({ run: embedRun, input: pieces.map(p => p.text) }) : null
 
   const stored = await helpinatorScopeTx(orgId, async (tx) => {
     await assertToken(tx, source.id, token)
@@ -299,14 +313,23 @@ async function processUrl(orgId: string | null, source: HelpinatorSourceRow, tok
       pageId = existing.id
       await tx.updateTable('helpinator_library_pages').set(pageValues).where('id', '=', pageId).execute()
     } else {
+      // Another source of this library may insert the same URL between our
+      // check and here; the first one wins and owns the page.
       const inserted = await tx
         .insertInto('helpinator_library_pages')
         .values({ library_id: source.library_id, source_id: source.id, url, ...pageValues })
+        .onConflict(oc => oc.columns(['library_id', 'url']).doNothing())
         .returning('id')
-        .executeTakeFirstOrThrow()
+        .executeTakeFirst()
+      if (!inserted) return false
       pageId = inserted.id
     }
-    await writeChunks(tx, pageId, source.library_id, pieces, vectors, model)
+    if (embedded) {
+      await writeChunks(tx, pageId, source.library_id, pieces, embedded.vectors, embedded.model)
+    } else {
+      // Unindexed: drop chunks of the old content rather than leave them.
+      await tx.deleteFrom('helpinator_library_chunks').where('page_id', '=', pageId).execute()
+    }
     return true
   })
   if (!stored) {
@@ -325,7 +348,7 @@ async function setProgress(orgId: string | null, sourceId: string, token: string
   await helpinatorScopeTx(orgId, async (tx) => {
     await tx
       .updateTable('helpinator_library_sources')
-      .set(patch === 'item-done' ? { run_done: sql`run_done + 1` } : patch)
+      .set({ ...(patch === 'item-done' ? { run_done: sql`run_done + 1` } : patch), run_heartbeat_at: sql`now()` })
       .where('id', '=', sourceId)
       .where('run_token', '=', token)
       .execute()
@@ -345,7 +368,7 @@ async function finish(orgId: string | null, sourceId: string, token: string, pat
 
 async function runSource(orgId: string | null, source: HelpinatorSourceRow, token: string): Promise<void> {
   const startedAt = new Date()
-  const counters: RunCounters = { pages: 0, bytes: 0, skipped: 0, failed: [] }
+  const counters: RunCounters = { pages: 0, bytes: 0, skipped: 0, failed: [], keep: new Set() }
   try {
     const startUrl = new URL(source.url)
     const robots = await robotsFor(startUrl)
@@ -359,31 +382,49 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
       return
     }
     // Resolved once per run, in its own short tx; embeds then run outside any.
-    const embedRun = await helpinatorScopeTx(orgId, tx => resolveAiEmbedRun(tx))
+    // Null (no embedding model): pages are stored, just not indexed.
+    const embedRun = await helpinatorScopeTx(orgId, tx => helpinatorEmbedRun(tx))
     const plan = helpinatorDiscoverLinks(first.html, source.url, { restrictToPath: source.restrict_to_path, maxPages: source.max_pages })
     const queue = plan.urls.filter(u => robots.isAllowed(u))
     await setProgress(orgId, source.id, token, { run_total: queue.length })
 
-    // Bounded concurrency with a short gap between starts.
+    // Bounded concurrency with a short gap between starts. A page's own
+    // failure is recorded and the run goes on; a superseded run stops every
+    // worker at its next URL.
     let next = 0
+    let stopped: unknown = null
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-      while (next < queue.length) {
+      while (next < queue.length && !stopped) {
         const url = queue[next++]!
-        await processUrl(orgId, source, token, url, startedAt, embedRun, counters)
+        try {
+          await processUrl(orgId, source, token, url, startedAt, embedRun, counters)
+        } catch (err) {
+          if (err instanceof Superseded) {
+            stopped = err
+            return
+          }
+          const message = (err as { statusMessage?: string, message?: string })?.statusMessage || (err as Error)?.message || 'failed'
+          console.error(`[helpinator] crawl of ${url} failed:`, err)
+          counters.failed.push(`${url}: ${message}`)
+          counters.keep.add(url)
+        }
         await setProgress(orgId, source.id, token, 'item-done')
         await sleep(GAP_MS)
       }
     })
     await Promise.all(workers)
+    if (stopped) throw stopped
 
-    // Pages of this source not seen this run are gone from the site.
+    // Pages of this source not seen this run are gone from the site — except
+    // those whose fetch failed transiently, which keep their last good copy.
     await helpinatorScopeTx(orgId, async (tx) => {
       await assertToken(tx, source.id, token)
-      await tx
+      let q = tx
         .deleteFrom('helpinator_library_pages')
         .where('source_id', '=', source.id)
         .where('fetched_at', '<', startedAt)
-        .execute()
+      if (counters.keep.size) q = q.where('url', 'not in', [...counters.keep])
+      await q.execute()
     })
 
     const errorNote = counters.failed.length ? `${counters.failed.length} page(s) failed: ${counters.failed.slice(0, 3).join('; ')}` : null
@@ -413,7 +454,7 @@ export async function helpinatorStartSourceSync(
   const token = randomUUID()
   await tx
     .updateTable('helpinator_library_sources')
-    .set({ status: 'syncing', run_token: token, run_started_at: sql`now()`, run_total: 0, run_done: 0, last_error: null })
+    .set({ status: 'syncing', run_token: token, run_started_at: sql`now()`, run_heartbeat_at: sql`now()`, run_total: 0, run_done: 0, last_error: null })
     .where('id', '=', source.id)
     .execute()
   const fresh = { ...source, status: 'syncing' as const, run_token: token, run_total: 0, run_done: 0 }
@@ -429,6 +470,24 @@ export async function helpinatorStartSourceSync(
     }, 50)
   })
   return { token, done }
+}
+
+// A run that hasn't written progress for this long belonged to a process
+// that is gone (progress is written after every page, and one page is
+// bounded by the fetch and embedding timeouts).
+const STALE_RUN = '5 minutes'
+
+// Mark this library's dead runs interrupted, so the UI stops polling and
+// "Sync all" comes back. Safe across processes: a live run keeps its
+// heartbeat fresh, and a newer run has a newer token anyway.
+export async function helpinatorExpireStaleRuns(tx: Tx, libraryId?: string): Promise<void> {
+  let q = tx
+    .updateTable('helpinator_library_sources')
+    .set({ status: 'error', run_token: null, last_error: 'The last sync was interrupted (the server restarted). Run it again.' })
+    .where('status', '=', 'syncing')
+    .where(sql<boolean>`coalesce(run_heartbeat_at, run_started_at, created_at) < now() - ${STALE_RUN}::interval`)
+  if (libraryId) q = q.where('library_id', '=', libraryId)
+  await q.execute()
 }
 
 export function helpinatorSyncRunning(sourceId: string): boolean {

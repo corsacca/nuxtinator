@@ -7,6 +7,8 @@ import type { AddressInfo } from 'node:net'
 export interface FixturePage {
   html: string
   contentType?: string
+  // Answer with this status (default 200).
+  status?: number
   // 302 to this location instead of serving `html`.
   redirect?: string
   // Stream `html` repeated until this many bytes, chunked (no content-length).
@@ -54,7 +56,7 @@ export async function startFixtureSite(): Promise<FixtureSite> {
       res.end()
       return
     }
-    res.writeHead(200, { 'content-type': page.contentType ?? 'text/html; charset=utf-8' })
+    res.writeHead(page.status ?? 200, { 'content-type': page.contentType ?? 'text/html; charset=utf-8' })
     if (page.streamBytes) {
       const chunk = Buffer.from(page.html.repeat(Math.ceil(65536 / page.html.length)))
       let sent = 0

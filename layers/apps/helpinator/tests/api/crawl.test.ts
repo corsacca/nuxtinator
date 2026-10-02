@@ -211,4 +211,55 @@ describe('website crawl', () => {
     expect(done.sources[0]!.status).toBe('done')
     expect(done.sources[0]!.page_count).toBe(3)
   })
+
+  it('a transient failure on re-crawl keeps the stored page', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    const source = await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    await waitForSync(opts, lib.id)
+    site.pages.set('/docs/anvils', { html: 'busy', status: 503 })
+    await $fetch(`/api/helpinator/libraries/${lib.id}/sources/${source.id}/sync`, { method: 'POST', ...opts })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+    expect(done.sources[0]!.last_error).toMatch(/503/)
+    expect((await pagesOf(lib.id)).map(p => p.url)).toContain(`${site.origin}/docs/anvils`)
+  })
+
+  it('one page failing to index does not fail the run', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    // The AI fake fails any embedding input containing [[fail]]; the title
+    // heads every chunk unescaped.
+    site.pages.set('/docs/anvils', { html: article('Anvils [[fail]]', 'anvil forging') })
+    await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+    expect(done.sources[0]!.last_error).toMatch(/1 page\(s\) failed/)
+    expect((await pagesOf(lib.id)).map(p => p.url)).toEqual([`${site.origin}/docs`, `${site.origin}/docs/horseshoes`])
+  })
+
+  it('two sources crawling the same URLs at once both finish', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    // Both reach /docs and its articles (the home page links them too).
+    await Promise.all([
+      addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 }),
+      addSource(opts, lib.id, `${site.origin}/`, { restrict_to_path: false, max_pages: 10 })
+    ])
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources.map(s => s.status)).toEqual(['done', 'done'])
+    const urls = (await pagesOf(lib.id)).map(p => p.url)
+    expect(new Set(urls).size).toBe(urls.length)
+  })
+
+  it('a run whose process died is shown as interrupted, not syncing forever', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    const source = await addSource(opts, lib.id, `${site.origin}/docs`)
+    await waitForSync(opts, lib.id)
+    await sql`UPDATE helpinator_library_sources SET status = 'syncing', run_token = gen_random_uuid(), run_heartbeat_at = now() - interval '10 minutes' WHERE id = ${source.id}`
+    const lib2 = await getLibrary(opts, lib.id)
+    expect(lib2.sources[0]!.status).toBe('error')
+    expect(lib2.sources[0]!.last_error).toMatch(/interrupted/)
+  })
 })
