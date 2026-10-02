@@ -10,7 +10,8 @@ import {
   createTestPortfolio,
   withOrgHeader,
   resetAiFake,
-  getAiFakeLog
+  getAiFakeLog,
+  getAppUserDb
 } from '../helpers'
 
 interface SectionRead {
@@ -88,6 +89,28 @@ describe('section vector index', () => {
     const out = await $fetch<{ index_state: string, chunks: number }>(`/api/context/portfolios/${p.slug}/sections/identity/reindex`, { method: 'POST', ...opts })
     expect(out.index_state).toBe('ok')
     expect(out.chunks).toBe(1)
+  })
+
+  it('embeds after the save commits, holding no transaction during the call', async () => {
+    const { p, opts } = await setup()
+    await $fetch('/api/_test/ai', { method: 'POST', body: { embedDelayMs: 1500 } })
+    const save = $fetch<{ id: string }>(`/api/context/portfolios/${p.slug}/sections/identity`, {
+      method: 'PUT', body: { content: 'Slow to embed.' }, ...opts
+    })
+    await new Promise(r => setTimeout(r, 1000))
+    // As app_user: pg_stat_activity hides other roles' session state.
+    const open = await getAppUserDb()<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE state LIKE 'idle in transaction%' AND now() - xact_start > interval '400 milliseconds'
+    `
+    expect(open[0]!.n).toBe(0)
+    // The content is committed before the embed finishes…
+    const [mid] = await sql<{ content: string }[]>`SELECT content FROM context_sections WHERE portfolio_id = ${p.id} AND section_key = 'identity'`
+    expect(mid!.content).toBe('Slow to embed.')
+    // …and the response still waits for the index.
+    const res = await save
+    const chunks = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM context_section_chunks WHERE section_id = ${res.id}`
+    expect(chunks[0]!.n).toBe(1)
   })
 
   it('cascades chunks when the section goes', async () => {

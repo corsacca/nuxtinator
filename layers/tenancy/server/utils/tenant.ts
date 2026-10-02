@@ -21,6 +21,8 @@ import type { Transaction, Kysely } from 'kysely'
 import { sql } from 'kysely'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { db } from '#core/server/utils/database'
+// Tracks each request transaction so `afterCommit` work runs once it commits.
+import { runTransaction } from '#core/server/utils/after-commit'
 import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions, getUserPermissions } from '#core/server/utils/rbac'
 import { getUserGrantedPermissions } from '#core/server/utils/permission-grants'
@@ -79,7 +81,7 @@ async function runWithOrgContext<T>(
     })
   }
 
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
 
     const perms = await getRolePermissions(tx, memberRoles, orgId)
@@ -205,7 +207,7 @@ export async function computePermsForOrg(
 // `runWithOrgContext` reads them: inside a transaction with the GUC set, so
 // `custom_roles` and `user_permission_grants` are RLS-scoped to that org.
 async function resolveOrgPerms(userId: string, orgId: string): Promise<Set<Permission>> {
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
     const perms = await computePermsForOrg(tx, userId, orgId)
     for (const perm of await getUserGrantedPermissions(tx, userId)) {
@@ -440,7 +442,7 @@ export async function runInOrgTransaction<T>(
     throw createError({ statusCode: 400, statusMessage: 'No organization selected. Pass `org` or send the X-Active-Org header.' })
   }
 
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     if (orgId) {
       await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
     }
@@ -476,7 +478,7 @@ export async function withProjectOrgContext<T>(
   if (!orgId) {
     throw createError({ statusCode: 404, statusMessage: 'Project not found' })
   }
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
     return await fn(tx)
   })
@@ -528,7 +530,7 @@ export async function withRecordOrgContext<T>(
     throw createError({ statusCode: 404, statusMessage: notFoundMessage })
   }
 
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
     return await fn(tx)
   })

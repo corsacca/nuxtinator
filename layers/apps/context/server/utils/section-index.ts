@@ -12,17 +12,20 @@
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { isMigrationHeldBack } from '#core/server/utils/migration-status'
+import { afterCommit, type TxScope } from '#core/server/utils/after-commit'
 import {
   isEmbeddingConfigured,
+  resolveAiEmbedRun,
   embed,
   chunkMarkdown,
   vectorSql,
   cosineDistance,
   resolveEmbeddingModel,
+  type AiEmbeddingRun,
   type AiReindexer,
   type AiReindexProgress
 } from '#ai/server'
-import type { SectionRow } from './section-helpers'
+import { getPortfolioSections } from './section-settings'
 
 type Tx = Transaction<Database>
 
@@ -55,21 +58,54 @@ function errorMessage(err: unknown): string {
   return (e?.statusMessage || e?.message || 'Embedding failed').slice(0, 500)
 }
 
-// Replace a section's chunks with fresh embeddings of `content`. Returns the
-// chunk count; never throws for AI failures (state → 'stale'). Empty content
-// clears the index and reports 'ok'.
-export async function indexSection(
-  tx: Tx,
-  section: Pick<SectionRow, 'id' | 'portfolio_id' | 'section_key' | 'content'>,
-  title: string
-): Promise<{ state: 'none' | 'ok' | 'stale', chunks: number, error: string | null }> {
-  if (!(await sectionIndexAvailable()) || !(await isEmbeddingConfigured(tx))) {
-    await setState(tx, section.id, 'none', null)
-    return { state: 'none', chunks: 0, error: null }
-  }
-  const pieces = chunkTexts(title, section.content ?? '')
+type IndexResult = { state: 'none' | 'ok' | 'stale', chunks: number, error: string | null }
+type IndexedSection = { id: string, portfolio_id: string, section_key: string, content: string }
+
+// Replace a section's chunks with fresh embeddings of its stored content.
+// Never throws for AI failures (state → 'stale'); empty content clears the
+// index and reports 'ok'. Three steps through `scope`, so no transaction is
+// open during the embedding call: read the section and resolve the run,
+// embed, then write — skipped if the content changed meanwhile (that save
+// queued its own index run).
+export async function indexSectionScoped(scope: TxScope, sectionId: string): Promise<IndexResult> {
+  if (!(await sectionIndexAvailable())) return { state: 'none', chunks: 0, error: null }
+  const prep = await scope(async (tx): Promise<IndexResult | { section: IndexedSection, run: AiEmbeddingRun, title: string }> => {
+    const section = await tx
+      .selectFrom('context_sections')
+      .select(['id', 'portfolio_id', 'section_key', 'content'])
+      .where('id', '=', sectionId)
+      .executeTakeFirst()
+    if (!section) return { state: 'none', chunks: 0, error: null }
+    if (!(await isEmbeddingConfigured(tx))) {
+      await setState(tx, section.id, 'none', null)
+      return { state: 'none', chunks: 0, error: null }
+    }
+    try {
+      const def = (await getPortfolioSections(tx, section.portfolio_id)).find(d => d.key === section.section_key)
+      return { section, run: await resolveAiEmbedRun(tx), title: def?.title ?? section.section_key }
+    } catch (err) {
+      const message = errorMessage(err)
+      await setState(tx, section.id, 'stale', message)
+      return { state: 'stale', chunks: 0, error: message }
+    }
+  })
+  if ('state' in prep) return prep
+
+  const { section, run } = prep
+  const pieces = chunkTexts(prep.title, section.content ?? '')
+  let embedded: { vectors: number[][], model: string }
   try {
-    const { vectors, model } = await embed({ tx, input: pieces.map(p => p.text) })
+    embedded = await embed({ run, input: pieces.map(p => p.text) })
+  } catch (err) {
+    const message = errorMessage(err)
+    console.error(`[context] section index failed for ${section.portfolio_id}/${section.section_key}: ${message}`)
+    await scope(tx => setState(tx, section.id, 'stale', message))
+    return { state: 'stale', chunks: 0, error: message }
+  }
+
+  return await scope(async (tx) => {
+    const now = await tx.selectFrom('context_sections').select('content').where('id', '=', section.id).executeTakeFirst()
+    if (!now || now.content !== section.content) return { state: 'none' as const, chunks: 0, error: null }
     await tx.deleteFrom('context_section_chunks').where('section_id', '=', section.id).execute()
     for (let i = 0; i < pieces.length; i++) {
       await tx
@@ -80,19 +116,20 @@ export async function indexSection(
           ordinal: i,
           heading: pieces[i]!.heading,
           content: pieces[i]!.text,
-          embedding: vectorSql(vectors[i]!),
-          model
+          embedding: vectorSql(embedded.vectors[i]!),
+          model: embedded.model
         })
         .execute()
     }
     await setState(tx, section.id, 'ok', null)
-    return { state: 'ok', chunks: pieces.length, error: null }
-  } catch (err) {
-    const message = errorMessage(err)
-    console.error(`[context] section index failed for ${section.portfolio_id}/${section.section_key}: ${message}`)
-    await setState(tx, section.id, 'stale', message)
-    return { state: 'stale', chunks: 0, error: message }
-  }
+    return { state: 'ok' as const, chunks: pieces.length, error: null }
+  })
+}
+
+// Index `sectionId` once `tx` commits (inline when `tx` isn't a tracked
+// request transaction). Used by every save path.
+export async function indexSectionAfterCommit(tx: Tx, sectionId: string): Promise<void> {
+  await afterCommit(tx, async scope => void await indexSectionScoped(scope, sectionId))
 }
 
 // Every section of a portfolio (or of every portfolio in scope with no id).
@@ -111,7 +148,7 @@ export async function reindexSections(tx: Tx, portfolioId?: string, progress?: A
   progress?.total(rows.length)
   let chunks = 0
   for (const row of rows) {
-    const result = await indexSection(tx, row, row.title ?? row.section_key)
+    const result = await indexSectionScoped(inner => inner(tx), row.id)
     if (result.state === 'stale') throw createError({ statusCode: 502, statusMessage: result.error ?? 'Embedding failed' })
     chunks += result.chunks
     progress?.item(result.chunks)

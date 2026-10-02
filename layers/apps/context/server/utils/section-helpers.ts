@@ -7,6 +7,7 @@ import type { Database } from '#core/server/database/schema'
 import type { ContextSectionVersionSource } from '../database/schema'
 import { CONTEXT_SECTION_KEYS, slugifySectionTitle } from './section-catalog'
 import { getPortfolioSections, nextExplicitOrder, type MergedSection } from './section-settings'
+import { indexSectionAfterCommit } from './section-index'
 
 export const MAX_SECTION_BYTES = 100 * 1024
 
@@ -251,9 +252,9 @@ export async function saveSectionContent(
     .executeTakeFirstOrThrow()
 
   // Keep the vector index in step with the content. Best-effort: a failure
-  // marks the section stale and never fails the save.
-  const def = (await getPortfolioSections(tx, portfolioId)).find(d => d.key === key)
-  await indexSection(tx, section, def?.title ?? key)
+  // marks the section stale and never fails the save. Runs after the save
+  // commits, so the embedding call never holds the request's transaction.
+  await indexSectionAfterCommit(tx, section.id)
 
   return { section, versionId: version.id }
 }
