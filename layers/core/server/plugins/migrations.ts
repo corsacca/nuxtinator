@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createKyselyDb } from '#core/server/utils/db-connection'
+import { setHeldBackMigrations } from '#core/server/utils/migration-status'
 
 // Migration runner. Builds its own Kysely client connecting via DATABASE_URL.
 // In single-tenant mode that's just the database. In multi-tenant mode it's
@@ -50,9 +51,11 @@ async function readExecutedMigrationNames(db: Kysely<unknown>): Promise<string[]
 }
 
 // Layers declare the Postgres extensions their migrations need, keyed by
-// migration-name prefix (`runtimeConfig.migrationRequiredExtensions`). A prefix
-// whose extension can't be installed has its pending migrations skipped with a
-// warning; they run on a later boot once the extension is available.
+// migration-name prefix (`runtimeConfig.migrationRequiredExtensions`). A key
+// may be a whole layer (`helpinator`) or single migrations (`context_013`).
+// A prefix whose extension can't be installed has its pending migrations
+// skipped with a warning; they run on a later boot once the extension is
+// available. Runtime code checks `isMigrationHeldBack(prefix)` to degrade.
 async function findHeldBackPrefixes(db: Kysely<unknown>, required: Record<string, string[]>): Promise<string[]> {
   const failures = new Map<string, string | null>()
   const held: string[] = []
@@ -132,6 +135,15 @@ class LayeredMigrationProvider implements MigrationProvider {
 }
 
 export default defineNitroPlugin(async () => {
+  try {
+    await runMigrations()
+  } finally {
+    // No-op when runMigrations already recorded the held-back set.
+    setHeldBackMigrations([])
+  }
+})
+
+async function runMigrations(): Promise<void> {
   const config = useRuntimeConfig()
   const databaseUrl = config.databaseUrl || process.env.DATABASE_URL
   if (!databaseUrl) {
@@ -156,6 +168,7 @@ export default defineNitroPlugin(async () => {
     adminDb,
     (config.migrationRequiredExtensions as Record<string, string[]> | undefined) || {}
   )
+  setHeldBackMigrations(heldBackPrefixes)
 
   const migrator = new Migrator({
     db: adminDb,
@@ -191,4 +204,4 @@ export default defineNitroPlugin(async () => {
   }
 
   console.log('Migrations complete')
-})
+}

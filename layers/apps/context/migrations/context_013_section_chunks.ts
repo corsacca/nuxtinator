@@ -6,14 +6,13 @@ import { sql } from 'kysely'
 // (see `#ai/server` chunkMarkdown); `model` records which embedding model
 // produced the vector so a model change can be detected and re-embedded.
 //
-// Needs the pgvector extension. `CREATE EXTENSION` is attempted here for
-// deployments whose migration role may create it (Railway's pgvector
-// template, superuser dev databases); elsewhere an operator runs
-// `CREATE EXTENSION vector;` as superuser first and this becomes a no-op.
+// Needs the pgvector extension. nuxt.config.ts declares that, so core's
+// runner tries `CREATE EXTENSION` first and, when it can't, holds this (and
+// context_T013) back with a warning instead of failing boot; the rest of the
+// context layer runs without a vector index (see utils/section-index.ts).
+// The guard below covers a runner that doesn't know about the declaration.
 //
-// `index_state` on context_sections tracks whether the section's chunks match
-// its current content: none (never indexed / embeddings not configured), ok,
-// stale (the last embed attempt failed — see index_error).
+// The index_state columns live in context_014 so they exist either way.
 export async function up(db: Kysely<unknown>): Promise<void> {
   // Checked before attempting CREATE: a failed statement aborts the migration's
   // transaction, so nothing can be queried after it.
@@ -49,15 +48,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .on('context_section_chunks')
     .column('portfolio_id')
     .execute()
-
-  await db.schema
-    .alterTable('context_sections')
-    .addColumn('index_state', 'text', col => col.notNull().defaultTo('none'))
-    .addColumn('index_error', 'text')
-    .execute()
 }
 
 export async function down(db: Kysely<unknown>): Promise<void> {
-  await db.schema.alterTable('context_sections').dropColumn('index_error').dropColumn('index_state').execute()
   await db.schema.dropTable('context_section_chunks').ifExists().execute()
 }

@@ -174,6 +174,9 @@ export interface AiReindexer {
   // Stable key, e.g. 'context.sections'.
   key: string
   label: string
+  // False when the index's tables don't exist on this deployment (e.g. its
+  // migrations were held back for a missing pgvector). Omitted = always.
+  available?: () => Promise<boolean>
   // Distinct embedding model ids currently stored in this index for the scope.
   currentModels: (tx: AiDbClient) => Promise<string[]>
   // Re-embed everything in the scope with the model that resolves now.

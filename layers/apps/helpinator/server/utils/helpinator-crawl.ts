@@ -18,6 +18,7 @@ import robotsParser from 'robots-parser'
 
 import type { Database } from '#core/server/database/schema'
 import { db } from '#core/server/utils/database'
+import { isMigrationHeldBack } from '#core/server/utils/migration-status'
 import { embed, chunkMarkdown, vectorSql, resolveEmbeddingModel, type AiReindexer, type AiReindexProgress } from '#ai/server'
 import type { HelpinatorSourceRow } from './helpinator-libraries'
 import { helpinatorNormalizeUrl } from './helpinator-libraries'
@@ -422,6 +423,8 @@ export async function helpinatorReindexLibraries(tx: Tx, progress?: AiReindexPro
 export const HELPINATOR_REINDEXER: AiReindexer = {
   key: 'helpinator.libraries',
   label: 'Helpinator — library pages',
+  // Held back = no pgvector, so none of helpinator's tables exist.
+  available: async () => !(await isMigrationHeldBack('helpinator')),
   currentModels: async (tx) => {
     const rows = await (tx as Tx).selectFrom('helpinator_library_chunks').select('model').distinct().execute()
     return rows.map(r => r.model)

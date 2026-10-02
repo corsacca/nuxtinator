@@ -6,8 +6,12 @@
 // or no embedding model is set. Failures leave `index_state = 'stale'` with
 // the message in `index_error`; the section page shows a warning and a
 // re-embed button. With embeddings not configured the state stays 'none'.
+//
+// Without pgvector the chunk table doesn't exist (context_013 is held back):
+// every entry point here checks `sectionIndexAvailable()` and no-ops.
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
+import { isMigrationHeldBack } from '#core/server/utils/migration-status'
 import {
   isEmbeddingConfigured,
   embed,
@@ -27,6 +31,10 @@ export const CONTEXT_REINDEXER_KEY = 'context.sections'
 
 // Chunks include the section title as a first line so a search on the title
 // alone still lands, and so the snippet reads naturally.
+export async function sectionIndexAvailable(): Promise<boolean> {
+  return !(await isMigrationHeldBack('context_013'))
+}
+
 function chunkTexts(title: string, content: string): { heading: string, text: string }[] {
   return chunkMarkdown(content).map(c => ({
     heading: c.heading,
@@ -55,7 +63,7 @@ export async function indexSection(
   section: Pick<SectionRow, 'id' | 'portfolio_id' | 'section_key' | 'content'>,
   title: string
 ): Promise<{ state: 'none' | 'ok' | 'stale', chunks: number, error: string | null }> {
-  if (!(await isEmbeddingConfigured(tx))) {
+  if (!(await sectionIndexAvailable()) || !(await isEmbeddingConfigured(tx))) {
     await setState(tx, section.id, 'none', null)
     return { state: 'none', chunks: 0, error: null }
   }
@@ -128,7 +136,7 @@ export async function searchSections(
   opts: { portfolioIds: string[], query?: string, queryVector?: number[], limit?: number }
 ): Promise<SectionSearchHit[]> {
   const limit = opts.limit ?? 8
-  if (opts.portfolioIds.length === 0) return []
+  if (opts.portfolioIds.length === 0 || !(await sectionIndexAvailable())) return []
   let vector = opts.queryVector
   if (!vector) {
     if (!opts.query?.trim() || !(await isEmbeddingConfigured(tx))) return []
@@ -161,6 +169,7 @@ export async function searchSections(
 
 // Distinct embedding models stored in this scope's index.
 export async function sectionIndexModels(tx: Tx): Promise<string[]> {
+  if (!(await sectionIndexAvailable())) return []
   const rows = await tx.selectFrom('context_section_chunks').select('model').distinct().execute()
   return rows.map(r => r.model)
 }
@@ -168,6 +177,7 @@ export async function sectionIndexModels(tx: Tx): Promise<string[]> {
 export const CONTEXT_REINDEXER: AiReindexer = {
   key: CONTEXT_REINDEXER_KEY,
   label: 'Context — portfolio sections',
+  available: sectionIndexAvailable,
   currentModels: tx => sectionIndexModels(tx as Tx),
   run: async (tx, progress) => {
     // Nothing to do when no model resolves: leave the index as it is.

@@ -25,6 +25,15 @@ export function getAiReindexers(): AiReindexer[] {
   return [..._reindexers.values()].sort((a, b) => a.label.localeCompare(b.label))
 }
 
+// The registered reindexers whose tables exist on this deployment.
+export async function getAvailableAiReindexers(): Promise<AiReindexer[]> {
+  const out: AiReindexer[] = []
+  for (const r of getAiReindexers()) {
+    if (!r.available || await r.available()) out.push(r)
+  }
+  return out
+}
+
 export function __resetAiReindexRegistryForTests(): void {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('__resetAiReindexRegistryForTests is not callable in production')
@@ -74,7 +83,7 @@ export interface AiIndexStaleness {
 export async function getAiIndexStaleness(tx: Transaction<Database>): Promise<AiIndexStaleness> {
   const model = await resolveEmbeddingModel(tx)
   const stored = new Set<string>()
-  for (const r of getAiReindexers()) {
+  for (const r of await getAvailableAiReindexers()) {
     for (const m of await r.currentModels(tx)) stored.add(m)
   }
   const list = [...stored].sort()
@@ -120,7 +129,7 @@ export function getAiReindexStatus(orgId?: string | null): AiReindexStatus {
 async function reindexScope(scope: AiReindexScopeStatus): Promise<void> {
   scope.state = 'running'
   try {
-    for (const r of getAiReindexers()) {
+    for (const r of await getAvailableAiReindexers()) {
       scope.current = r.label
       const chunksBefore = scope.chunks
       const result = await withAiScopeTx(scope.orgId, tx => r.run(tx, {
