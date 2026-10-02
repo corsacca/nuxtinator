@@ -184,4 +184,23 @@ describe('section vector index', () => {
       await new Promise(r => setTimeout(r, 100))
     }
   })
+
+  it('a section with content but no chunks reads as unindexed and makes the org index stale', async () => {
+    const { p, opts } = await setup()
+    await $fetch('/api/ai/org/config', { method: 'PUT', body: { embedding_model: 'test/embed-small' }, ...opts })
+    // Written before embeddings existed: content, no chunks, state 'none'.
+    await sql`
+      INSERT INTO context_sections (portfolio_id, section_key, content, index_state)
+      VALUES (${p.id}, 'identity', 'Old content.', 'none')
+      ON CONFLICT (portfolio_id, section_key) DO UPDATE SET content = 'Old content.', index_state = 'none'
+    `
+    await sql`DELETE FROM context_section_chunks WHERE portfolio_id = ${p.id}`
+    const read = await $fetch<{ index_state: string }>(`/api/context/portfolios/${p.slug}/sections/identity`, { ...opts })
+    expect(read.index_state).toBe('unindexed')
+    const cfg = await $fetch<{ embeddingStale: boolean }>('/api/ai/org/config', { ...opts })
+    expect(cfg.embeddingStale).toBe(true)
+
+    const out = await $fetch<{ index_state: string }>(`/api/context/portfolios/${p.slug}/sections/identity/reindex`, { method: 'POST', ...opts })
+    expect(out.index_state).toBe('ok')
+  })
 })

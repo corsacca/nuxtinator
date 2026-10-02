@@ -74,7 +74,10 @@ export interface AiIndexStaleness {
   model: string
   // Distinct model ids found in the scope's indexes.
   stored: string[]
-  // True when any stored chunk was built with another model.
+  // Items that have never been indexed.
+  unindexed: number
+  // True when any stored chunk was built with another model, or (with a
+  // model set) anything is unindexed.
   stale: boolean
 }
 
@@ -83,11 +86,13 @@ export interface AiIndexStaleness {
 export async function getAiIndexStaleness(tx: Transaction<Database>): Promise<AiIndexStaleness> {
   const model = await resolveEmbeddingModel(tx)
   const stored = new Set<string>()
+  let unindexed = 0
   for (const r of await getAvailableAiReindexers()) {
     for (const m of await r.currentModels(tx)) stored.add(m)
+    if (model && r.unindexedCount) unindexed += await r.unindexedCount(tx)
   }
   const list = [...stored].sort()
-  return { model, stored: list, stale: list.some(m => m !== model) }
+  return { model, stored: list, unindexed, stale: list.some(m => m !== model) || unindexed > 0 }
 }
 
 // --- The runner ---

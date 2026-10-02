@@ -200,6 +200,9 @@ export interface AiReindexer {
   available?: () => Promise<boolean>
   // Distinct embedding model ids currently stored in this index for the scope.
   currentModels: (tx: AiDbClient) => Promise<string[]>
+  // Items with content but no chunks at all (never indexed, e.g. written
+  // before embeddings were set up). They count as stale too.
+  unindexedCount?: (tx: AiDbClient) => Promise<number>
   // Re-embed everything in the scope with the model that resolves now.
   // `progress` (optional to call) lets the settings pages show live counts:
   // `total(n)` once the item count is known, `item(chunks)` after each

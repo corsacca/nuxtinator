@@ -120,4 +120,17 @@ describe('library search', () => {
     expect(hitsPart(call)).toContain('[Handbook]')
     expect(call.toolResults[0]!.result).toContain('Returns are accepted within 30 days')
   })
+
+  it('chunks embedded with another model never match (until the re-embed)', async () => {
+    const { org, blog, handbook, zebraPage } = await setup()
+    await sql`UPDATE helpinator_library_chunks SET model = 'old/model' WHERE library_id = ${blog.id}`
+    await sql`UPDATE context_section_chunks SET model = 'old/model' WHERE portfolio_id = (SELECT portfolio_id FROM helpinator_libraries WHERE id = ${handbook.id})`
+    const widget = await seedWidget(sql, { orgId: org.id, libraryIds: [blog.id, handbook.id] })
+    await primeAiFake({ text: 'ok' })
+    await sendTurn(widget.id, 'tell me about zebra stripes and returns')
+    const call = (await getAiFakeLog()).find(c => c.kind === 'complete')!
+    expect(hitsPart(call)).not.toContain(zebraPage.id)
+    expect(hitsPart(call)).not.toContain('returns')
+    expect(hitsPart(call)).toContain('(no matches)')
+  })
 })

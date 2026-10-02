@@ -14,7 +14,7 @@ interface SectionData {
   content: string
   last_edited_at: string | null
   last_edited_by_name: string | null
-  index_state?: 'none' | 'ok' | 'stale'
+  index_state?: 'none' | 'ok' | 'stale' | 'unindexed'
   index_error?: string | null
 }
 
@@ -164,6 +164,22 @@ async function save() {
         <template #actions>
           <UButton size="xs" color="warning" variant="solid" icon="i-lucide-refresh-cw" :loading="reindexing" @click="reindex">
             Re-embed
+          </UButton>
+        </template>
+      </UAlert>
+
+      <UAlert
+        v-if="data?.index_state === 'unindexed' && !editing"
+        class="mx-3 mt-3"
+        color="info"
+        variant="subtle"
+        icon="i-lucide-info"
+        title="Not in the search index yet"
+        description="This section was written before search indexing was set up, so the assistant's search can't find it."
+      >
+        <template #actions>
+          <UButton size="xs" color="info" variant="solid" icon="i-lucide-refresh-cw" :loading="reindexing" @click="reindex">
+            Index now
           </UButton>
         </template>
       </UAlert>

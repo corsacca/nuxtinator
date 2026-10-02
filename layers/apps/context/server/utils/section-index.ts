@@ -20,6 +20,7 @@ import {
   chunkMarkdown,
   vectorSql,
   cosineDistance,
+  prepareFilteredVectorSearch,
   resolveEmbeddingModel,
   type AiEmbeddingRun,
   type AiReindexer,
@@ -170,24 +171,32 @@ export interface SectionSearchHit {
 // (helpinator merging two indexes) skip the second embedding call.
 export async function searchSections(
   tx: Tx,
-  opts: { portfolioIds: string[], query?: string, queryVector?: number[], limit?: number }
+  opts: { portfolioIds: string[], query?: string, queryVector?: number[], queryModel?: string, limit?: number }
 ): Promise<SectionSearchHit[]> {
   const limit = opts.limit ?? 8
   if (opts.portfolioIds.length === 0 || !(await sectionIndexAvailable())) return []
   let vector = opts.queryVector
-  if (!vector) {
+  let model = opts.queryModel
+  if (!vector || !model) {
     if (!opts.query?.trim() || !(await isEmbeddingConfigured(tx))) return []
-    vector = (await embed({ tx, input: [opts.query] })).vectors[0]!
+    const embedded = await embed({ tx, input: [opts.query] })
+    vector = embedded.vectors[0]!
+    model = embedded.model
   }
+  // Only chunks from the query's model are comparable (a model change leaves
+  // old vectors in another space until the re-embed runs).
+  await prepareFilteredVectorSearch(tx)
   const rows = await tx
     .selectFrom('context_section_chunks as c')
     .innerJoin('context_sections as s', 's.id', 'c.section_id')
     .select(['c.portfolio_id', 'c.section_id', 's.section_key', 'c.heading', 'c.content'])
     .select(cosineDistance('c.embedding', vector).as('distance'))
     .where('c.portfolio_id', 'in', opts.portfolioIds)
+    .where('c.model', '=', model)
     .orderBy(sql`c.embedding <=> ${vectorSql(vector)}`)
     .limit(limit * 3)
     .execute()
+  rows.sort((a, b) => Number(a.distance) - Number(b.distance))
   const best = new Map<string, SectionSearchHit>()
   for (const r of rows) {
     if (best.has(r.section_id)) continue
@@ -204,6 +213,19 @@ export async function searchSections(
   return [...best.values()]
 }
 
+// Sections in scope with content but no chunks (never indexed).
+export async function sectionUnindexedCount(tx: Tx): Promise<number> {
+  if (!(await sectionIndexAvailable())) return 0
+  const row = await tx
+    .selectFrom('context_sections as s')
+    .innerJoin('context_portfolios as p', 'p.id', 's.portfolio_id')
+    .select(sql<number>`count(*)::int`.as('n'))
+    .where('s.content', '<>', '')
+    .where(({ not, exists, selectFrom }) => not(exists(selectFrom('context_section_chunks as c').select('c.id').whereRef('c.section_id', '=', 's.id'))))
+    .executeTakeFirst()
+  return row?.n ?? 0
+}
+
 // Distinct embedding models stored in this scope's index.
 export async function sectionIndexModels(tx: Tx): Promise<string[]> {
   if (!(await sectionIndexAvailable())) return []
@@ -216,6 +238,7 @@ export const CONTEXT_REINDEXER: AiReindexer = {
   label: 'Context — portfolio sections',
   available: sectionIndexAvailable,
   currentModels: tx => sectionIndexModels(tx as Tx),
+  unindexedCount: tx => sectionUnindexedCount(tx as Tx),
   run: async (scope, progress) => {
     // Nothing to do when no model resolves: leave the index as it is.
     if (!(await scope(tx => resolveEmbeddingModel(tx)))) return { chunks: 0 }

@@ -9,7 +9,7 @@
 // opaque `ref` the load tool accepts: `page:<id>` or `section:<library>:<key>`.
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import { isEmbeddingConfigured, resolveAiEmbedRun, embed, cosineDistance, vectorSql, type AiEmbeddingRun } from '#ai/server'
+import { isEmbeddingConfigured, resolveAiEmbedRun, embed, cosineDistance, vectorSql, prepareFilteredVectorSearch, type AiEmbeddingRun } from '#ai/server'
 import type { HelpinatorLibraryRow } from './helpinator-libraries'
 import type { HelpinatorScope } from './helpinator-guards'
 
@@ -53,11 +53,15 @@ export async function helpinatorSearch(
   const limit = opts.limit ?? HELPINATOR_SEARCH_HITS
   const query = opts.query.trim()
   if (!query || opts.libraries.length === 0 || !opts.embedRun) return []
-  const vector = (await embed({ run: opts.embedRun, input: [query] })).vectors[0]!
-  return await scope(tx => rankHits(tx, opts.libraries, vector, limit))
+  const { vectors, model } = await embed({ run: opts.embedRun, input: [query] })
+  return await scope(tx => rankHits(tx, opts.libraries, vectors[0]!, model, limit))
 }
 
-async function rankHits(tx: Tx, libraries: HelpinatorLibraryRow[], vector: number[], limit: number): Promise<HelpinatorSearchHit[]> {
+// Only chunks embedded with the query's model are comparable: after a model
+// change the old vectors live in another space, and ranking against them
+// would return confident nonsense. Until the re-embed runs, they don't match.
+async function rankHits(tx: Tx, libraries: HelpinatorLibraryRow[], vector: number[], model: string, limit: number): Promise<HelpinatorSearchHit[]> {
+  await prepareFilteredVectorSearch(tx)
   const websiteIds = libraries.filter(l => l.kind === 'website').map(l => l.id)
   const portfolioLibs = libraries.filter(l => l.kind === 'portfolio' && l.portfolio_id)
   const libraryByPortfolio = new Map(portfolioLibs.map(l => [l.portfolio_id!, l]))
@@ -71,9 +75,11 @@ async function rankHits(tx: Tx, libraries: HelpinatorLibraryRow[], vector: numbe
       .select(['c.page_id', 'c.library_id', 'p.title', 'p.url', 'c.content'])
       .select(cosineDistance('c.embedding', vector).as('distance'))
       .where('c.library_id', 'in', websiteIds)
+      .where('c.model', '=', model)
       .orderBy(sql`c.embedding <=> ${vectorSql(vector)}`)
       .limit(limit * 3)
       .execute()
+    rows.sort((a, b) => Number(a.distance) - Number(b.distance))
     const seen = new Set<string>()
     for (const r of rows) {
       if (seen.has(r.page_id)) continue
@@ -90,7 +96,7 @@ async function rankHits(tx: Tx, libraries: HelpinatorLibraryRow[], vector: numbe
   }
 
   if (portfolioLibs.length) {
-    const sectionHits = await searchSections(tx, { portfolioIds: [...libraryByPortfolio.keys()], queryVector: vector, limit })
+    const sectionHits = await searchSections(tx, { portfolioIds: [...libraryByPortfolio.keys()], queryVector: vector, queryModel: model, limit })
     if (sectionHits.length) {
       const titles = new Map<string, string>()
       for (const pid of libraryByPortfolio.keys()) {

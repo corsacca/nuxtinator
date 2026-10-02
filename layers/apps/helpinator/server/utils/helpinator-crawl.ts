@@ -529,6 +529,15 @@ export const HELPINATOR_REINDEXER: AiReindexer = {
     const rows = await (tx as Tx).selectFrom('helpinator_library_chunks').select('model').distinct().execute()
     return rows.map(r => r.model)
   },
+  unindexedCount: async (tx) => {
+    const row = await (tx as Tx)
+      .selectFrom('helpinator_library_pages as p')
+      .select(sql<number>`count(*)::int`.as('n'))
+      .where('p.content', '<>', '')
+      .where(({ not, exists, selectFrom }) => not(exists(selectFrom('helpinator_library_chunks as c').select('c.id').whereRef('c.page_id', '=', 'p.id'))))
+      .executeTakeFirst()
+    return row?.n ?? 0
+  },
   run: async (scope, progress) => {
     if (!(await scope(tx => resolveEmbeddingModel(tx)))) return { chunks: 0 }
     return await helpinatorReindexLibraries(scope as HelpinatorScope, progress)
