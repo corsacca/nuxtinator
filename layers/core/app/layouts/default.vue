@@ -1,6 +1,5 @@
 <script setup lang="ts">
 const { user } = useAuth()
-const { isHostAdmin } = usePermissions()
 const config = useRuntimeConfig()
 
 // OrgSwitcher ships with the tenancy layer and doesn't exist in single-tenant
@@ -13,9 +12,11 @@ const activeApp = useActiveApp(apps)
 const route = useRoute()
 
 const mobileSidebarOpen = ref(false)
+const mobileRailOpen = ref(false)
 
 watch(() => route.path, () => {
   mobileSidebarOpen.value = false
+  mobileRailOpen.value = false
 })
 </script>
 
@@ -26,6 +27,15 @@ watch(() => route.path, () => {
       <!-- Mobile top bar -->
       <header class="lg:hidden sticky top-0 z-40 bg-(--ui-bg-elevated) border-b border-(--ui-border) py-2 px-3 flex items-center justify-between gap-2">
         <div class="flex items-center gap-2 min-w-0">
+          <UButton
+            class="sm:hidden"
+            icon="i-lucide-grid-2x2"
+            variant="ghost"
+            color="neutral"
+            size="sm"
+            aria-label="Open app launcher"
+            @click="mobileRailOpen = true"
+          />
           <UButton
             v-if="activeApp"
             icon="i-lucide-menu"
@@ -48,17 +58,6 @@ watch(() => route.path, () => {
         </div>
         <div class="flex items-center gap-1 shrink-0">
           <NotificationBell :active-app-id="activeApp?.id" />
-          <AppSwitcher />
-          <UButton
-            v-if="isHostAdmin"
-            to="/admin"
-            icon="i-lucide-shield-check"
-            variant="ghost"
-            color="neutral"
-            size="sm"
-            aria-label="Admin"
-            title="Admin"
-          />
           <UButton
             to="/account"
             icon="i-lucide-user"
@@ -89,17 +88,6 @@ watch(() => route.path, () => {
         </div>
         <div class="flex items-center gap-3">
           <NotificationBell :active-app-id="activeApp?.id" />
-          <AppSwitcher />
-          <UButton
-            v-if="isHostAdmin"
-            to="/admin"
-            icon="i-lucide-shield-check"
-            variant="ghost"
-            color="neutral"
-            size="sm"
-            aria-label="Admin"
-            title="Admin"
-          />
           <UButton
             to="/account"
             icon="i-lucide-user"
@@ -113,7 +101,7 @@ watch(() => route.path, () => {
       </header>
 
       <div class="flex">
-        <AppRail />
+        <AppRail class="hidden sm:flex sticky top-[49px] h-[calc(100vh-49px)] lg:top-[57px] lg:h-[calc(100vh-57px)]" />
 
         <aside
           v-if="activeApp"
@@ -130,6 +118,17 @@ watch(() => route.path, () => {
           <slot />
         </main>
       </div>
+
+      <!-- Mobile app rail drawer -->
+      <USlideover
+        v-model:open="mobileRailOpen"
+        side="left"
+        :ui="{ content: 'w-auto max-w-none' }"
+      >
+        <template #content>
+          <AppRail class="flex h-full" />
+        </template>
+      </USlideover>
 
       <!-- Mobile sidebar drawer -->
       <USlideover
