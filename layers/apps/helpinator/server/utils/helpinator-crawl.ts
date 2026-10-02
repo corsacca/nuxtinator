@@ -52,6 +52,8 @@ const MAX_HTML_BYTES = 2 * 1024 * 1024
 const MAX_ROBOTS_BYTES = 512 * 1024
 const CONCURRENCY = 3
 const GAP_MS = 250
+// How often a run queued behind another ("Sync all") refreshes its heartbeat.
+const QUEUED_HEARTBEAT_MS = 60_000
 // Extensions that are never HTML pages.
 const SKIP_EXT_RE = /\.(pdf|jpe?g|png|gif|webp|svg|ico|css|js|mjs|json|xml|rss|atom|zip|gz|tar|mp3|mp4|mov|avi|webm|woff2?|ttf|eot|doc|docx|xls|xlsx|ppt|pptx|csv)$/i
 
@@ -80,12 +82,17 @@ function underPrefix(candidate: URL, prefix: string): boolean {
 }
 
 // Same-host links in `html`, one hop from `start`, optionally restricted to
-// paths under the start path. Pure — exported for tests.
-export function helpinatorDiscoverLinks(html: string, start: string, opts: { restrictToPath: boolean, maxPages: number }): HelpinatorCrawlPlan {
-  const startUrl = new URL(start)
-  const prefix = pathPrefixOf(startUrl)
+// paths under the start path. `base` is where the fetch of `start` ended up
+// after redirects (`/docs` → `/docs/`, `site.com` → `www.site.com`): links
+// resolve against it and its host and path are the ones that count.
+// Pure — exported for tests.
+export function helpinatorDiscoverLinks(html: string, start: string, opts: { restrictToPath: boolean, maxPages: number, base?: string }): HelpinatorCrawlPlan {
+  const baseUrl = new URL(opts.base ?? start)
+  const prefix = pathPrefixOf(baseUrl)
   const urls: string[] = [start]
   const seen = new Set<string>([start])
+  const normalizedBase = helpinatorNormalizeUrl(baseUrl.toString())
+  if (normalizedBase) seen.add(normalizedBase)
   const document = parseDom(html)
   for (const a of Array.from(document.querySelectorAll('a[href]'))) {
     if (urls.length >= opts.maxPages) break
@@ -93,13 +100,13 @@ export function helpinatorDiscoverLinks(html: string, start: string, opts: { res
     if (!href || href.startsWith('#') || /^(mailto|tel|javascript):/i.test(href)) continue
     let abs: string | null
     try {
-      abs = helpinatorNormalizeUrl(new URL(href, startUrl).toString())
+      abs = helpinatorNormalizeUrl(new URL(href, baseUrl).toString())
     } catch {
       continue
     }
     if (!abs) continue
     const u = new URL(abs)
-    if (u.hostname !== startUrl.hostname) continue
+    if (u.hostname !== baseUrl.hostname) continue
     if (SKIP_EXT_RE.test(u.pathname)) continue
     if (opts.restrictToPath && !underPrefix(u, prefix)) continue
     if (seen.has(abs)) continue
@@ -355,6 +362,19 @@ async function setProgress(orgId: string | null, sourceId: string, token: string
   })
 }
 
+// A queued run (waiting its turn in "Sync all") has no progress to write, so
+// it beats this instead, or it would look dead to `helpinatorExpireStaleRuns`.
+async function heartbeat(orgId: string | null, sourceId: string, token: string): Promise<void> {
+  await helpinatorScopeTx(orgId, async (tx) => {
+    await tx
+      .updateTable('helpinator_library_sources')
+      .set({ run_heartbeat_at: sql`now()` })
+      .where('id', '=', sourceId)
+      .where('run_token', '=', token)
+      .execute()
+  })
+}
+
 async function finish(orgId: string | null, sourceId: string, token: string, patch: Partial<{ status: 'done' | 'error', page_count: number, bytes: number, last_error: string | null }>): Promise<void> {
   await helpinatorScopeTx(orgId, async (tx) => {
     await tx
@@ -384,7 +404,7 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
     // Resolved once per run, in its own short tx; embeds then run outside any.
     // Null (no embedding model): pages are stored, just not indexed.
     const embedRun = await helpinatorScopeTx(orgId, tx => helpinatorEmbedRun(tx))
-    const plan = helpinatorDiscoverLinks(first.html, source.url, { restrictToPath: source.restrict_to_path, maxPages: source.max_pages })
+    const plan = helpinatorDiscoverLinks(first.html, source.url, { restrictToPath: source.restrict_to_path, maxPages: source.max_pages, base: first.finalUrl })
     const queue = plan.urls.filter(u => robots.isAllowed(u))
     await setProgress(orgId, source.id, token, { run_total: queue.length })
 
@@ -461,7 +481,13 @@ export async function helpinatorStartSourceSync(
   // Start after the caller's transaction commits so the token is visible.
   const done = new Promise<void>((resolve) => {
     setTimeout(async () => {
-      await (opts.after ?? Promise.resolve()).catch(() => {})
+      if (opts.after) {
+        const beat = setInterval(() => {
+          heartbeat(orgId, source.id, token).catch(err => console.warn('[helpinator] queued sync heartbeat failed:', err))
+        }, QUEUED_HEARTBEAT_MS)
+        await opts.after.catch(() => {})
+        clearInterval(beat)
+      }
       const p = runSource(orgId, fresh, token).finally(() => {
         if (running.get(source.id) === p) running.delete(source.id)
         resolve()

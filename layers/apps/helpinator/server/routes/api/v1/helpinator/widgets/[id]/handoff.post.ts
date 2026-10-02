@@ -26,18 +26,32 @@ export default defineEventHandler(async (event) => {
   if (!token) throw createError({ statusCode: 401, statusMessage: 'Session token required' })
   const parsed = Body.safeParse(await readBody(event))
   if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'Please enter a valid email address.' })
-  // Each handoff mails the typed address, so it is limited three ways: per
-  // client, per address (however many clients ask), and per widget.
   const email = parsed.data.email.toLowerCase()
+  const sessionHash = helpinatorHashSessionToken(token)
+  // The per-client limit comes first: it only ever costs the caller.
   await helpinatorRateLimit(event, 'ratelimit.helpinator.handoff', 'client', helpinatorClientKey(event), 5, 60 * 60_000)
+
+  // Check the session before the per-address limit, so made-up tokens can't
+  // use up someone else's handoffs. A widget-wide total needs no limit of its
+  // own: each handoff needs a real conversation (once each), and conversations
+  // are bounded by the widget's daily message cap.
+  const ready = await helpinatorWithWidget(event, async (tx, widget) => {
+    if (!widget.enabled) throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
+    const conversation = await helpinatorFindSession(tx, widget.id, sessionHash)
+    if (!conversation) throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
+    return !conversation.inbox_conversation_id
+  })
+  if (!ready) return { status: 'already_handed_off' }
+
+  // Each handoff mails the typed address, so it is limited per address too
+  // (however many clients ask).
   await helpinatorRateLimit(event, 'ratelimit.helpinator.handoff.email', 'email', helpinatorEmailKey(email), 3, 24 * 60 * 60_000)
-  await helpinatorRateLimit(event, 'ratelimit.helpinator.handoff.widget', 'widget', getRouterParam(event, 'id') ?? '', 50, 24 * 60 * 60_000)
 
   let result: HelpinatorHandoffResult
   try {
     result = await helpinatorWithWidget(event, async (tx, widget) => {
       if (!widget.enabled) throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
-      const conversation = await helpinatorFindSession(tx, widget.id, helpinatorHashSessionToken(token))
+      const conversation = await helpinatorFindSession(tx, widget.id, sessionHash)
       if (!conversation) throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
       return await helpinatorHandOff(tx, {
         conversationId: conversation.id,

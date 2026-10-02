@@ -188,6 +188,26 @@ describe('website crawl', () => {
     expect(await pagesOf(lib.id)).toHaveLength(0)
   })
 
+  it('resolves links against where the start page redirected to', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    // The stored URL loses its trailing slash; the site redirects back to it,
+    // and its relative links only make sense against the slashed URL.
+    site.pages.set('/guide', { html: '', redirect: '/guide/' })
+    site.pages.set('/guide/', {
+      html: `<!doctype html><html><head><title>Guide</title></head><body><main>
+<h1>Guide</h1><p>The guide index lists every chapter of the guide we publish for the product and links to each one below.</p>
+<ul><li><a href="intro">Intro</a></li><li><a href="./setup">Setup</a></li><li><a href="/guide/">Index</a></li></ul>
+</main></body></html>`
+    })
+    site.pages.set('/guide/intro', { html: article('Intro', 'guide intro') })
+    site.pages.set('/guide/setup', { html: article('Setup', 'guide setup') })
+    await addSource(opts, lib.id, `${site.origin}/guide/`, { restrict_to_path: true, max_pages: 10 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+    expect((await pagesOf(lib.id)).map(p => p.url)).toEqual([`${site.origin}/guide`, `${site.origin}/guide/intro`, `${site.origin}/guide/setup`])
+  })
+
   it('stops reading a page body past the size cap', async () => {
     const { opts } = await createHelpinatorOrgWith(sql)
     const lib = await createWebsiteLibrary(opts)
