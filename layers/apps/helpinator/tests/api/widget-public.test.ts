@@ -152,6 +152,14 @@ describe('public widget API', () => {
     expect(err.statusCode).toBe(429)
   })
 
+  it('the per-client limit holds under parallel requests', async () => {
+    // Disabled, so the turns that get past the limiter stop at a quick 503.
+    const { widget } = await setup({ enabled: false })
+    const results = await Promise.all(Array.from({ length: 20 }, () => sendTurn(widget.id, 'hi').catch(e => e)))
+    const codes = results.map(r => r.statusCode)
+    expect(codes.filter(c => c !== 429)).toHaveLength(8)
+  })
+
   it('a disabled widget reports unavailable and refuses turns', async () => {
     const { widget } = await setup({ enabled: false })
     const cfg = await $fetch<{ aiAvailable: boolean }>(`/api/v1/helpinator/widgets/${widget.id}/config`, { headers: widgetHeaders() })

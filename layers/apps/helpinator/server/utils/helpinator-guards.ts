@@ -7,8 +7,7 @@ import type { H3Event } from 'h3'
 import { getHeader, getRequestIP, getRequestURL, setResponseHeader } from 'h3'
 import { sql, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import { checkRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
-import { logEvent } from '#core/server/utils/activity-logger'
+import { consumeRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
 import type { HelpinatorWidgetRow } from './helpinator-widgets'
 
 type Tx = Transaction<Database>
@@ -102,14 +101,13 @@ export async function helpinatorRateLimit(
   max: number,
   windowMs: number
 ): Promise<void> {
-  const rate = await checkRateLimit(action, field, value, windowMs, max)
+  // Records and counts in one step, so parallel requests can't all pass.
+  const rate = await consumeRateLimit(action, field, value, windowMs, max)
   if (!rate.allowed) {
     logRateLimitExceeded(value, event.path, getHeader(event, 'user-agent') || undefined)
     if (rate.retryAfterSeconds) setResponseHeader(event, 'Retry-After', rate.retryAfterSeconds)
     throw createError({ statusCode: 429, statusMessage: 'Too many requests — please wait a moment.' })
   }
-  // checkRateLimit only counts; record this attempt so the window fills.
-  await logEvent({ eventType: action, metadata: { [field]: value } })
 }
 
 // Visitor messages across all of a widget's conversations in the last 24h.
