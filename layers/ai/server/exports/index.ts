@@ -15,6 +15,8 @@ export * from '#core/ai-fallback/chunk'
 
 export {
   isAiConfigured,
+  resolveAiRun,
+  resolveAiEmbedRun,
   complete,
   generate,
   validateApiKey,

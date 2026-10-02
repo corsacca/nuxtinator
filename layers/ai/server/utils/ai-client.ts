@@ -2,8 +2,10 @@ import { createError } from 'h3'
 import type {
   AiCompleteOptions,
   AiCompleteResult,
+  AiCompletionRun,
   AiContent,
   AiDbClient,
+  AiEmbeddingRun,
   AiEmbedOptions,
   AiEmbedResult,
   AiGenerateOptions,
@@ -52,16 +54,14 @@ export async function isAiConfigured(tx: AiDbClient): Promise<boolean> {
   return !!getHostApiKey()
 }
 
-interface ResolvedRun {
-  apiKey: string
-  model: string
-}
-
-async function resolveRun(tx: AiDbClient, feature: string): Promise<ResolvedRun> {
+// Resolve the key and model for `feature` through the caller's tx. Pass the
+// result to `complete()` / `generate()` as `run` to make the provider call
+// after the transaction has committed.
+export async function resolveAiRun(tx: AiDbClient, feature: string): Promise<AiCompletionRun> {
   // Warm the list so the synchronous capability lookups in buildBody see it.
   await getModelList()
   const model = await resolveFeatureModel(tx, feature)
-  if (process.env.VITEST) return { apiKey: 'test', model: model || AI_TEST_FALLBACK_MODEL }
+  if (process.env.VITEST) return { kind: 'completion', apiKey: 'test', model: model || AI_TEST_FALLBACK_MODEL }
   const apiKey = await getEffectiveApiKey(tx)
   if (!apiKey) {
     throw createError({ statusCode: 503, statusMessage: 'AI is not configured (no API key for this organization or the host).' })
@@ -69,7 +69,17 @@ async function resolveRun(tx: AiDbClient, feature: string): Promise<ResolvedRun>
   if (!model) {
     throw createError({ statusCode: 503, statusMessage: 'No AI model is enabled for this feature.' })
   }
-  return { apiKey, model }
+  return { kind: 'completion', apiKey, model }
+}
+
+async function completionRun(opts: { tx?: AiDbClient, run?: AiCompletionRun, feature: string }): Promise<AiCompletionRun> {
+  if (opts.run) {
+    // The run was resolved earlier; the model list may have gone cold since.
+    await getModelList()
+    return opts.run
+  }
+  if (!opts.tx) throw new Error('AI call needs `tx` or `run`')
+  return await resolveAiRun(opts.tx, opts.feature)
 }
 
 export interface AiKeyCheck {
@@ -91,7 +101,7 @@ export async function validateApiKey(key: string): Promise<AiKeyCheck> {
   const cfg = getOpenRouterConfig()
   let res: Response
   try {
-    res = await fetch(`${cfg.baseUrl}/auth/key`, { headers: { Authorization: `Bearer ${key}` } })
+    res = await fetch(`${cfg.baseUrl}/auth/key`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) })
   } catch {
     return { ok: false, label: '', message: 'Could not reach OpenRouter to verify the key. Try again in a moment.' }
   }
@@ -144,6 +154,10 @@ function buildBody(
   return { ...body, ...extra }
 }
 
+// Upper bound on one provider request, body included (a stream that stalls
+// mid-reply is cut off too). Generous: long replies stream for a while.
+const REQUEST_TIMEOUT_MS = { '/chat/completions': 120_000, '/embeddings': 60_000 } as Record<string, number>
+
 async function openRouterRequest(apiKey: string, body: Record<string, unknown>, path = '/chat/completions'): Promise<Response> {
   const cfg = getOpenRouterConfig()
 
@@ -151,6 +165,7 @@ async function openRouterRequest(apiKey: string, body: Record<string, unknown>, 
   try {
     res = await fetch(`${cfg.baseUrl}${path}`, {
       method: 'POST',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS[path] ?? 60_000),
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -218,7 +233,16 @@ async function streamOpenRouter(
   if (!res.body) {
     throw createError({ statusCode: 502, statusMessage: 'The AI provider returned an empty stream. Try again.' })
   }
-  const turn = await readCompletionStream(textChunks(res.body), onTextDelta)
+  let turn: StreamedTurn
+  try {
+    turn = await readCompletionStream(textChunks(res.body), onTextDelta)
+  } catch (err) {
+    // The request timeout aborts a stalled body mid-read.
+    if ((err as Error)?.name === 'TimeoutError' || (err as Error)?.name === 'AbortError') {
+      throw createError({ statusCode: 502, statusMessage: 'The AI provider took too long to answer. Try again in a moment.' })
+    }
+    throw err
+  }
   logUsage(String(body.model), turn.usage)
   return turn
 }
@@ -292,7 +316,7 @@ function providerCall(
 }
 
 export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResult> {
-  const { apiKey, model } = await resolveRun(opts.tx, opts.feature)
+  const { apiKey, model } = await completionRun(opts)
   if (process.env.VITEST) return aiFakeComplete(opts, model)
 
   const result = await runCompletionLoop(
@@ -314,7 +338,7 @@ export async function complete(opts: AiCompleteOptions): Promise<AiCompleteResul
 export async function generate<T = Record<string, unknown>>(
   opts: AiGenerateOptions
 ): Promise<AiGenerateResult<T>> {
-  const { apiKey, model } = await resolveRun(opts.tx, opts.feature)
+  const { apiKey, model } = await completionRun(opts)
   if (process.env.VITEST) return aiFakeGenerate<T>(opts, model)
 
   const body = buildBody(model, toApiMessages(opts.system, opts.messages), opts.maxTokens ?? 8192, opts.temperature, {
@@ -416,18 +440,31 @@ async function embedBatch(apiKey: string, model: string, input: string[]): Promi
   return vectors
 }
 
-// Embed `input` with the org's resolved embedding model. Empty input → empty
-// result without a network call. Same error contract as `complete()`.
-export async function embed(opts: AiEmbedOptions): Promise<AiEmbedResult> {
-  const model = await resolveEmbeddingModel(opts.tx)
-  if (process.env.VITEST) return aiFakeEmbed(opts, model || AI_TEST_FALLBACK_EMBED_MODEL)
-  const apiKey = await getEffectiveApiKey(opts.tx)
+// Resolve the key and embedding model through the caller's tx, for `embed()`
+// calls made after the transaction has committed.
+export async function resolveAiEmbedRun(tx: AiDbClient): Promise<AiEmbeddingRun> {
+  const model = await resolveEmbeddingModel(tx)
+  if (process.env.VITEST) return { kind: 'embedding', apiKey: 'test', model: model || AI_TEST_FALLBACK_EMBED_MODEL }
+  const apiKey = await getEffectiveApiKey(tx)
   if (!apiKey) {
     throw createError({ statusCode: 503, statusMessage: 'AI is not configured (no API key for this organization or the host).' })
   }
   if (!model) {
     throw createError({ statusCode: 503, statusMessage: 'No embedding model is configured.' })
   }
+  return { kind: 'embedding', apiKey, model }
+}
+
+// Embed `input` with the org's resolved embedding model. Empty input → empty
+// result without a network call. Same error contract as `complete()`.
+export async function embed(opts: AiEmbedOptions): Promise<AiEmbedResult> {
+  let run = opts.run
+  if (!run) {
+    if (!opts.tx) throw new Error('embed() needs `tx` or `run`')
+    run = await resolveAiEmbedRun(opts.tx)
+  }
+  const { apiKey, model } = run
+  if (process.env.VITEST) return aiFakeEmbed(opts, model)
   if (opts.input.length === 0) return { vectors: [], model }
   const vectors: number[][] = []
   for (let i = 0; i < opts.input.length; i += EMBED_BATCH) {

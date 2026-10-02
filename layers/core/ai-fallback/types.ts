@@ -50,14 +50,34 @@ export interface AiToolCallRecord {
   input: Record<string, unknown>
 }
 
-export interface AiCompleteOptions {
-  // The caller's transaction. Generation runs on behalf of whichever org the
-  // transaction is scoped to: the org's own API key and model choices are read
-  // through it, falling back to the host's key and choices when the org has
-  // none. Required so no call path can spend the host key by omission.
-  tx: AiDbClient
+// An org's key and model, resolved inside a transaction by `resolveAiRun` /
+// `resolveAiEmbedRun`. Passing one instead of `tx` lets a caller commit before
+// the slow provider call, so no DB connection is held while the model works.
+// It is only obtainable through a tx, so the host key still can't be spent by
+// omission.
+export interface AiCompletionRun {
+  readonly kind: 'completion'
+  readonly apiKey: string
+  readonly model: string
+}
+
+export interface AiEmbeddingRun {
+  readonly kind: 'embedding'
+  readonly apiKey: string
+  readonly model: string
+}
+
+// Exactly one of the two: the caller's transaction, or a run resolved through
+// one. With `tx`, generation runs on behalf of whichever org the transaction
+// is scoped to: the org's own API key and model choices are read through it,
+// falling back to the host's key and choices when the org has none.
+// Required so no call path can spend the host key by omission.
+export type AiScoped<R> = { tx: AiDbClient, run?: never } | { run: R, tx?: never }
+
+export type AiCompleteOptions = AiScoped<AiCompletionRun> & {
   // The registered feature key (see `registerAiFeature`), which resolves to
-  // the model an admin picked for it.
+  // the model an admin picked for it. Ignored when `run` is given (the run was
+  // resolved for a feature already).
   feature: string
   system?: AiContent
   messages: AiMessage[]
@@ -86,8 +106,7 @@ export interface AiCompleteResult {
   toolCalls: AiToolCallRecord[]
 }
 
-export interface AiGenerateOptions {
-  tx: AiDbClient
+export type AiGenerateOptions = AiScoped<AiCompletionRun> & {
   feature: string
   system?: AiContent
   messages: AiMessage[]
@@ -144,10 +163,9 @@ export interface AiFeature {
 // always requests that many dimensions so any embedding model an admin picks
 // fits the same column.
 
-export interface AiEmbedOptions {
-  // Same contract as AiCompleteOptions.tx: the org whose key and embedding
-  // model choice apply.
-  tx: AiDbClient
+// Same contract as AiCompleteOptions: `tx` (the org whose key and embedding
+// model choice apply) or a run resolved through one.
+export type AiEmbedOptions = AiScoped<AiEmbeddingRun> & {
   input: string[]
 }
 

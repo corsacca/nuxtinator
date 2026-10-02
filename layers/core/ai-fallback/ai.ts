@@ -10,6 +10,8 @@
 import { createError } from 'h3'
 import type {
   AiCompleteOptions,
+  AiCompletionRun,
+  AiEmbeddingRun,
   AiCompleteResult,
   AiDbClient,
   AiEmbeddingModelInfo,
@@ -38,6 +40,14 @@ function notConfigured(): never {
 
 export async function isAiConfigured(_tx: AiDbClient): Promise<boolean> {
   return false
+}
+
+export async function resolveAiRun(_tx: AiDbClient, _feature: string): Promise<AiCompletionRun> {
+  notConfigured()
+}
+
+export async function resolveAiEmbedRun(_tx: AiDbClient): Promise<AiEmbeddingRun> {
+  notConfigured()
 }
 
 export async function complete(_opts: AiCompleteOptions): Promise<AiCompleteResult> {
