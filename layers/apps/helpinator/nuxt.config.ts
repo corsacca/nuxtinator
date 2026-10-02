@@ -16,6 +16,12 @@ export default defineNuxtConfig({
     fileURLToPath(new URL('./modules/inbox-bridge.ts', import.meta.url))
   ],
 
+  runtimeConfig: {
+    // Library chunks are pgvector columns; without the extension core's
+    // migration runner skips helpinator_* migrations and warns.
+    migrationRequiredExtensions: { helpinator: ['vector'] }
+  },
+
   vue: {
     compilerOptions: {
       // The admin widget page previews the real web component.

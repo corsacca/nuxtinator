@@ -6,11 +6,11 @@ import { sql } from 'kysely'
 // can be detected and the index rebuilt. pgvector must be present — see
 // context_013 for the extension handling this repeats.
 export async function up(db: Kysely<unknown>): Promise<void> {
-  try {
-    await sql`CREATE EXTENSION IF NOT EXISTS vector`.execute(db)
-  } catch (err) {
-    const present = await sql<{ n: number }>`select count(*)::int as n from pg_extension where extname = 'vector'`.execute(db)
-    if (!present.rows[0]?.n) {
+  const present = await sql<{ n: number }>`select count(*)::int as n from pg_extension where extname = 'vector'`.execute(db)
+  if (!present.rows[0]?.n) {
+    try {
+      await sql`CREATE EXTENSION vector`.execute(db)
+    } catch (err) {
       throw new Error(`pgvector is not installed and this role may not create it. Run "CREATE EXTENSION vector;" as a superuser, then restart. (${(err as Error).message})`, { cause: err })
     }
   }

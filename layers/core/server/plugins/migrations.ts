@@ -24,6 +24,8 @@ interface ProviderOpts {
   // Names recorded as executed in the database. Any of them without a file
   // on disk belongs to a layer the host no longer loads.
   executedNames: string[]
+  // Migration-name prefixes whose pending migrations are held back this run.
+  heldBackPrefixes: string[]
 }
 
 // Kysely refuses to run at all when an executed migration has no file, so a
@@ -45,6 +47,34 @@ async function readExecutedMigrationNames(db: Kysely<unknown>): Promise<string[]
   if (!table.rows[0]?.present) return []
   const rows = await sql<{ name: string }>`select name from kysely_migration`.execute(db)
   return rows.rows.map(r => r.name)
+}
+
+// Layers declare the Postgres extensions their migrations need, keyed by
+// migration-name prefix (`runtimeConfig.migrationRequiredExtensions`). A prefix
+// whose extension can't be installed has its pending migrations skipped with a
+// warning; they run on a later boot once the extension is available.
+async function findHeldBackPrefixes(db: Kysely<unknown>, required: Record<string, string[]>): Promise<string[]> {
+  const failures = new Map<string, string | null>()
+  const held: string[] = []
+  for (const [prefix, extensions] of Object.entries(required)) {
+    for (const ext of extensions) {
+      if (!failures.has(ext)) {
+        try {
+          await sql`CREATE EXTENSION IF NOT EXISTS ${sql.id(ext)}`.execute(db)
+          failures.set(ext, null)
+        } catch (err) {
+          failures.set(ext, (err as Error).message)
+        }
+      }
+      const failure = failures.get(ext)
+      if (failure) {
+        console.warn(`Skipping ${prefix}_* migrations: Postgres extension "${ext}" is not available (${failure}). Install it (or run "CREATE EXTENSION ${ext};" as a superuser) and restart.`)
+        held.push(prefix)
+        break
+      }
+    }
+  }
+  return held
 }
 
 class LayeredMigrationProvider implements MigrationProvider {
@@ -73,6 +103,8 @@ class LayeredMigrationProvider implements MigrationProvider {
         // `tenancy_*` core migrations. Kysely sorts migrations by name, so
         // we suffix-prefix the key with `zzz_` to push them to the back.
         const name = isTenancy ? `zzz_${baseName}` : baseName
+        const heldBack = this.opts.heldBackPrefixes.some(p => baseName.startsWith(`${p}_`))
+        if (heldBack && !this.opts.executedNames.includes(name)) continue
         if (migrations[name]) {
           throw new Error(`Duplicate migration name "${name}" found in multiple folders`)
         }
@@ -120,10 +152,14 @@ export default defineNitroPlugin(async () => {
   const tenancyFolders = ((config.tenancyMigrationPaths as string[] | undefined) || []).filter(Boolean)
 
   const executedNames = await readExecutedMigrationNames(adminDb)
+  const heldBackPrefixes = await findHeldBackPrefixes(
+    adminDb,
+    (config.migrationRequiredExtensions as Record<string, string[]> | undefined) || {}
+  )
 
   const migrator = new Migrator({
     db: adminDb,
-    provider: new LayeredMigrationProvider({ regularFolders, tenancyFolders, executedNames }),
+    provider: new LayeredMigrationProvider({ regularFolders, tenancyFolders, executedNames, heldBackPrefixes }),
     // Layers can ship new migrations whose names don't sort after every
     // already-executed one — allow unordered runs.
     allowUnorderedMigrations: true
