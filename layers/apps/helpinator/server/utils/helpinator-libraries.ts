@@ -38,6 +38,25 @@ export const HelpinatorSourceInput = z.object({
 })
 export type HelpinatorSourceInputValue = z.infer<typeof HelpinatorSourceInput>
 
+// Portfolio content is context's to gate: whoever points a library at a
+// portfolio, lists portfolios, or newly binds a portfolio library to a
+// (public) widget must also hold context.read — helpinator.manage alone would
+// otherwise expose every portfolio to anonymous visitors.
+export function helpinatorAssertContextRead(ctx: { perms: Set<string> }): void {
+  if (!ctx.perms.has('context.read')) {
+    throw createError({ statusCode: 403, statusMessage: 'Using a context portfolio needs the context.read permission.' })
+  }
+}
+
+// For a widget save: portfolio libraries in `nextIds` that weren't already
+// bound (`currentIds`) need context.read.
+export async function helpinatorAssertCanBind(tx: Tx, ctx: { perms: Set<string> }, nextIds: string[], currentIds: string[] = []): Promise<void> {
+  const added = nextIds.filter(id => !currentIds.includes(id))
+  if (added.length === 0) return
+  const libs = await helpinatorGetLibraries(tx, added)
+  if (libs.some(l => l.kind === 'portfolio')) helpinatorAssertContextRead(ctx)
+}
+
 async function assertPortfolio(tx: Tx, kind: HelpinatorLibraryKind, portfolioId: string | null | undefined): Promise<string | null> {
   if (kind !== 'portfolio') return null
   if (!portfolioId) throw createError({ statusCode: 400, statusMessage: 'A portfolio library needs a portfolio.' })

@@ -85,4 +85,30 @@ describe('libraries admin API', () => {
     const { opts: member } = await addHelpinatorMember(sql, a.org)
     expect((await $fetch('/api/helpinator/libraries', { ...member }).catch(e => e)).statusCode).toBe(403)
   })
+
+  it('helpinator.manage without context.read cannot reach portfolios', async () => {
+    const { org } = await createHelpinatorOrgWith(sql)
+    const p = await seedPortfolio(sql, org.id, 'Private Notes', { faq: 'secret' })
+    const portfolioLib = await seedLibrary(sql, { orgId: org.id, kind: 'portfolio', portfolioId: p.id })
+    const { user, opts } = await addHelpinatorMember(sql, org, [])
+    for (const perm of ['helpinator.access', 'helpinator.read', 'helpinator.manage']) {
+      await sql`INSERT INTO user_permission_grants (id, user_id, permission, org_id) VALUES (gen_random_uuid(), ${user.id}, ${perm}, ${org.id})`
+    }
+
+    expect((await $fetch('/api/helpinator/portfolios', { ...opts }).catch(e => e)).statusCode).toBe(403)
+    const create = await $fetch('/api/helpinator/libraries', {
+      method: 'POST', body: { name: 'Leak', kind: 'portfolio', portfolio_id: p.id }, ...opts
+    }).catch(e => e)
+    expect(create.statusCode).toBe(403)
+    const widget = await $fetch('/api/helpinator/widgets', {
+      method: 'POST',
+      body: { name: 'Leak', allowed_origins: ['https://evil.example'], library_ids: [portfolioLib.id], default_library_id: portfolioLib.id },
+      ...opts
+    }).catch(e => e)
+    expect(widget.statusCode).toBe(403)
+
+    // Website libraries need nothing from context.
+    const site = await $fetch<{ id: string }>('/api/helpinator/libraries', { method: 'POST', body: { name: 'Docs', kind: 'website' }, ...opts })
+    expect(site.id).toBeTruthy()
+  })
 })
