@@ -327,11 +327,13 @@ async function processUrl(orgId: string | null, source: HelpinatorSourceRow, tok
 
 // Progress writes are token-guarded but never throw: a superseded run finds
 // out at its next page write.
-async function setProgress(orgId: string | null, sourceId: string, token: string, patch: { run_total: number } | { run_done: number }): Promise<void> {
+// `run_done` is incremented in SQL: the workers' updates commit in any order,
+// so writing each worker's own count let a lower one land last.
+async function setProgress(orgId: string | null, sourceId: string, token: string, patch: { run_total: number } | 'item-done'): Promise<void> {
   await helpinatorScopeTx(orgId, async (tx) => {
     await tx
       .updateTable('helpinator_library_sources')
-      .set(patch)
+      .set(patch === 'item-done' ? { run_done: sql`run_done + 1` } : patch)
       .where('id', '=', sourceId)
       .where('run_token', '=', token)
       .execute()
@@ -372,12 +374,11 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
 
     // Bounded concurrency with a short gap between starts.
     let next = 0
-    let done = 0
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       while (next < queue.length) {
         const url = queue[next++]!
         await processUrl(orgId, source, token, url, startedAt, embedRun, counters)
-        await setProgress(orgId, source.id, token, { run_done: ++done })
+        await setProgress(orgId, source.id, token, 'item-done')
         await sleep(GAP_MS)
       }
     })
