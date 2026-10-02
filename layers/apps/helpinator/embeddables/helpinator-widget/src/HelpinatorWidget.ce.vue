@@ -43,14 +43,23 @@ const hasUserMessage = computed(() => messages.value.some(m => m.role === 'user'
 
 marked.setOptions({ breaks: true, gfm: true })
 
+// Links always open outside the embedding page's flow. Set by a sanitizer
+// hook on the parsed node, never by editing the sanitized string afterwards
+// (string surgery on DOMPurify output can reopen mutation-XSS holes). This
+// bundle carries its own DOMPurify, so the hook only affects the widget.
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A') {
+    node.setAttribute('target', '_blank')
+    node.setAttribute('rel', 'noopener noreferrer nofollow')
+  }
+})
+
 function renderMarkdown(text) {
   const html = marked.parse(text || '', { async: false })
-  const clean = DOMPurify.sanitize(html, {
+  return DOMPurify.sanitize(html, {
     ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'a', 'code', 'pre', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
     ALLOWED_ATTR: ['href', 'title']
   })
-  // Links always open outside the embedding page's flow.
-  return clean.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer nofollow" ')
 }
 
 function persist() {
