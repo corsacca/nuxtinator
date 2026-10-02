@@ -38,6 +38,9 @@ export interface AiFakeScript {
   delayMs?: number
   // Same for each `embed()` call.
   embedDelayMs?: number
+  // `complete()` fails with this status (after any tool calls), like a
+  // provider error mid-turn.
+  failWith?: number
 }
 
 export interface AiFakeToolResult extends AiToolCallRecord {
@@ -118,6 +121,10 @@ export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Pr
   }
   if (preface) opts.onTextDiscard?.()
   if (state.script.delayMs) await new Promise(r => setTimeout(r, state.script.delayMs))
+  if (state.script.failWith) {
+    state.log.push(entry)
+    throw createError({ statusCode: state.script.failWith, statusMessage: 'The AI provider failed (fake).' })
+  }
 
   const text = state.script.text ?? `[[stub:${model}]]`
   if (opts.onTextDelta) {

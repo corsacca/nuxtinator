@@ -145,6 +145,25 @@ describe('public widget API', () => {
     expect(err.statusCode).toBe(400)
   })
 
+  it('the daily cap holds under parallel turns', async () => {
+    const { widget } = await setup({ cap: 3 })
+    await primeAiFake({ text: 'ok', delayMs: 300 })
+    const results = await Promise.all(Array.from({ length: 8 }, (_, i) => sendTurn(widget.id, `q${i}`).catch(e => e)))
+    expect(results.filter(r => r.assistantMessage)).toHaveLength(3)
+    expect(results.filter(r => r.statusCode === 429)).toHaveLength(5)
+  })
+
+  it('a failed turn leaves no message behind and gives its slot back', async () => {
+    const { widget } = await setup({ cap: 1 })
+    await primeAiFake({ failWith: 502 })
+    const err = await sendTurn(widget.id, 'first').catch(e => e)
+    expect(err.statusCode).toBe(502)
+    const [row] = await sql`SELECT count(*)::int AS n FROM helpinator_messages m JOIN helpinator_conversations c ON c.id = m.conversation_id WHERE c.widget_id = ${widget.id}`
+    expect(row!.n).toBe(0)
+    await primeAiFake({ text: 'fine now' })
+    expect((await sendTurn(widget.id, 'second')).assistantMessage.content).toBe('fine now')
+  })
+
   it('enforces the per-widget daily cap', async () => {
     const { widget } = await setup({ cap: 1 })
     await primeAiFake({ text: 'one' })

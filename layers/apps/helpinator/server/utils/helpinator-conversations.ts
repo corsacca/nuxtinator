@@ -103,6 +103,18 @@ export async function helpinatorInsertMessage(tx: Tx, data: {
   return row
 }
 
+// Undo helpinatorInsertMessage for a turn that failed.
+export async function helpinatorDeleteMessage(tx: Tx, message: HelpinatorMessageRow): Promise<void> {
+  await tx.deleteFrom('helpinator_messages').where('id', '=', message.id).execute()
+  if (message.role === 'user') {
+    await tx
+      .updateTable('helpinator_conversations')
+      .set({ visitor_message_count: sql`greatest(visitor_message_count - 1, 0)` })
+      .where('id', '=', message.conversation_id)
+      .execute()
+  }
+}
+
 export async function helpinatorSetVisitorEmail(tx: Tx, conversationId: string, email: string | null): Promise<void> {
   await tx
     .updateTable('helpinator_conversations')
