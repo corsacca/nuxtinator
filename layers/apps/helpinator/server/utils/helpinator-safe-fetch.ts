@@ -1,21 +1,26 @@
 // Outbound fetches for the crawler. Source URLs come from org admins (in
 // multi-tenant mode, customers), so a plain fetch would let them read
 // loopback, private-network and cloud-metadata addresses through the stored
-// pages. Every hop here resolves the host and refuses non-public addresses;
-// redirects are followed by hand so each target is checked too; bodies are
-// read as a stream and cut off at a byte cap.
+// pages. Every hop refuses non-public addresses; redirects are followed by
+// hand so each target is checked too; bodies are read as a stream and cut off
+// at a byte cap.
 //
-// Residual risk: the address is checked at lookup, and fetch resolves again
-// to connect, so a DNS-rebinding host with a near-zero TTL could still slip
-// through between the two. Closing that needs a connect-time lookup hook,
-// which Bun's fetch doesn't offer.
+// The check runs inside the socket's own DNS lookup (node:http's `lookup`
+// hook, honoured by Bun too), and the socket connects to the addresses that
+// passed it. There is no second resolution, so a DNS-rebinding host can't
+// answer public for the check and private for the connect. TLS still
+// verifies the certificate against the URL's hostname (SNI is the hostname).
 //
 // `HELPINATOR_CRAWL_ALLOW_PRIVATE=true` lifts the check (local development
 // against a site on your own machine). Under VITEST loopback is allowed so the
 // suite's in-process fixture site works; every other private range stays
 // blocked there too.
 import { lookup } from 'node:dns/promises'
-import { isIP } from 'node:net'
+import http from 'node:http'
+import https from 'node:https'
+import { isIP, type LookupFunction } from 'node:net'
+import { pipeline, type Readable } from 'node:stream'
+import zlib from 'node:zlib'
 
 const MAX_REDIRECTS = 5
 
@@ -129,22 +134,67 @@ export function helpinatorUrlLooksPublic(raw: string): boolean {
   }
 }
 
-async function assertPublicUrl(u: URL): Promise<void> {
+// Protocol and IP-literal check. A literal never goes through `lookup`, so it
+// is judged here; hostnames are judged by `checkedLookup` at connect time.
+function assertFetchableUrl(u: URL): void {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new HelpinatorBlockedUrl('Only http(s) URLs can be crawled')
   const host = bareHost(u)
-  let addresses: string[]
-  if (isIP(host)) {
-    addresses = [host]
-  } else {
-    try {
-      addresses = (await lookup(host, { all: true, verbatim: true })).map(a => a.address)
-    } catch {
-      throw new HelpinatorBlockedUrl(`Could not resolve ${host}`)
+  if (isIP(host) && !addressAllowed(host)) throw new HelpinatorBlockedUrl(`${host} is not a public address`)
+}
+
+// Resolve once and refuse unless every address is allowed. Returns the
+// addresses the socket should connect to.
+async function resolveAllowed(hostname: string, family: number | undefined): Promise<{ address: string, family: number }[]> {
+  let addresses: { address: string, family: number }[]
+  try {
+    addresses = await lookup(hostname, { all: true, verbatim: true })
+  } catch {
+    throw new HelpinatorBlockedUrl(`Could not resolve ${hostname}`)
+  }
+  if (addresses.length === 0 || !addresses.every(a => addressAllowed(a.address))) {
+    throw new HelpinatorBlockedUrl(`${hostname} is not a public address`)
+  }
+  const wanted = family === 4 || family === 6 ? addresses.filter(a => a.family === family) : addresses
+  if (wanted.length === 0) throw new HelpinatorBlockedUrl(`Could not resolve ${hostname}`)
+  return wanted
+}
+
+function request(u: URL, headers: Record<string, string>, signal: AbortSignal): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    // The socket's own DNS lookup: it connects to what passed the check. The
+    // HelpinatorBlockedUrl is kept so the caller gets it, not a socket error.
+    let blocked: HelpinatorBlockedUrl | null = null
+    const checkedLookup: LookupFunction = (hostname, options, callback) => {
+      resolveAllowed(hostname, options.family as number | undefined).then(
+        (addrs) => {
+          if (options.all) callback(null, addrs)
+          else callback(null, addrs[0]!.address, addrs[0]!.family)
+        },
+        (err: HelpinatorBlockedUrl) => {
+          blocked = err
+          callback(err, '', 0)
+        }
+      )
     }
-  }
-  if (addresses.length === 0 || !addresses.every(addressAllowed)) {
-    throw new HelpinatorBlockedUrl(`${host} is not a public address`)
-  }
+    const req = (u.protocol === 'https:' ? https : http).request(u, {
+      method: 'GET',
+      headers: { 'accept-encoding': 'gzip, deflate, br', ...headers },
+      lookup: checkedLookup,
+      // A fresh socket per request: a pooled one would skip the lookup.
+      agent: false,
+      signal
+    }, resolve)
+    req.on('error', err => reject(blocked ?? err))
+    req.end()
+  })
+}
+
+// The response body, decompressed per content-encoding.
+function bodyStream(res: http.IncomingMessage): Readable {
+  const decoder = {
+    'gzip': zlib.createGunzip, 'x-gzip': zlib.createGunzip, 'deflate': zlib.createInflate, 'br': zlib.createBrotliDecompress
+  }[(res.headers['content-encoding'] ?? '').trim().toLowerCase()]
+  return decoder ? pipeline(res, decoder(), () => {}) : res
 }
 
 export interface HelpinatorFetched {
@@ -164,45 +214,48 @@ export async function helpinatorSafeFetch(
   const signal = AbortSignal.timeout(opts.timeoutMs)
   let current = new URL(url)
   for (let hop = 0; ; hop++) {
-    await assertPublicUrl(current)
-    const res = await fetch(current, { headers: opts.headers, redirect: 'manual', signal })
-    const location = res.headers.get('location')
-    if (res.status >= 300 && res.status < 400 && location) {
-      await res.body?.cancel().catch(() => {})
+    assertFetchableUrl(current)
+    const res = await request(current, opts.headers, signal)
+    const status = res.statusCode ?? 0
+    const location = res.headers.location
+    if (status >= 300 && status < 400 && location) {
+      res.destroy()
       if (hop >= MAX_REDIRECTS) throw new HelpinatorBlockedUrl('Too many redirects')
       current = new URL(location, current)
       continue
     }
-    const contentType = res.headers.get('content-type') ?? ''
+    const contentType = res.headers['content-type'] ?? ''
     const finalUrl = current.toString()
-    if (opts.wantBody && !opts.wantBody(res.status, contentType)) {
-      await res.body?.cancel().catch(() => {})
-      return { status: res.status, contentType, finalUrl, body: null }
+    if (opts.wantBody && !opts.wantBody(status, contentType)) {
+      res.destroy()
+      return { status, contentType, finalUrl, body: null }
     }
-    return { status: res.status, contentType, finalUrl, body: await readCapped(res, opts.maxBytes) }
+    return { status, contentType, finalUrl, body: await readCapped(res, opts.maxBytes) }
   }
 }
 
-// The body as text, or null once it passes `maxBytes` (the rest is never read).
-async function readCapped(res: Response, maxBytes: number): Promise<string | null> {
-  const declared = Number(res.headers.get('content-length'))
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    await res.body?.cancel().catch(() => {})
+// The body as text, or null once it passes `maxBytes` (the rest is never
+// read). The cap counts decompressed bytes, so a small gzip bomb can't
+// expand past it.
+async function readCapped(res: http.IncomingMessage, maxBytes: number): Promise<string | null> {
+  const declared = Number(res.headers['content-length'])
+  if (!res.headers['content-encoding'] && Number.isFinite(declared) && declared > maxBytes) {
+    res.destroy()
     return null
   }
-  if (!res.body) return ''
-  const reader = res.body.getReader()
-  const parts: Uint8Array[] = []
+  const stream = bodyStream(res)
+  const parts: Buffer[] = []
   let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.byteLength
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => {})
-      return null
+  try {
+    for await (const chunk of stream) {
+      const buf = chunk as Buffer
+      total += buf.byteLength
+      if (total > maxBytes) return null
+      parts.push(buf)
     }
-    parts.push(value)
+  } finally {
+    stream.destroy()
+    res.destroy()
   }
   return new TextDecoder().decode(Buffer.concat(parts))
 }
