@@ -30,6 +30,15 @@ const { data, error: loadError } = await useAsyncData(
   () => $fetch<SetResponse>(`/api/context/suggestions/${id.value}`)
 )
 const set = computed(() => data.value?.set ?? null)
+
+const { refresh: refreshNotifications } = useNotifications()
+watch(() => set.value?.id, (setId) => {
+  if (!setId) return
+  $fetch(`/api/context/suggestions/${setId}/read`, { method: 'POST' })
+    .then(() => refreshNotifications())
+    .catch(() => {})
+}, { immediate: true })
+
 const pendingItems = computed(() => set.value?.suggestions.filter(s => s.status === 'pending') ?? [])
 
 // The open review queue, for stepping between sets and moving on once this

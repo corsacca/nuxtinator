@@ -36,8 +36,10 @@ import { loadSection, saveSectionContent, isKnownSectionKey, addSection, deleteS
 import { createPortfolio, getPortfolioById, listPortfolios } from '../utils/portfolio-helpers'
 import {
   createSuggestionSet,
+  getSuggestionSetOr404,
   listOwnSuggestions,
-  ownPendingSuggestionId,
+  ownPendingSuggestion,
+  reviseSuggestionSet,
   withdrawSuggestions,
   type NewSuggestion
 } from '../utils/suggestions'
@@ -66,6 +68,8 @@ const noteInput = z.string().trim().max(1000).optional()
 const PRIVACY_INSTRUCTION = 'Privacy: do not include personal information about private individuals. Refer to people by role or initials (e.g. "J.S., field coordinator"). Organization and project names (e.g. Joshua Project) and publicly known figures may be written in full. Do not include personal email addresses, phone numbers, or home addresses.'
 
 const SUGGESTED_NOTE = 'Pending review by an admin; the section keeps its current content until the suggestion is approved.'
+
+const REVISE_INSTRUCTION = 'To change a suggestion you already made, or to add another section to it, call update_suggestion with its suggestion_set_id instead of suggesting again.'
 
 function hasContent(content: string | undefined | null): boolean {
   return (content ?? '').trim().length > 0
@@ -162,7 +166,7 @@ export const listSectionsTool = defineMcpTool({
 
 export const readSectionTool = defineMcpTool({
   name: 'read_section',
-  description: 'Read the markdown content of a single portfolio section. Returns content and last_edited_at (pass last_edited_at to update_section for optimistic-lock conflict detection), plus pending_suggestion_id when you have a suggestion awaiting review on it.',
+  description: 'Read the markdown content of a single portfolio section. Returns content and last_edited_at (pass last_edited_at to update_section for optimistic-lock conflict detection), plus pending_suggestion_id and pending_suggestion_set_id when you have a suggestion awaiting review on it.',
   scope: 'context.read',
   input: z.object({
     org: orgInput,
@@ -185,12 +189,14 @@ export const readSectionTool = defineMcpTool({
         const section = await loadSection(tx, input.portfolio_id, input.section_key)
         const defs = await getPortfolioSections(tx, exists)
         const def = defs.find(d => d.key === input.section_key)
+        const pending = await ownPendingSuggestion(tx, input.portfolio_id, input.section_key, ctx.auth.userId)
         const result = {
           key: input.section_key,
           title: def?.title ?? input.section_key,
           content: section?.content ?? '',
           last_edited_at: section?.last_edited_at ? new Date(section.last_edited_at).toISOString() : null,
-          pending_suggestion_id: await ownPendingSuggestionId(tx, input.portfolio_id, input.section_key, ctx.auth.userId)
+          pending_suggestion_id: pending?.id ?? null,
+          pending_suggestion_set_id: pending?.set_id ?? null
         }
         return textResult(`Section "${result.title}" (${result.content.length} chars).`, result)
       })
@@ -287,7 +293,7 @@ export const readOrganizationTool = defineMcpTool({
 
 export const updateSectionTool = defineMcpTool({
   name: 'update_section',
-  description: `Update the markdown content of a portfolio section. By default this suggests the change: it returns status "suggested" and the section is unchanged until an admin approves it. Writing into an empty section applies immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection. Atomic: if the call returns an error, nothing was written. ${PRIVACY_INSTRUCTION}`,
+  description: `Update the markdown content of a portfolio section. By default this suggests the change: it returns status "suggested" and the section is unchanged until an admin approves it. Writing into an empty section applies immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Pass last_edited_at (ISO timestamp from a prior read) to enable optimistic-lock conflict detection. Atomic: if the call returns an error, nothing was written. ${REVISE_INSTRUCTION} ${PRIVACY_INSTRUCTION}`,
   scope: 'context.write',
   input: z.object({
     org: orgInput,
@@ -375,7 +381,7 @@ export const updateSectionTool = defineMcpTool({
 
 export const bulkUpdateSectionsTool = defineMcpTool({
   name: 'bulk_update_sections',
-  description: `Update multiple portfolio sections in a single call. By default the changes are suggested: sections with content come back with status "suggested" and are grouped into one suggestion an admin reviews; empty sections are written immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still processed. Runs as one transaction: if the call returns an error, nothing in it was written or suggested. ${PRIVACY_INSTRUCTION}`,
+  description: `Update multiple portfolio sections in a single call. By default the changes are suggested: sections with content come back with status "suggested" and are grouped into one suggestion an admin reviews; empty sections are written immediately (status "updated"). Pass mode "direct" only when the user explicitly asks to skip review. Each update may include last_edited_at for optimistic-lock conflict detection. Conflicted sections are skipped; sections that pass are still processed. Runs as one transaction: if the call returns an error, nothing in it was written or suggested. ${REVISE_INSTRUCTION} ${PRIVACY_INSTRUCTION}`,
   scope: 'context.write',
   input: z.object({
     org: orgInput,
@@ -724,6 +730,91 @@ export const withdrawSuggestionTool = defineMcpTool({
   }
 })
 
+export const readSuggestionTool = defineMcpTool({
+  name: 'read_suggestion',
+  description: 'Read one of your own suggestions: each section it touches with its status, the proposed content, and whether the section changed since it was suggested (stale). Use before update_suggestion to see what the suggestion currently proposes.',
+  scope: 'context.read',
+  input: z.object({
+    org: orgInput,
+    suggestion_set_id: z.string().uuid()
+  }).strict(),
+  handler: async (input, ctx) => {
+    try {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+        const set = await getSuggestionSetOr404(tx, input.suggestion_set_id, { userId: ctx.auth.userId, isReviewer: false })
+        return textResult(`Suggestion on ${set.portfolio_name} with ${set.suggestions.length} section(s).`, {
+          suggestion_set_id: set.id,
+          portfolio_id: set.portfolio_id,
+          note: set.note,
+          created_at: new Date(set.created_at).toISOString(),
+          suggestions: set.suggestions.map(s => ({
+            id: s.id,
+            section_key: s.section_key,
+            section_title: s.section_title,
+            status: s.status,
+            proposed_content: s.proposed_content,
+            stale: s.stale,
+            review_note: s.review_note,
+            decided_at: s.decided_at ? new Date(s.decided_at).toISOString() : null
+          }))
+        })
+      })
+    } catch (err) { return mcpError(err) }
+  }
+})
+
+export const updateSuggestionTool = defineMcpTool({
+  name: 'update_suggestion',
+  description: `Change one of your own pending suggestions in place instead of making a new one. Each update replaces the proposed content of a section already in the suggestion, or adds another section to it. Pass note to replace the note shown to the reviewer. Content is the full new section content, not a diff. Atomic: if the call returns an error, nothing was changed. ${PRIVACY_INSTRUCTION}`,
+  scope: 'context.write',
+  input: z.object({
+    org: orgInput,
+    suggestion_set_id: z.string().uuid(),
+    updates: z.array(z.object({
+      section_key: z.string().min(1).max(64),
+      content: z.string()
+    })).min(1).max(20).optional(),
+    note: noteInput
+  }).strict(),
+  handler: async (input, ctx) => {
+    try {
+      return await runInOrgTransaction(ctx.event, { org: input.org, userId: ctx.auth.userId }, async (tx) => {
+        if (!input.updates && input.note === undefined) {
+          throw createError({ statusCode: 400, statusMessage: 'Provide updates, note, or both.' })
+        }
+        const set = await tx
+          .selectFrom('context_suggestion_sets')
+          .select('portfolio_id')
+          .where('id', '=', input.suggestion_set_id)
+          .where('author_id', '=', ctx.auth.userId)
+          .executeTakeFirst()
+        if (!set) throw createError({ statusCode: 404, statusMessage: 'Suggestion not found.' })
+
+        const items: NewSuggestion[] = []
+        for (const u of input.updates ?? []) {
+          const known = await isKnownSectionKey(tx, set.portfolio_id, u.section_key)
+          if (!known) throw createError({ statusCode: 404, statusMessage: `Unknown section key: ${u.section_key}` })
+          const cur = await loadSection(tx, set.portfolio_id, u.section_key)
+          items.push({ key: u.section_key, baseContent: cur?.content ?? '', proposedContent: u.content })
+        }
+
+        const results = await reviseSuggestionSet(tx, input.suggestion_set_id, { note: input.note, items }, ctx.auth.userId)
+
+        await mcpLog('UPDATE', 'context_suggestion_sets', input.suggestion_set_id, ctx, {
+          portfolio_id: set.portfolio_id,
+          keys: items.map(i => i.key),
+          ...(input.note !== undefined ? { note: true } : {})
+        }, asAuditExecutor(tx))
+
+        return textResult(`Updated the suggestion. ${SUGGESTED_NOTE}`, {
+          suggestion_set_id: input.suggestion_set_id,
+          results
+        })
+      })
+    } catch (err) { return mcpError(err) }
+  }
+})
+
 export const contextMcpTools = [
   listOrgsTool,
   listPortfoliosTool,
@@ -738,7 +829,9 @@ export const contextMcpTools = [
   bulkCreateSectionsTool,
   deleteSectionTool,
   listSuggestionsTool,
-  withdrawSuggestionTool
+  withdrawSuggestionTool,
+  readSuggestionTool,
+  updateSuggestionTool
 ]
 
 // Suppress unused-imports warning when sql isn't directly referenced — the

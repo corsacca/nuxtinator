@@ -284,6 +284,91 @@ describe('context suggest mode', () => {
     expect(rows.some(r => r.user_id === member.id)).toBe(false)
   })
 
+  it('update_suggestion revises a pending section in place and adds new sections to the same set', async () => {
+    const { org, admin, portfolio, token } = await setup()
+    await seedTestSection(sql, { portfolio_id: portfolio.id, section_key: 'vision-and-values', content: 'V.', last_edited_by: admin.id })
+    const first = await callMcpTool(token, 'update_section', {
+      org: org.slug, portfolio_id: portfolio.id, section_key: 'identity', content: 'Draft one.', note: 'First pass'
+    })
+    const setId = first.structuredContent?.suggestion_set_id as string
+    const read = await callMcpTool(token, 'read_section', { org: org.slug, portfolio_id: portfolio.id, section_key: 'identity' })
+    expect(read.structuredContent?.pending_suggestion_set_id).toBe(setId)
+
+    const res = await callMcpTool(token, 'update_suggestion', {
+      org: org.slug,
+      suggestion_set_id: setId,
+      updates: [
+        { section_key: 'identity', content: 'Draft two.' },
+        { section_key: 'vision-and-values', content: 'Sharper vision.' }
+      ],
+      note: 'Second pass'
+    })
+    expect(res.isError, res.content[0]?.text).toBeFalsy()
+    expect(res.structuredContent?.results).toEqual([
+      { id: first.structuredContent?.suggestion_id, key: 'identity', status: 'revised' },
+      expect.objectContaining({ key: 'vision-and-values', status: 'added' })
+    ])
+
+    expect((await suggestions(setId)).map(r => [r.section_key, r.status, r.base_content, r.proposed_content])).toEqual([
+      ['identity', 'pending', 'Original identity.', 'Draft two.'],
+      ['vision-and-values', 'pending', 'V.', 'Sharper vision.']
+    ])
+    const [set] = await sql<{ note: string }[]>`SELECT note FROM context_suggestion_sets WHERE id = ${setId}`
+    expect(set!.note).toBe('Second pass')
+    const [{ count }] = await sql<{ count: string }[]>`
+      SELECT count(*)::text AS count FROM context_suggestion_sets WHERE portfolio_id = ${portfolio.id}
+    ` as unknown as [{ count: string }]
+    expect(count).toBe('1')
+
+    const shown = await callMcpTool(token, 'read_suggestion', { org: org.slug, suggestion_set_id: setId })
+    expect(shown.isError, shown.content[0]?.text).toBeFalsy()
+    expect((shown.structuredContent?.suggestions as Array<Record<string, unknown>>).map(s => s.proposed_content))
+      .toEqual(['Draft two.', 'Sharper vision.'])
+  })
+
+  it('update_suggestion only touches the caller\'s own open sets', async () => {
+    const { org, admin, adminAuth, portfolio, token } = await setup()
+    const adminToken = await issueMcpBearer(sql, admin.id, ['context.read', 'context.write'])
+    const mine = await callMcpTool(token, 'update_section', {
+      org: org.slug, portfolio_id: portfolio.id, section_key: 'identity', content: 'Mine.'
+    })
+    const setId = mine.structuredContent?.suggestion_set_id as string
+
+    const byOther = await callMcpTool(adminToken, 'update_suggestion', {
+      org: org.slug, suggestion_set_id: setId, note: 'hijack'
+    })
+    expect(byOther.isError).toBe(true)
+
+    await $fetch(`/api/context/suggestions/${setId}/decide`, {
+      method: 'POST', body: { action: 'reject' }, ...withOrgHeader(adminAuth, org.slug)
+    })
+    const afterDecision = await callMcpTool(token, 'update_suggestion', {
+      org: org.slug, suggestion_set_id: setId, updates: [{ section_key: 'identity', content: 'Too late.' }]
+    })
+    expect(afterDecision.isError).toBe(true)
+    expect((await suggestions(setId))[0]!.proposed_content).toBe('Mine.')
+  })
+
+  it('opening a set marks only the viewer\'s notifications about it read', async () => {
+    const { org, admin, adminAuth, portfolio, token } = await setup()
+    await seedTestSection(sql, { portfolio_id: portfolio.id, section_key: 'vision-and-values', content: 'V.', last_edited_by: admin.id })
+    const a = await callMcpTool(token, 'update_section', {
+      org: org.slug, portfolio_id: portfolio.id, section_key: 'identity', content: 'A.'
+    })
+    await callMcpTool(token, 'update_section', {
+      org: org.slug, portfolio_id: portfolio.id, section_key: 'vision-and-values', content: 'B.'
+    })
+    const setA = a.structuredContent?.suggestion_set_id as string
+
+    await $fetch(`/api/context/suggestions/${setA}/read`, { method: 'POST', ...withOrgHeader(adminAuth, org.slug) })
+
+    const rows = await sql<{ link: string, read: boolean }[]>`
+      SELECT link, read_at IS NOT NULL AS read FROM notifications
+      WHERE user_id = ${admin.id} AND app_id = 'context' ORDER BY created_at
+    `
+    expect(rows.map(r => [r.link === `/context/suggestions/${setA}`, r.read])).toEqual([[true, true], [false, false]])
+  })
+
   it('a failing bulk call leaves no suggestion behind', async () => {
     const { org, portfolio, token } = await setup()
     const res = await callMcpTool(token, 'bulk_update_sections', {

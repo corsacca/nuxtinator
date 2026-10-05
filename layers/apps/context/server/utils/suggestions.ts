@@ -47,34 +47,9 @@ export async function createSuggestionSet(
 
   const suggestions: Array<{ id: string, key: string }> = []
   for (const item of input.items) {
-    await tx
-      .updateTable('context_suggestions')
-      .set({ status: 'superseded', decided_at: sql<Date>`now()` })
-      .where('portfolio_id', '=', input.portfolioId)
-      .where('section_key', '=', item.key)
-      .where('status', '=', 'pending')
-      .where('set_id', 'in', tx
-        .selectFrom('context_suggestion_sets')
-        .select('id')
-        .where('author_id', '=', input.authorId))
-      .execute()
-
-    const row = await tx
-      .insertInto('context_suggestions')
-      .values({
-        set_id: set.id,
-        portfolio_id: input.portfolioId,
-        section_key: item.key,
-        base_content: item.baseContent,
-        proposed_content: item.proposedContent,
-        status: 'pending',
-        // Wall-clock time, not the transaction's: suggestions in one set then
-        // sort in the order they were submitted.
-        created_at: sql<Date>`clock_timestamp()`
-      })
-      .returning('id')
-      .executeTakeFirstOrThrow()
-    suggestions.push({ id: row.id, key: item.key })
+    await supersedeOwnPending(tx, input.portfolioId, item.key, input.authorId)
+    const id = await insertSuggestion(tx, set.id, input.portfolioId, item)
+    suggestions.push({ id, key: item.key })
   }
 
   await notifyReviewers(tx, {
@@ -86,6 +61,43 @@ export async function createSuggestionSet(
   })
 
   return { setId: set.id, suggestions }
+}
+
+async function supersedeOwnPending(tx: Tx, portfolioId: string, key: string, authorId: string): Promise<void> {
+  await tx
+    .updateTable('context_suggestions')
+    .set({ status: 'superseded', decided_at: sql<Date>`now()` })
+    .where('portfolio_id', '=', portfolioId)
+    .where('section_key', '=', key)
+    .where('status', '=', 'pending')
+    .where('set_id', 'in', tx
+      .selectFrom('context_suggestion_sets')
+      .select('id')
+      .where('author_id', '=', authorId))
+    .execute()
+}
+
+async function insertSuggestion(tx: Tx, setId: string, portfolioId: string, item: NewSuggestion): Promise<string> {
+  const row = await tx
+    .insertInto('context_suggestions')
+    .values({
+      set_id: setId,
+      portfolio_id: portfolioId,
+      section_key: item.key,
+      base_content: item.baseContent,
+      proposed_content: item.proposedContent,
+      status: 'pending',
+      // Wall-clock time, not the transaction's: suggestions in one set then
+      // sort in the order they were submitted.
+      created_at: sql<Date>`clock_timestamp()`
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow()
+  return row.id
+}
+
+export function suggestionSetLink(setId: string): string {
+  return `/context/suggestions/${setId}`
 }
 
 // Users in the active org (every user in single mode) holding `perm` through
@@ -161,7 +173,7 @@ async function notifyReviewers(
     title: `${author?.display_name || 'Someone'} suggested changes to ${portfolio.name}`,
     body: input.note ? `${sections} — ${input.note}` : sections,
     icon: 'i-lucide-git-pull-request-arrow',
-    link: `/context/suggestions/${input.setId}`,
+    link: suggestionSetLink(input.setId),
     actorId: input.authorId,
     email: 'digest' as const
   })))
@@ -452,6 +464,78 @@ export async function withdrawSuggestions(
   return targets.map(t => t.id)
 }
 
+// The author revises their own open set in place. A key already pending in
+// the set gets the new proposed content and keeps its base, so review still
+// flags changes made to the section since it was first suggested. Any other
+// key is added to the set, superseding the author's pending suggestion on it
+// elsewhere. `note` replaces the set's note when given.
+export async function reviseSuggestionSet(
+  tx: Tx,
+  setId: string,
+  input: { note?: string | null, items: NewSuggestion[] },
+  authorId: string
+): Promise<Array<{ id: string, key: string, status: 'revised' | 'added' }>> {
+  if (!UUID_RE.test(setId)) notFound()
+  const set = await tx
+    .selectFrom('context_suggestion_sets')
+    .select(['id', 'portfolio_id', 'author_id'])
+    .where('id', '=', setId)
+    .executeTakeFirst()
+  if (!set || set.author_id !== authorId) notFound()
+  for (const item of input.items) assertSuggestionSize(item.proposedContent)
+
+  const pending = await tx
+    .selectFrom('context_suggestions')
+    .select(['id', 'section_key'])
+    .where('set_id', '=', setId)
+    .where('status', '=', 'pending')
+    .execute()
+  if (pending.length === 0) {
+    throw createError({ statusCode: 409, statusMessage: 'Nothing pending in this suggestion; make a new one instead.' })
+  }
+
+  const idByKey = new Map(pending.map(p => [p.section_key, p.id]))
+  const out: Array<{ id: string, key: string, status: 'revised' | 'added' }> = []
+  for (const item of input.items) {
+    const existing = idByKey.get(item.key)
+    if (existing) {
+      await tx
+        .updateTable('context_suggestions')
+        .set({ proposed_content: item.proposedContent })
+        .where('id', '=', existing)
+        .execute()
+      out.push({ id: existing, key: item.key, status: 'revised' })
+      continue
+    }
+    await supersedeOwnPending(tx, set.portfolio_id, item.key, authorId)
+    const id = await insertSuggestion(tx, setId, set.portfolio_id, item)
+    idByKey.set(item.key, id)
+    out.push({ id, key: item.key, status: 'added' })
+  }
+
+  if (input.note !== undefined) {
+    await tx
+      .updateTable('context_suggestion_sets')
+      .set({ note: input.note?.trim() || null })
+      .where('id', '=', setId)
+      .execute()
+  }
+  return out
+}
+
+// Marks the viewer's unread notifications about a set read.
+export async function markSuggestionSetNotificationsRead(tx: Tx, setId: string, userId: string): Promise<void> {
+  if (!UUID_RE.test(setId)) notFound()
+  await tx
+    .updateTable('notifications')
+    .set({ read_at: sql<Date>`now()` })
+    .where('user_id', '=', userId)
+    .where('app_id', '=', 'context')
+    .where('link', '=', suggestionSetLink(setId))
+    .where('read_at', 'is', null)
+    .execute()
+}
+
 // Pending suggestions on one section: the total, plus the ones the viewer may
 // open (all for a reviewer, their own otherwise).
 export async function pendingForSection(
@@ -532,20 +616,20 @@ export async function listOwnSuggestions(
 }
 
 // The caller's pending suggestion on a section, if any.
-export async function ownPendingSuggestionId(
+export async function ownPendingSuggestion(
   tx: Tx,
   portfolioId: string,
   key: string,
   authorId: string
-): Promise<string | null> {
+): Promise<{ id: string, set_id: string } | null> {
   const row = await tx
     .selectFrom('context_suggestions as sg')
     .innerJoin('context_suggestion_sets as ss', 'ss.id', 'sg.set_id')
-    .select('sg.id')
+    .select(['sg.id', 'sg.set_id'])
     .where('sg.portfolio_id', '=', portfolioId)
     .where('sg.section_key', '=', key)
     .where('sg.status', '=', 'pending')
     .where('ss.author_id', '=', authorId)
     .executeTakeFirst()
-  return row?.id ?? null
+  return row ?? null
 }

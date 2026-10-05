@@ -1,4 +1,4 @@
-// MCP tool registry smoke test — confirms the 14 tools are declared with
+// MCP tool registry smoke test — confirms the 16 tools are declared with
 // the right scopes and that `update_section`'s optional optimistic-lock
 // field is intact. The write tools are driven end to end over /mcp in
 // write-tools.test.ts; auth / scope gating / rate limits are covered by the
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 const TOOLS_FILE = fileURLToPath(new URL('../../server/mcp/context-tools.ts', import.meta.url))
 
 describe('context MCP tools file', () => {
-  it('declares the 14 expected tool names', async () => {
+  it('declares the 16 expected tool names', async () => {
     const src = await fs.readFile(TOOLS_FILE, 'utf8')
     const expected = [
       'list_orgs',
@@ -26,23 +26,25 @@ describe('context MCP tools file', () => {
       'bulk_create_sections',
       'delete_section',
       'list_suggestions',
-      'withdraw_suggestion'
+      'withdraw_suggestion',
+      'read_suggestion',
+      'update_suggestion'
     ]
     for (const name of expected) {
       expect(src).toContain(`name: '${name}'`)
     }
   })
 
-  it('assigns context.read to all seven read tools', async () => {
+  it('assigns context.read to all eight read tools', async () => {
     const src = await fs.readFile(TOOLS_FILE, 'utf8')
     const readMatches = src.match(/scope:\s*'context\.read'/g) ?? []
-    expect(readMatches.length).toBe(7)
+    expect(readMatches.length).toBe(8)
   })
 
-  it('assigns context.write to the update tools and withdraw_suggestion', async () => {
+  it('assigns context.write to the update tools and the suggestion write tools', async () => {
     const src = await fs.readFile(TOOLS_FILE, 'utf8')
     const writeMatches = src.match(/scope:\s*'context\.write'/g) ?? []
-    expect(writeMatches.length).toBe(3)
+    expect(writeMatches.length).toBe(4)
   })
 
   it('assigns the portfolio-create and custom-section scopes to the create/delete tools', async () => {
@@ -62,18 +64,19 @@ describe('context MCP tools file', () => {
   it('every tool except list_orgs declares the optional org input', async () => {
     const src = await fs.readFile(TOOLS_FILE, 'utf8')
     const orgInputs = src.match(/\borg: orgInput\b/g) ?? []
-    expect(orgInputs.length).toBe(13)
+    expect(orgInputs.length).toBe(15)
     const orgScopedCalls = src.match(/runInOrgTransaction\(ctx\.event, \{ org: input\.org, userId: ctx\.auth\.userId \}/g) ?? []
-    expect(orgScopedCalls.length).toBe(13)
+    expect(orgScopedCalls.length).toBe(15)
   })
 
-  it('both update tools carry the privacy instruction in their descriptions', async () => {
+  it('the content-writing tools carry the privacy instruction in their descriptions', async () => {
     const src = await fs.readFile(TOOLS_FILE, 'utf8')
     expect(src).toMatch(/const PRIVACY_INSTRUCTION = '[^']*initials[^']*'/)
     const withInstruction = src.match(/description: `[^`]*\$\{PRIVACY_INSTRUCTION\}`/g) ?? []
-    expect(withInstruction).toHaveLength(2)
+    expect(withInstruction).toHaveLength(3)
     expect(src).toMatch(/name: 'update_section',\s*description: `[^`]*\$\{PRIVACY_INSTRUCTION\}`/)
     expect(src).toMatch(/name: 'bulk_update_sections',\s*description: `[^`]*\$\{PRIVACY_INSTRUCTION\}`/)
+    expect(src).toMatch(/name: 'update_suggestion',\s*description: `[^`]*\$\{PRIVACY_INSTRUCTION\}`/)
   })
 
   it('update_section accepts optional last_edited_at for optimistic locking', async () => {
