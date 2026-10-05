@@ -1,6 +1,13 @@
 <script setup lang="ts">
 const { apps } = await useApps()
 const activeApp = useActiveApp(apps)
+const route = useRoute()
+const { isHostAdmin } = usePermissions()
+const isHome = computed(() => /^\/(@[^/]+\/?)?$/.test(route.path))
+
+// OrgSettingsRailLink ships with the tenancy layer; single-tenant builds have
+// no org settings, so the rail's bottom slot stays empty.
+const orgSettingsLink = useRuntimeConfig().public.tenancy ? resolveComponent('OrgSettingsRailLink') : null
 
 // Per-app unread badges. Shares the polling loop + state with the bell.
 const { byApp, start, stop } = useNotifications()
@@ -9,7 +16,22 @@ onBeforeUnmount(stop)
 </script>
 
 <template>
-  <aside class="hidden lg:flex flex-col items-center w-14 shrink-0 border-r border-(--ui-border) bg-neutral-200 dark:bg-neutral-950 py-3 gap-1 sticky top-[57px] h-[calc(100vh-57px)]">
+  <aside class="flex-col items-center w-14 shrink-0 border-r border-(--ui-border) bg-neutral-200 dark:bg-neutral-950 py-3 gap-1">
+    <NuxtLink
+      to="/"
+      class="flex items-center justify-center size-10 rounded-md transition-colors"
+      :class="isHome
+        ? 'bg-(--ui-bg-accented) text-(--ui-text)'
+        : 'text-(--ui-text-muted) hover:bg-(--ui-bg-accented) hover:text-(--ui-text)'"
+      title="All apps"
+      aria-label="All apps"
+    >
+      <UIcon
+        name="i-lucide-grid-2x2"
+        class="size-5"
+      />
+    </NuxtLink>
+    <div class="w-8 border-t border-(--ui-border) my-1" />
     <NuxtLink
       v-for="app in apps"
       :key="app.id"
@@ -29,6 +51,27 @@ onBeforeUnmount(stop)
         {{ byApp[app.id]! > 99 ? '99+' : byApp[app.id] }}
       </span>
     </NuxtLink>
+    <div
+      v-if="orgSettingsLink || isHostAdmin"
+      class="mt-auto flex flex-col items-center gap-1"
+    >
+      <component
+        :is="orgSettingsLink"
+        v-if="orgSettingsLink"
+      />
+      <NuxtLink
+        v-if="isHostAdmin"
+        to="/admin"
+        class="flex items-center justify-center size-10 rounded-md text-(--ui-text-muted) hover:bg-(--ui-bg-accented) hover:text-(--ui-text) transition-colors"
+        title="Admin"
+        aria-label="Admin"
+      >
+        <UIcon
+          name="i-lucide-shield-check"
+          class="size-5"
+        />
+      </NuxtLink>
+    </div>
   </aside>
 </template>
 

@@ -1,5 +1,5 @@
 // POST /api/context/portfolios/:slug/sections — add a section definition.
-// Body is either `{ key }` (a built-in from the catalog) or
+// Body is either `{ key }` (a built-in from the portfolio's template) or
 // `{ title, description?, order? }` (a custom section keyed by the
 // slugified title).
 import { z } from 'zod'
@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Invalid body', data: parsed.error.flatten() })
     }
 
-    const section = await addSection(tx, p.id, parsed.data, ctx.userId)
+    const section = await addSection(tx, p, parsed.data, ctx.userId)
 
     logCreate('context_section_definitions', section.id, ctx.userId, {
       portfolio_id: p.id, key: section.key, title: section.title

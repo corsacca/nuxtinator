@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { CONTEXT_SECTIONS } from '../../utils/section-catalog'
+interface TemplateOption {
+  id: string
+  label: string
+  description: string | null
+  sections: Array<{ key: string, title: string, description: string }>
+}
 
 const open = defineModel<boolean>('open', { default: false })
 
@@ -10,13 +15,31 @@ const selected = ref(new Set<string>())
 const submitting = ref(false)
 const errorMsg = ref<string | null>(null)
 
-watch(open, (v) => {
+const templates = ref<TemplateOption[] | null>(null)
+const templateId = ref<string>('')
+const template = computed(() => templates.value?.find(t => t.id === templateId.value) ?? null)
+const templateItems = computed(() => (templates.value ?? []).map(t => ({ label: t.label, value: t.id })))
+const stepTwoDescription = computed(() => templateItems.value.length > 1
+  ? 'Choose a template and which of its sections the portfolio starts with.'
+  : 'Choose which built-in sections the portfolio starts with.')
+
+watch(templateId, () => {
+  selected.value = new Set(template.value?.sections.map(s => s.key) ?? [])
+})
+
+watch(open, async (v) => {
   if (v) {
     step.value = 1
     form.name = ''
     form.color = '#7c3aed'
-    selected.value = new Set(CONTEXT_SECTIONS.map(s => s.key))
     errorMsg.value = null
+    try {
+      templates.value ??= (await $fetch<{ templates: TemplateOption[] }, string>('/api/context/templates')).templates
+      templateId.value = templates.value[0]?.id ?? ''
+      selected.value = new Set(template.value?.sections.map(s => s.key) ?? [])
+    } catch {
+      errorMsg.value = 'Could not load portfolio templates.'
+    }
   }
 })
 
@@ -45,7 +68,8 @@ async function create() {
       body: {
         name: form.name.trim(),
         color: form.color || null,
-        builtin_sections: CONTEXT_SECTIONS.map(s => s.key).filter(k => selected.value.has(k))
+        template: templateId.value,
+        builtin_sections: (template.value?.sections ?? []).map(s => s.key).filter(k => selected.value.has(k))
       }
     })
     open.value = false
@@ -63,7 +87,7 @@ async function create() {
   <UModal
     v-model:open="open"
     :title="step === 1 ? 'New portfolio' : 'Built-in sections'"
-    :description="step === 2 ? 'Choose which built-in sections the portfolio starts with.' : undefined"
+    :description="step === 2 ? stepTwoDescription : undefined"
     :ui="{ content: 'max-w-md' }"
   >
     <template #body>
@@ -74,7 +98,10 @@ async function create() {
         @submit="next"
       />
       <div v-else class="space-y-4">
-        <ContextSectionChecklist :sections="CONTEXT_SECTIONS" :selected="selected" :disabled="submitting" @toggle="toggle" />
+        <UFormField v-if="templateItems.length > 1" label="Template" :description="template?.description ?? undefined">
+          <USelect v-model="templateId" :items="templateItems" :disabled="submitting" class="w-full" />
+        </UFormField>
+        <ContextSectionChecklist v-if="template" :sections="template.sections" :selected="selected" :disabled="submitting" @toggle="toggle" />
         <p class="text-xs text-(--ui-text-muted)">
           You can add or remove sections later in portfolio settings.
         </p>
@@ -85,7 +112,7 @@ async function create() {
           <UButton variant="ghost" color="neutral" :disabled="submitting" @click="step = 1">
             Back
           </UButton>
-          <UButton :loading="submitting" @click="create">
+          <UButton :loading="submitting" :disabled="!template" @click="create">
             Create
           </UButton>
         </div>

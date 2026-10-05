@@ -13,6 +13,15 @@ const settingsPath = computed(() => {
 })
 const onSettings = computed(() => route.path === settingsPath.value)
 
+// Reviewers always see the Suggestions link; anyone else only while they
+// have suggestions of their own open.
+const { data: suggestionCount } = useAsyncData(
+  'context-suggestions-pending-count',
+  () => $fetch<{ count: number, is_reviewer: boolean }>('/api/context/suggestions/pending-count')
+)
+const showSuggestions = computed(() => !!suggestionCount.value
+  && (suggestionCount.value.is_reviewer || suggestionCount.value.count > 0))
+
 function startCreate() {
   open.value = false
   createOpen.value = true
@@ -22,8 +31,10 @@ function startCreate() {
 <template>
   <SidebarPanel class="hidden lg:flex w-64 shrink-0">
     <ContextSidebarBody @create="startCreate" />
-    <template v-if="canManageSettings" #footer>
+    <template v-if="canManageSettings || showSuggestions" #footer>
+      <ContextSuggestionsNavLink v-if="showSuggestions" :count="suggestionCount?.count ?? 0" />
       <NuxtLink
+        v-if="canManageSettings"
         :to="settingsPath"
         class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition"
         :class="onSettings
@@ -58,8 +69,10 @@ function startCreate() {
           </div>
         </template>
         <ContextSidebarBody @navigated="open = false" @create="startCreate" />
-        <template v-if="canManageSettings" #footer>
+        <template v-if="canManageSettings || showSuggestions" #footer>
+          <ContextSuggestionsNavLink v-if="showSuggestions" :count="suggestionCount?.count ?? 0" />
           <NuxtLink
+            v-if="canManageSettings"
             :to="settingsPath"
             class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition"
             :class="onSettings

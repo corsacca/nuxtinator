@@ -2,6 +2,7 @@ import { getRouterParam, readBody } from 'h3'
 import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
 import { logUpdate } from '#core/server/utils/activity-logger'
+import { markCardNotificationsRead } from '../../../../../utils/notify-recipients'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -24,6 +25,8 @@ export default defineEventHandler(async (event) => {
       .executeTakeFirst()
 
     if (!card) throw createError({ statusCode: 404, statusMessage: 'Card not found' })
+
+    await markCardNotificationsRead(tx, ctx.userId, id)
 
     const isCrossProject = targetProjectId !== null && targetProjectId !== card.project_id
 

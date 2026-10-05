@@ -7,6 +7,8 @@ export interface ContextPortfoliosTable {
   color: string | null
   icon_url: string | null
   order: number | null
+  // Registered portfolio template id; null = the default template.
+  template: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
@@ -42,8 +44,9 @@ export interface ContextSectionChunksTable {
 }
 
 // How a version came to be: a direct edit by the user, an accepted in-app
-// assistant proposal, or an AI client writing through MCP.
-export type ContextSectionVersionSource = 'user' | 'assistant' | 'mcp'
+// assistant proposal, an AI client writing through MCP, or an approved
+// suggestion.
+export type ContextSectionVersionSource = 'user' | 'assistant' | 'mcp' | 'suggestion'
 
 export interface ContextSectionVersionsTable {
   id: Generated<string>
@@ -52,11 +55,13 @@ export interface ContextSectionVersionsTable {
   edited_by: string | null
   edited_at: ColumnType<Date, Date | string | undefined, Date | string>
   source: ContextSectionVersionSource | null
+  suggestion_id: string | null
 }
 
 // One row per section a portfolio has. A built-in row stores only its key
-// (title/description/order resolve from the catalog); a custom row stores
-// its own. `created_by` is null for rows backfilled by migration.
+// (title/description/order resolve from the portfolio's template unless
+// overridden); a custom row stores its own. `created_by` is null for rows
+// backfilled by migration.
 export interface ContextSectionDefinitionsTable {
   id: Generated<string>
   portfolio_id: string
@@ -64,6 +69,7 @@ export interface ContextSectionDefinitionsTable {
   title: string | null
   description: string | null
   order: number | null
+  is_custom: Generated<boolean>
   created_by: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
@@ -127,6 +133,32 @@ export interface ContextAssistantMessagesTable {
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
+// `superseded` = replaced by a newer suggestion from the same author for the
+// same section.
+export type ContextSuggestionStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'superseded'
+
+export interface ContextSuggestionSetsTable {
+  id: Generated<string>
+  portfolio_id: string
+  author_id: string | null
+  note: string | null
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
+export interface ContextSuggestionsTable {
+  id: Generated<string>
+  set_id: string
+  portfolio_id: string
+  section_key: string
+  base_content: string
+  proposed_content: string
+  status: ContextSuggestionStatus
+  decided_by: string | null
+  decided_at: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>
+  review_note: string | null
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
 declare global {
   interface NuxtinatorDatabaseTables {
     context_portfolios: ContextPortfoliosTable
@@ -138,5 +170,7 @@ declare global {
     context_section_comment_replies: ContextSectionCommentRepliesTable
     context_assistant_conversations: ContextAssistantConversationsTable
     context_assistant_messages: ContextAssistantMessagesTable
+    context_suggestion_sets: ContextSuggestionSetsTable
+    context_suggestions: ContextSuggestionsTable
   }
 }

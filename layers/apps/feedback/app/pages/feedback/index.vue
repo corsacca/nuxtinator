@@ -142,7 +142,10 @@ async function refreshCards() {
 const { start: startPoll, stop: stopPoll } = useBoardPoll(refreshCards, pollPaused, 5000)
 
 onMounted(() => {
-  loadAll().then(() => startPoll())
+  loadAll().then(() => {
+    openCardFromQuery()
+    startPoll()
+  })
 })
 
 onUnmounted(() => {
@@ -374,10 +377,27 @@ async function submitCard() {
 }
 
 // ---------- Card panel (edit/move) ----------
+const { refresh: refreshNotifications } = useNotifications()
+
 function openCard(card: Card) {
   activeCard.value = card
   cardPanelOpen.value = true
+  $fetch(`/api/feedback/cards/${card.id}/read`, { method: 'POST' })
+    .then(() => refreshNotifications())
+    .catch(() => {})
 }
+
+// Notification links point at `?card=<id>`; open that card once the board has it.
+function openCardFromQuery() {
+  const id = route.query.card
+  if (typeof id !== 'string') return
+  const card = cards.value.find(c => c.id === id)
+  if (card) openCard(card)
+  router.replace({ query: { ...route.query, card: undefined } })
+}
+watch(() => route.query.card, () => {
+  if (!loading.value) openCardFromQuery()
+})
 async function onCardDrop(payload: {
   card: Card
   toColumnId: string
@@ -412,6 +432,7 @@ async function onCardDrop(payload: {
       const i = cards.value.findIndex(c => c.id === updated.id)
       if (i >= 0) cards.value.splice(i, 1, updated)
     }
+    refreshNotifications().catch(() => {})
   } catch (e: any) {
     cards.value.splice(idx, 1, prev)
     toast.add({ title: 'Move failed', description: e?.data?.statusMessage, color: 'error' })
@@ -466,6 +487,7 @@ async function archiveCard(card: Card) {
     })
     const i = cards.value.findIndex(c => c.id === updated.id)
     if (i >= 0) cards.value.splice(i, 1, updated)
+    refreshNotifications().catch(() => {})
   } catch (e: any) {
     cards.value.splice(idx, 1, prev)
     toast.add({ title: 'Archive failed', description: e?.data?.statusMessage, color: 'error' })

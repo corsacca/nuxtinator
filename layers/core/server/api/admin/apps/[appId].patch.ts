@@ -2,6 +2,7 @@ import { getRouterParam } from 'h3'
 import { db } from '#core/server/utils/database'
 import { requireOperatorAdmin } from '#tenant/server'
 import { logEvent } from '../../../utils/activity-logger'
+import { getApp } from '../../../utils/app-settings'
 
 // Host-admin global status toggle.
 //
@@ -10,8 +11,9 @@ import { logEvent } from '../../../utils/activity-logger'
 //     `org_apps(enabled=true, source='auto')`. Fire `app.enabled` per row.
 //     This makes layer hooks see "this app turned on" for orgs that
 //     previously inherited 'available'=off, matching the user-visible flip.
-//   * default → available: no row changes. Existing auto rows stay; new
-//     orgs after the flip just won't auto-enable.
+//   * default → available: for every org without an explicit row, INSERT
+//     `org_apps(enabled=true, source='auto')` (no hook — the app was already
+//     on). Existing orgs keep the app; new orgs after the flip must opt in.
 //   * anything → disabled: no row changes. Status alone gates.
 //   * disabled → default: same as available → default.
 //   * disabled → available: no row changes.
@@ -25,7 +27,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'status must be disabled | available | default' })
   }
 
-  const existing = await db.selectFrom('apps').select('status').where('id', '=', appId).executeTakeFirst()
+  const existing = await getApp(db, appId)
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'App not found' })
 
   const oldStatus = existing.status
@@ -38,12 +40,17 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date().toISOString()
   const flipsToDefault = status === 'default' && oldStatus !== 'default'
+  const keepsExistingOrgs = oldStatus === 'default' && status === 'available'
   let materializedOrgIds: string[] = []
 
   await db.transaction().execute(async (trx) => {
-    await trx.updateTable('apps').set({ status, updated_at: now }).where('id', '=', appId).execute()
+    await trx
+      .insertInto('apps')
+      .values({ id: appId, status, updated_at: now })
+      .onConflict(oc => oc.column('id').doUpdateSet({ status, updated_at: now }))
+      .execute()
 
-    if (flipsToDefault && tenancyEnabled) {
+    if ((flipsToDefault || keepsExistingOrgs) && tenancyEnabled) {
       // Find orgs with no row for this app; insert auto rows for each.
       const orgs = await (trx as any)
         .selectFrom('orgs')
@@ -68,7 +75,7 @@ export default defineEventHandler(async (event) => {
   })
 
   const nitro = useNitroApp()
-  for (const orgId of materializedOrgIds) {
+  for (const orgId of flipsToDefault ? materializedOrgIds : []) {
     try {
       await nitro.hooks.callHook('app.enabled', { orgId, appId })
     } catch (err) { console.warn('[hook app.enabled]', err) }

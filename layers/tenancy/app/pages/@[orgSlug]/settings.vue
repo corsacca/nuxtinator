@@ -34,9 +34,9 @@ watch(() => route.path, () => {
 </script>
 
 <template>
-  <div class="lg:flex lg:gap-8 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
+  <div class="sm:flex lg:gap-8 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8">
     <!-- Mobile header -->
-    <header class="lg:hidden flex items-center justify-between border-b border-(--ui-border) px-4 py-3">
+    <header class="sm:hidden flex items-center justify-between border-b border-(--ui-border) px-4 py-3">
       <div class="flex items-center gap-2">
         <UButton
           icon="i-lucide-menu"
@@ -55,7 +55,7 @@ watch(() => route.path, () => {
     <!-- Desktop sidebar -->
     <SidebarPanel
       title="Settings"
-      class="hidden lg:flex w-64 shrink-0 sticky top-[57px] !h-[calc(100vh-57px)]"
+      class="hidden sm:flex w-64 shrink-0 sticky top-[49px] !h-[calc(100vh-49px)] lg:top-[57px] lg:!h-[calc(100vh-57px)]"
     >
       <SidebarNav :items="navItems" />
     </SidebarPanel>

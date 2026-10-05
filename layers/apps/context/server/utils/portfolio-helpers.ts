@@ -7,7 +7,11 @@
 
 import type { Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
-import { CONTEXT_SECTIONS, CONTEXT_SECTION_KEYS } from './section-catalog'
+import {
+  DEFAULT_PORTFOLIO_TEMPLATE_ID,
+  getRegisteredPortfolioTemplate,
+  getRegisteredPortfolioTemplates
+} from './portfolio-template-registry'
 
 export interface PortfolioRow {
   id: string
@@ -15,6 +19,8 @@ export interface PortfolioRow {
   name: string
   color: string | null
   icon_url: string | null
+  // Registered template id; null = the default template.
+  template: string | null
   created_at: Date
   updated_at: Date
 }
@@ -25,7 +31,7 @@ export async function getPortfolioBySlug(
 ): Promise<PortfolioRow | null> {
   const row = await tx
     .selectFrom('context_portfolios')
-    .select(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
+    .select(['id', 'slug', 'name', 'color', 'icon_url', 'template', 'created_at', 'updated_at'])
     .where('slug', '=', slug)
     .executeTakeFirst()
   return (row as PortfolioRow | undefined) ?? null
@@ -37,7 +43,7 @@ export async function getPortfolioById(
 ): Promise<PortfolioRow | null> {
   const row = await tx
     .selectFrom('context_portfolios')
-    .select(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
+    .select(['id', 'slug', 'name', 'color', 'icon_url', 'template', 'created_at', 'updated_at'])
     .where('id', '=', id)
     .executeTakeFirst()
   return (row as PortfolioRow | undefined) ?? null
@@ -48,7 +54,7 @@ export async function getPortfolioById(
 export async function listPortfolios(tx: Transaction<Database>): Promise<PortfolioRow[]> {
   const rows = await tx
     .selectFrom('context_portfolios')
-    .select(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
+    .select(['id', 'slug', 'name', 'color', 'icon_url', 'template', 'created_at', 'updated_at'])
     .orderBy('order', ob => ob.asc().nullsLast())
     .orderBy('name', 'asc')
     .execute()
@@ -115,35 +121,50 @@ export interface CreatePortfolioInput {
   name: string
   color?: string | null
   slug?: string
-  // Built-in section keys the portfolio starts with. Omitted = every catalog
-  // section; [] = none. Sections can be added or removed afterwards.
+  // Registered portfolio template id. Omitted = the default template.
+  template?: string
+  // Section keys from the template the portfolio starts with. Omitted = every
+  // template section; [] = none. Sections can be added or removed afterwards.
   builtin_sections?: string[]
 }
 
-// Inserts the portfolio and one definition row per chosen built-in section.
-// The catalog is the template applied here; it is not consulted again for
-// existing portfolios.
+// Inserts the portfolio and one key-only definition row per chosen template
+// section. The template id is stored (null for the default) so the sections'
+// titles, descriptions, and order keep resolving from code.
 export async function createPortfolio(
   tx: Transaction<Database>,
   input: CreatePortfolioInput,
   userId: string
 ): Promise<PortfolioRow> {
+  const template = getRegisteredPortfolioTemplate(input.template)
+  if (!template) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Unknown portfolio template: ${input.template}. Registered templates: ${getRegisteredPortfolioTemplates().map(t => t.id).join(', ')}.`
+    })
+  }
+  const templateKeys = template.sections.map(s => s.key)
   const keys = input.builtin_sections === undefined
-    ? CONTEXT_SECTIONS.map(s => s.key)
+    ? templateKeys
     : [...new Set(input.builtin_sections)]
-  const unknown = keys.filter(k => !CONTEXT_SECTION_KEYS.has(k))
+  const unknown = keys.filter(k => !templateKeys.includes(k))
   if (unknown.length > 0) {
     throw createError({
       statusCode: 400,
-      statusMessage: `Unknown built-in section(s): ${unknown.join(', ')}. Valid keys: ${[...CONTEXT_SECTION_KEYS].join(', ')}.`
+      statusMessage: `Unknown built-in section(s): ${unknown.join(', ')}. Valid keys: ${templateKeys.join(', ')}.`
     })
   }
 
   const slug = await ensureUniqueSlug(tx, input.slug ?? slugifyPortfolioName(input.name))
   const inserted = await tx
     .insertInto('context_portfolios')
-    .values({ slug, name: input.name, color: input.color ?? null })
-    .returning(['id', 'slug', 'name', 'color', 'icon_url', 'created_at', 'updated_at'])
+    .values({
+      slug,
+      name: input.name,
+      color: input.color ?? null,
+      template: template.id === DEFAULT_PORTFOLIO_TEMPLATE_ID ? null : template.id
+    })
+    .returning(['id', 'slug', 'name', 'color', 'icon_url', 'template', 'created_at', 'updated_at'])
     .executeTakeFirstOrThrow()
 
   if (keys.length > 0) {
@@ -157,7 +178,7 @@ export async function createPortfolio(
 }
 
 // Static pages under /context/ that a portfolio slug would collide with.
-const RESERVED_SLUGS = new Set(['settings'])
+const RESERVED_SLUGS = new Set(['settings', 'suggestions'])
 
 export async function ensureUniqueSlug(
   tx: Transaction<Database>,

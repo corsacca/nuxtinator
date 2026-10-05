@@ -156,6 +156,47 @@ describe('POST /api/context/portfolios/:slug/sections', () => {
   })
 })
 
+describe('PATCH /api/context/portfolios/:slug/sections/:key', () => {
+  const sql = getHostAdminDb()
+  afterEach(async () => { await cleanupContextTestData(sql) })
+
+  it('renames a custom section; key and content stay', async () => {
+    const { org, auth, user } = await createContextOrgWith(sql, ['admin'])
+    const opts = withOrgHeader(auth, org.slug)
+    const p = await createTestPortfolio(sql, { org_id: org.id, name: 'Rename', created_by: user.id, builtin_sections: [] })
+    await $fetch(`/api/context/portfolios/${p.slug}/sections`, {
+      method: 'POST', body: { title: 'Project Clarification and Pitch Methodology' }, ...opts
+    })
+    const key = 'project-clarification-and-pitch-methodology'
+    await seedTestSection(sql, { portfolio_id: p.id, section_key: key, content: 'kept' })
+
+    const res = await $fetch<{ key: string, title: string, description: string }>(
+      `/api/context/portfolios/${p.slug}/sections/${key}`,
+      { method: 'PATCH', body: { title: 'Project Clarification', description: 'Scope' }, ...opts }
+    )
+    expect(res).toMatchObject({ key, title: 'Project Clarification', description: 'Scope' })
+
+    const list = await listSections(p.slug, opts)
+    expect(list.find(s => s.key === key)).toMatchObject({ title: 'Project Clarification', has_content: true })
+  })
+
+  it('member without context.section.custom gets 403', async () => {
+    const { org, auth, user } = await createContextOrgWith(sql, ['admin'])
+    const p = await createTestPortfolio(sql, { org_id: org.id, name: 'Rename perm', created_by: user.id, builtin_sections: [] })
+    await $fetch(`/api/context/portfolios/${p.slug}/sections`, {
+      method: 'POST', body: { title: 'Roadmap' }, ...withOrgHeader(auth, org.slug)
+    })
+    const m = await addContextMember(sql, org.id, ['member'])
+
+    const err = await $fetch(`/api/context/portfolios/${p.slug}/sections/roadmap`, {
+      method: 'PATCH',
+      body: { title: 'Plan' },
+      ...withOrgHeader(m.auth, org.slug)
+    }).catch(e => e)
+    expect(err.statusCode).toBe(403)
+  })
+})
+
 describe('DELETE /api/context/portfolios/:slug/sections/:key', () => {
   const sql = getHostAdminDb()
   afterEach(async () => { await cleanupContextTestData(sql) })

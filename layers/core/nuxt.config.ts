@@ -26,8 +26,23 @@ export default defineNuxtConfig({
     fileURLToPath(new URL('./modules/tenant-kernel.ts', import.meta.url)),
     fileURLToPath(new URL('./modules/email-kernel.ts', import.meta.url)),
     fileURLToPath(new URL('./modules/ai-kernel.ts', import.meta.url)),
-    fileURLToPath(new URL('./modules/layer-versions.ts', import.meta.url))
+    fileURLToPath(new URL('./modules/layer-versions.ts', import.meta.url)),
+    '@nuxtjs/i18n'
   ],
+
+  // Layers opt into translation by declaring `i18n.locales` (with `file`) in
+  // their own nuxt.config and shipping `i18n/locales/<file>`; the module merges
+  // every layer's locales and messages. `no_prefix` keeps URLs unchanged so the
+  // tenancy layer's `/@:orgSlug` route aliases aren't multiplied per locale.
+  i18n: {
+    strategy: 'no_prefix',
+    defaultLocale: 'en',
+    locales: [{ code: 'en', language: 'en', name: 'English' }],
+    detectBrowserLanguage: {
+      useCookie: true,
+      cookieKey: 'i18n_locale'
+    }
+  },
 
   css: [fileURLToPath(new URL('./app/assets/css/main.css', import.meta.url))],
 

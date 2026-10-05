@@ -16,6 +16,7 @@ interface SectionMeta {
   is_custom: boolean
   word_count: number
   has_content: boolean
+  pending_suggestions: number
 }
 
 const route = useRoute()
@@ -121,7 +122,13 @@ const sections = computed(() => sectionsData.value?.sections ?? [])
             <span class="font-mono shrink-0 text-(--ui-text-muted)" style="font-size: 10px">
               {{ String(idx + 1).padStart(2, '0') }}
             </span>
-            <span class="truncate">{{ s.title }}</span>
+            <span class="truncate flex-1">{{ s.title }}</span>
+            <UIcon
+              v-if="s.pending_suggestions > 0"
+              name="i-lucide-git-pull-request-arrow"
+              class="size-3 shrink-0 text-(--ui-warning)"
+              :title="`${s.pending_suggestions} pending suggestion(s)`"
+            />
           </NuxtLink>
           <NuxtLink
             :to="pathTo(`/context/${p.slug}/settings`)"

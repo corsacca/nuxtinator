@@ -16,6 +16,10 @@ interface SectionData {
   last_edited_by_name: string | null
   index_state?: 'none' | 'ok' | 'stale' | 'unindexed'
   index_error?: string | null
+  pending_suggestions: {
+    total: number
+    visible: Array<{ id: string, set_id: string, author_name: string | null, created_at: string }>
+  }
 }
 
 const { data, refresh } = await useAsyncData(
@@ -32,6 +36,14 @@ const error = ref<string | null>(null)
 const sidebarOpen = ref(false)
 const { hasPermission } = usePermissions()
 const canManageSections = computed(() => hasPermission('context.section.custom'))
+const canReview = computed(() => hasPermission('context.suggestion.review'))
+
+// One visible suggestion links straight to its set; several go to the queue.
+const suggestionLink = computed(() => {
+  const visible = data.value?.pending_suggestions.visible ?? []
+  if (visible.length === 0) return null
+  return visible.length === 1 ? `/context/suggestions/${visible[0]!.set_id}` : '/context/suggestions'
+})
 
 watch(data, (next) => {
   if (next && !editing.value) draft.value = next.content
@@ -149,6 +161,21 @@ async function save() {
           Edit
         </UButton>
       </header>
+
+      <div
+        v-if="data?.pending_suggestions.total"
+        class="flex items-center gap-2 px-3 py-2 border-b border-(--ui-border) bg-(--ui-warning)/10 text-sm"
+      >
+        <UIcon name="i-lucide-git-pull-request-arrow" class="size-4 shrink-0 text-(--ui-warning)" />
+        <span class="flex-1">
+          {{ data.pending_suggestions.total === 1
+            ? 'A suggested update to this section is waiting for review.'
+            : `${data.pending_suggestions.total} suggested updates to this section are waiting for review.` }}
+        </span>
+        <UButton v-if="suggestionLink" size="xs" variant="outline" :to="suggestionLink">
+          {{ canReview ? 'Review' : 'View' }}
+        </UButton>
+      </div>
 
       <ContextMarkdownToolbar v-if="editing" :textarea-id="`section-editor-${key}`" />
 

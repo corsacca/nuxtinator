@@ -28,7 +28,7 @@ export const CONTEXT_SECTIONS: readonly SectionDef[] = [
   {
     key: 'team',
     title: 'Team',
-    description: 'Leadership, staff, and key roles within the organization',
+    description: 'Leadership, staff, and key roles within the organization — roles and initials for private individuals',
     order: 3,
     staleness_days: 60
   },
@@ -75,14 +75,6 @@ export const CONTEXT_SECTIONS: readonly SectionDef[] = [
     staleness_days: 60
   }
 ] as const
-
-export const CONTEXT_SECTION_KEYS: ReadonlySet<string> = new Set(
-  CONTEXT_SECTIONS.map(s => s.key)
-)
-
-export function getDefaultSection(key: string): SectionDef | null {
-  return CONTEXT_SECTIONS.find(s => s.key === key) ?? null
-}
 
 export function slugifySectionTitle(title: string): string {
   return title

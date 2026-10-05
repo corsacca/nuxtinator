@@ -173,8 +173,8 @@ export async function seedTestCustomSection(
   const id = randomUUID()
   await sql`
     INSERT INTO context_section_definitions
-      (id, portfolio_id, key, title, description, "order", created_by)
-    VALUES (${id}, ${opts.portfolio_id}, ${opts.key}, ${opts.title}, ${opts.description ?? ''}, ${opts.order ?? null}, ${opts.created_by})
+      (id, portfolio_id, key, title, description, "order", created_by, is_custom)
+    VALUES (${id}, ${opts.portfolio_id}, ${opts.key}, ${opts.title}, ${opts.description ?? ''}, ${opts.order ?? null}, ${opts.created_by}, true)
   `
   return { id }
 }

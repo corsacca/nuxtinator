@@ -106,7 +106,7 @@ async function loadPortfolioEntries(tx: Tx, scope: AssistantScope): Promise<Port
     }
     entries.push({
       portfolio,
-      sections: await getPortfolioSections(tx, portfolio.id),
+      sections: await getPortfolioSections(tx, portfolio),
       content,
       loaded: new Set()
     })

@@ -47,3 +47,20 @@ test('disable an app from settings → tile disappears from the org launcher', a
   await page.goto(`/@${org.slug}/`)
   await expect(page.locator('section').filter({ hasText: /apps/i }).first()).not.toContainText(APP_TITLE_RE)
 })
+
+test('opening a disabled app\'s page redirects to the org home', async ({ page }) => {
+  const { org } = await loginIntoNewOrg(page)
+
+  await page.goto(`/@${org.slug}/messages`)
+  await expect(page).toHaveURL(new RegExp(`/@${org.slug}/messages$`))
+
+  await page.goto(`/@${org.slug}/settings/apps`)
+  const toggle = page.locator('li').filter({ hasText: APP_TITLE_RE }).first().getByRole('switch')
+  await Promise.all([
+    page.waitForResponse(r => r.url().includes(`/api/o/${org.slug}/apps/messages/disable`) && r.status() === 200, { timeout: 10_000 }),
+    toggle.click()
+  ])
+
+  await page.goto(`/@${org.slug}/messages`)
+  await expect(page).toHaveURL(new RegExp(`/@${org.slug}/?$`), { timeout: 5000 })
+})

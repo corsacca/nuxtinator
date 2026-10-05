@@ -30,10 +30,20 @@ function authzError(payload: McpAuthorizationError, text: string): {
   structuredContent: McpAuthorizationError
   isError: true
 } {
-  return {
+  return withStructuredText({
     content: [{ type: 'text', text }],
     structuredContent: payload,
     isError: true
+  })
+}
+
+// Appends `structuredContent` serialized as a trailing text block, as the MCP
+// spec recommends, so clients that only read `content` still receive the data.
+function withStructuredText<T extends { content: Array<{ type: 'text'; text: string }>; structuredContent?: unknown }>(result: T): T {
+  if (result.structuredContent === undefined) return result
+  return {
+    ...result,
+    content: [...result.content, { type: 'text', text: JSON.stringify(result.structuredContent) }]
   }
 }
 
@@ -187,7 +197,7 @@ export async function buildMcpServer(opts: BuildOpts): Promise<Server> {
         }
       }
 
-      return result
+      return withStructuredText(result)
     }
     catch (err) {
       return mcpError(err)

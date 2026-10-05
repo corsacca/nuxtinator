@@ -2,6 +2,7 @@ import { getRouterParam, readBody } from 'h3'
 import { sql } from 'kysely'
 import { withOrgPermission } from '#tenant/server'
 import { logUpdate } from '#core/server/utils/activity-logger'
+import { markCardNotificationsRead } from '../../../../utils/notify-recipients'
 
 const ALLOWED_TYPES = ['task', 'feature', 'bug', 'artifact', 'feedback'] as const
 
@@ -63,6 +64,7 @@ export default defineEventHandler(async (event) => {
 
     if (!row) throw createError({ statusCode: 404, statusMessage: 'Card not found' })
 
+    await markCardNotificationsRead(tx, ctx.userId, id)
     logUpdate('cards', id, ctx.userId, { fields: Object.keys(updates) })
     return row
   })
