@@ -71,6 +71,7 @@ async function save() {
       ? await $fetch<HelpinatorLibrary>('/api/helpinator/libraries', { method: 'POST', body })
       : await $fetch<HelpinatorLibrary>(`/api/helpinator/libraries/${saved.value!.id}`, { method: 'PUT', body })
     toast.add({ title: 'Library saved', color: 'success' })
+    refreshNuxtData('helpinator-sidebar-libraries') // names show in the sidebar
     if (isNew.value) await navigateTo(pathTo(`/helpinator/libraries/${l.id}`), { replace: true })
     else await load()
   } catch (err) {
@@ -83,6 +84,7 @@ async function save() {
 async function remove() {
   try {
     await $fetch(`/api/helpinator/libraries/${saved.value!.id}`, { method: 'DELETE' })
+    refreshNuxtData('helpinator-sidebar-libraries')
     await navigateTo(pathTo('/helpinator/libraries'))
   } catch (err) {
     confirmDelete.value = false
