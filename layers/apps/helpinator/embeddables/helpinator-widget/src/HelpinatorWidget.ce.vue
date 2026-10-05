@@ -35,6 +35,7 @@ const formError = ref('')
 const notice = ref('')
 const listEl = ref(null)
 const inputEl = ref(null)
+const emailEl = ref(null)
 
 const appearance = computed(() => config.value?.appearance ?? {})
 const rootStyle = computed(() => ({ '--hp-default-primary': appearance.value.primary_color || '#2563eb' }))
@@ -129,6 +130,10 @@ watch(isOpen, (open) => {
   if (open) {
     scrollToEnd()
     nextTick(() => inputEl.value?.focus())
+  } else {
+    // Closing the widget dismisses any open email/handoff form.
+    panel.value = null
+    formError.value = ''
   }
 })
 
@@ -189,6 +194,11 @@ function onKeydown(e) {
     send()
   }
 }
+
+// The form replaces the composer while open, so move focus with it.
+watch(panel, (val) => {
+  nextTick(() => (val ? emailEl.value : inputEl.value)?.focus())
+})
 
 function openPanel(kind) {
   panel.value = panel.value === kind ? null : kind
@@ -298,6 +308,7 @@ async function handoff() {
           </p>
           <form @submit.prevent="panel === 'handoff' ? handoff() : saveEmail()">
             <input
+              ref="emailEl"
               v-model="emailDraft"
               class="hp-input"
               type="email"
@@ -318,7 +329,8 @@ async function handoff() {
 
         <div v-if="error" class="hp-error hp-error-bar">{{ error }}</div>
 
-        <form class="hp-composer" part="composer" @submit.prevent="send">
+        <!-- The form above replaces the composer and footer, so there's only one text box to type in. -->
+        <form v-if="!panel" class="hp-composer" part="composer" @submit.prevent="send">
           <textarea
             ref="inputEl"
             v-model="input"
@@ -334,7 +346,7 @@ async function handoff() {
           </button>
         </form>
 
-        <footer class="hp-footer">
+        <footer v-if="!panel" class="hp-footer">
           <button
             v-if="config.handoffAvailable && !handedOff"
             type="button"
