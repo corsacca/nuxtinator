@@ -157,6 +157,26 @@ import { sendTemplateEmail } from '#email'
 
 Each email backend layer (`email-mailgun`, future `email-smtp`/`email-ses`) provides its own implementation and registers `#email` to point at it. Core ships a throwing fallback at [layers/core/email-fallback/email.ts](layers/core/email-fallback/email.ts) that surfaces a clear error if no email layer is loaded.
 
+### Translations (i18n)
+
+Core loads `@nuxtjs/i18n` once ([layers/core/nuxt.config.ts](layers/core/nuxt.config.ts)): `no_prefix` strategy (URLs never change, so tenancy's `/@:orgSlug` aliases aren't multiplied), default locale `en`, browser detection with the choice remembered in the `i18n_locale` cookie. Missing keys fall back to English without console warnings ([layers/core/i18n/i18n.config.ts](layers/core/i18n/i18n.config.ts)), so a layer may translate only part of its strings. Nuxt UI's own strings and `<html lang/dir>` follow the active locale ([layers/core/app/app.vue](layers/core/app/app.vue)).
+
+Translation is opt-in per layer. A layer that wants it:
+
+1. Declares its locales in its own `nuxt.config.ts` (no `modules:` entry needed):
+   ```ts
+   i18n: {
+     locales: [
+       { code: 'en', file: 'en.json' },
+       { code: 'fr', language: 'fr', name: 'Français', file: 'fr.json' }
+     ]
+   }
+   ```
+2. Ships the files at `<layer>/i18n/locales/<file>`, with every key under the layer id (`{ "people-groups": { "fields": { "bible_status": "…" } } }`).
+3. Uses `$t('<layerId>.…')` / `useI18n()` in its components, and places `<LocaleSwitcher />` (core) wherever it wants the picker. The switcher hides itself when only one locale exists.
+
+The module merges locales and messages across all layers by locale code; the host's files win over a layer's. The picker lists the union of every layer's locales. Worked example: [layers/dev/i18n/](layers/dev/i18n/) + `/kitchen-i18n`. Core's own UI, the server-registered labels (apps/nav/admin-section titles), and emails are not translated.
+
 ### Layer wiring (dev/nuxt.config.ts)
 
 [dev/nuxt.config.ts](dev/nuxt.config.ts) does three layer-related things worth knowing about:
