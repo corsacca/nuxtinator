@@ -22,6 +22,9 @@ const error = ref<string | null>(null)
 const isImage = computed(() =>
   item.value?.kind === 'file' && (item.value.mime ?? '').startsWith('image/')
 )
+const isVideo = computed(() =>
+  item.value?.kind === 'file' && (item.value.mime ?? '').startsWith('video/')
+)
 const lightboxOpen = ref(false)
 
 onMounted(async () => {
@@ -82,6 +85,13 @@ useHead({ title: 'Shared file' })
             v-model:open="lightboxOpen"
             :src="item.url"
             :alt="item.title"
+          />
+          <video
+            v-if="isVideo && item.url"
+            :src="item.url"
+            controls
+            preload="metadata"
+            class="max-w-full max-h-[75vh] rounded-lg border border-(--ui-border) bg-black"
           />
           <UButton
             v-if="item.url"
