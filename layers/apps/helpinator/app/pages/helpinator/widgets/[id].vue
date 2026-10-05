@@ -148,10 +148,10 @@ async function remove() {
 // ---- Embed helper -------------------------------------------------------
 
 const hostOrigin = computed(() => import.meta.client ? window.location.origin : '')
-// `<\/script>` is escaped so the SFC parser doesn't end this block early.
+// Script tags are split with `${'script'}` so neither the SFC parser nor Nuxt's
+// regex-based build plugins read them as a script block boundary.
 const snippet = computed(() => saved.value
-  // eslint-disable-next-line no-useless-escape
-  ? `<script src="${hostOrigin.value}/js/helpinator-widget.iife.js" defer><\/script>\n<helpinator-widget host="${hostOrigin.value}" widget-id="${saved.value.id}"></helpinator-widget>`
+  ? `<${'script'} src="${hostOrigin.value}/js/helpinator-widget.iife.js" defer></${'script'}>\n<helpinator-widget host="${hostOrigin.value}" widget-id="${saved.value.id}"></helpinator-widget>`
   : '')
 const cssSnippet = computed(() => `<style>
   /* Optional — match this site's styling. Every variable is optional. */
