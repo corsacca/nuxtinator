@@ -19,8 +19,6 @@ export interface HelpinatorHandoffInput {
 
 export interface HelpinatorHandoffRecord {
   inboxConversationId: string
-  // Whether the address had already proved it can receive mail from this org.
-  addressVerified: boolean
   // Opaque — passed back to `afterHandoff` untouched.
   intake: unknown
 }
@@ -28,7 +26,6 @@ export interface HelpinatorHandoffRecord {
 export interface HelpinatorAfterHandoffOptions {
   notify: boolean
   ack: boolean
-  extraAckHtml: string | null
 }
 
 export interface HelpinatorInboxBridge {

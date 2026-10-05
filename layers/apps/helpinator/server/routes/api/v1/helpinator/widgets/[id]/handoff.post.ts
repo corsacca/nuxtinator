@@ -1,7 +1,8 @@
 // POST /api/v1/helpinator/widgets/:id/handoff — public, bearer session token.
 // "Still need help?": the transcript becomes an open, unassigned inbox
-// conversation (source 'helpinator') and the visitor gets the inbox auto-ack
-// with a copy of the transcript. At most once per conversation.
+// conversation (source 'helpinator') and the typed address gets the inbox's
+// fixed auto-ack (no transcript: nothing proves the visitor owns the address).
+// At most once per conversation, and only with the inbox app on for the org.
 import { z } from 'zod'
 import { getHeader } from 'h3'
 import { helpinatorWithWidget } from '../../../../../../utils/helpinator-public'
@@ -16,6 +17,7 @@ import {
   HelpinatorAlreadyHandedOff,
   helpinatorFindSession,
   helpinatorHandOff,
+  helpinatorHandoffAvailable,
   type HelpinatorHandoffResult
 } from '../../../../../../utils/helpinator-conversations'
 
@@ -39,6 +41,7 @@ export default defineEventHandler(async (event) => {
     if (!widget.enabled) throw createError({ statusCode: 503, statusMessage: 'The help assistant is unavailable right now.' })
     const conversation = await helpinatorFindSession(tx, widget.id, sessionHash)
     if (!conversation) throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
+    if (!await helpinatorHandoffAvailable(tx)) throw createError({ statusCode: 503, statusMessage: 'Handoff is not available right now.' })
     return !conversation.inbox_conversation_id
   })
   if (!ready) return { status: 'already_handed_off' }

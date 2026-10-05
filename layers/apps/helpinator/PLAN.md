@@ -86,8 +86,12 @@ the prompt.
   Stored on the helpinator conversation; the CRM channel is only created on elevation.
 - "Still need help?" is always visible; the bot also suggests it when it can't answer.
 - **Self-service handoff** → inbox intake util with `source='helpinator'`:
-  transcript as first message, auto-ack carries the transcript + "we'll be in
-  touch", conversation `open` + **unassigned** (unassigned = needs dispatch; no tag).
+  transcript as first message, conversation `open` + **unassigned** (unassigned =
+  needs dispatch; no tag). The typed address gets inbox's fixed auto-ack only:
+  widget-name subject, no transcript (nothing proves the visitor owns the
+  address, and a verified address can be any past correspondent). Needs the
+  inbox app enabled for the org; limited to 3/day per mailbox (`+tag` and Gmail
+  dots folded).
 - At most one handoff per conversation. Afterwards the bot keeps answering with
   a "team will follow up by email" banner; later turns are not synced to inbox.
 - **Manual elevation** (admin, only when an email was given): same intake util,

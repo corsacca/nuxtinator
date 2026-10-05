@@ -271,6 +271,18 @@ export async function isActiveOrgMember(
   return true
 }
 
+// Whether `appId` is on for the org bound to the current transaction. Single
+// deploys have no per-org app switch, so it always is. The tenancy layer
+// overrides it with the org's app settings. For public routes that reach a
+// second app (helpinator handing off into inbox) on top of the `appId` that
+// `withRecordOrgContext` already checks.
+export async function isAppEnabledForCurrentOrg(
+  _tx: Transaction<Database>,
+  _appId: string
+): Promise<boolean> {
+  return true
+}
+
 // Migration helper. In single mode this is a no-op — single deploys don't
 // have an `orgs` table to reference and don't need RLS. Per-app tenancy
 // migrations call this from inside `*_T<NNN>_*.ts` files; those files are

@@ -2,6 +2,7 @@
 // handoff shared by the visitor's "still need help?" and staff elevation.
 import { sql, type Selectable, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
+import { isAppEnabledForCurrentOrg } from '#tenant/server'
 import { helpinatorInbox } from '#helpinator/inbox'
 import type { HelpinatorHandoffKind, HelpinatorPageLoaded, HelpinatorSearchHitLogged } from '../database/schema'
 import { helpinatorSameBinding, type HelpinatorWidgetRow } from './helpinator-widgets'
@@ -171,6 +172,12 @@ export interface HelpinatorHandoffResult {
 // Record a handoff inside the caller's tx: create the inbox conversation with
 // the transcript as its first message and link it. At most one handoff per
 // conversation (row-locked so two concurrent submits can't both create one).
+// Handoff needs the inbox layer on this deployment AND the inbox app on for
+// the widget's org (the tx must be scoped to it).
+export async function helpinatorHandoffAvailable(tx: Tx): Promise<boolean> {
+  return helpinatorInbox.available && await isAppEnabledForCurrentOrg(tx, 'inbox')
+}
+
 export async function helpinatorHandOff(tx: Tx, opts: {
   conversationId: string
   widget: HelpinatorWidgetRow
@@ -181,6 +188,9 @@ export async function helpinatorHandOff(tx: Tx, opts: {
 }): Promise<HelpinatorHandoffResult> {
   if (!helpinatorInbox.available) {
     throw createError({ statusCode: 501, statusMessage: 'The inbox is not available on this deployment.' })
+  }
+  if (!await isAppEnabledForCurrentOrg(tx, 'inbox')) {
+    throw createError({ statusCode: 503, statusMessage: 'Handoff is not available for this organization.' })
   }
   const locked = await tx
     .selectFrom('helpinator_conversations')
@@ -193,11 +203,12 @@ export async function helpinatorHandOff(tx: Tx, opts: {
   const messages = await helpinatorListMessages(tx, opts.conversationId)
   if (messages.length === 0) throw createError({ statusCode: 400, statusMessage: 'Nothing to hand off yet.' })
 
-  // A visitor handoff mails an address the visitor typed, so nothing the
-  // visitor wrote goes into what that address receives: the subject is the
-  // org's widget name (it is also the auto-ack's subject), and the transcript
-  // copy is only attached for an address that has already verified (below).
-  // Staff elevations can carry the visitor's first question.
+  // A visitor handoff mails an address the visitor typed, and nothing proves
+  // the visitor owns it (a verified address only proves SOMEONE there reads
+  // the org's mail). So nothing the visitor wrote, or the bot was steered into
+  // writing, goes into what that address receives: the subject is the org's
+  // widget name (it is also the auto-ack's subject) and the ack carries no
+  // transcript. Staff elevations can carry the visitor's first question.
   const firstQuestion = messages.find(m => m.role === 'user')?.content.split('\n').find(l => l.trim())?.trim() ?? ''
   const subject = (opts.kind === 'visitor'
     ? `Help chat: ${opts.widget.name}`
@@ -228,17 +239,13 @@ export async function helpinatorHandOff(tx: Tx, opts: {
     .execute()
 
   const scope = await helpinatorCurrentScope(tx)
-  // Visitor handoff: notify staff, and the auto-ack carries the transcript.
+  // Visitor handoff: notify staff, and send the inbox's fixed auto-ack.
   // Staff elevation: the elevating admin owns it and writes the first reply.
-  const extraAckHtml = opts.kind === 'visitor' && record.addressVerified
-    ? `<p style="margin-top:20px;">Here's a copy of your conversation:</p>\n${helpinatorTranscriptHtml(messages)}`
-    : null
   return {
     inboxConversationId: record.inboxConversationId,
     afterCommit: () => helpinatorInbox.afterHandoff(scope, record, {
       notify: opts.kind === 'visitor',
-      ack: opts.kind === 'visitor',
-      extraAckHtml
+      ack: opts.kind === 'visitor'
     })
   }
 }

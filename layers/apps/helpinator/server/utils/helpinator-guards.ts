@@ -95,10 +95,27 @@ export function helpinatorClientKey(event: H3Event): string {
   return createHmac('sha256', secret).update(`helpinator:${ip}`).digest('hex').slice(0, 32)
 }
 
-// A stable, non-reversible key for a visitor-supplied email address.
+// The mailbox an address delivers to, for limiting per recipient: most
+// providers ignore a `+tag` and Gmail ignores dots, so `victim+1@gmail.com`
+// and `v.ictim@gmail.com` count against the same limit as `victim@gmail.com`.
+// Only the limit key uses this; mail still goes to the address as typed.
+export function helpinatorMailboxOf(email: string): string {
+  const lower = email.trim().toLowerCase()
+  const at = lower.lastIndexOf('@')
+  if (at < 1) return lower
+  let local = lower.slice(0, at)
+  let domain = lower.slice(at + 1)
+  local = local.split('+')[0] || local
+  if (domain === 'googlemail.com') domain = 'gmail.com'
+  if (domain === 'gmail.com') local = local.replace(/\./g, '') || local
+  return `${local}@${domain}`
+}
+
+// A stable, non-reversible key for a visitor-supplied email address (per
+// mailbox, see above).
 export function helpinatorEmailKey(email: string): string {
   const secret = String(useRuntimeConfig().jwtSecret || 'helpinator')
-  return createHmac('sha256', secret).update(`helpinator-email:${email.toLowerCase()}`).digest('hex').slice(0, 32)
+  return createHmac('sha256', secret).update(`helpinator-email:${helpinatorMailboxOf(email)}`).digest('hex').slice(0, 32)
 }
 
 export async function helpinatorRateLimit(

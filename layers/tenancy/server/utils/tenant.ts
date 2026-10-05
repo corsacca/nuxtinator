@@ -572,6 +572,21 @@ export async function isActiveOrgMember(
   return !!membership
 }
 
+// Whether `appId` is enabled for the org bound to the current transaction (the
+// `app.current_org` GUC). False when no GUC is set. For public routes that
+// reach a second app on top of the `appId` `withRecordOrgContext` checks.
+export async function isAppEnabledForCurrentOrg(
+  tx: Transaction<Database>,
+  appId: string
+): Promise<boolean> {
+  const result = await sql<{ org_id: string | null }>`
+    select nullif(current_setting('app.current_org', true), '')::uuid as org_id
+  `.execute(tx)
+  const orgId = result.rows[0]?.org_id
+  if (!orgId) return false
+  return await isAppEnabledForOrg(tx, orgId, appId)
+}
+
 // Schema-retrofit helper for app layer migrations. Per-app tenancy migrations
 // live at `<layer>/migrations/<appId>_T<NNN>_*.ts` and call this. The tenancy
 // layer's migration discovery module includes those files only when the

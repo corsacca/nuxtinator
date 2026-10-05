@@ -17,14 +17,13 @@ export const helpinatorInbox: HelpinatorInboxBridge = {
       userAgent: input.userAgent,
       originLabel: 'Help chat handoff'
     })
-    return { inboxConversationId: intake.conversationId, addressVerified: intake.verificationToken === null, intake }
+    return { inboxConversationId: intake.conversationId, intake }
   },
 
   async afterHandoff(scope, record, opts) {
     await inboxAfterIntake(scope, record.intake as InboxIntakeResult, {
       notify: opts.notify,
-      ack: opts.ack,
-      extraAckHtml: opts.extraAckHtml
+      ack: opts.ack
     })
   }
 }

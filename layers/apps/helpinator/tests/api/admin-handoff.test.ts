@@ -1,6 +1,7 @@
 // Admin API (widgets CRUD, conversation log, permissions) and the two paths
 // into the inbox: the visitor's "still need help?" handoff and staff elevation.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { $fetch } from '@nuxt/test-utils/e2e'
 import {
   getHostAdminDb,
@@ -155,19 +156,43 @@ describe('admin + handoff', () => {
     expect(dup.statusCode).toBe(409)
   })
 
-  it('limits visitor handoffs per email address, whichever client asks', async () => {
+  it('limits visitor handoffs per mailbox, whichever client asks and however the address is spelled', async () => {
     const { org } = await createHelpinatorOrgWith(sql)
     const p = await seedPortfolio(sql, org.id, 'P', { faq: 'x' })
     const widget = await seedWidget(sql, { orgId: org.id, portfolioId: p.id, sectionKey: 'faq' })
+    const local = `target${randomUUID().slice(0, 8)}`
+    // All one Gmail mailbox: +tags and dots are ignored on delivery.
+    const spellings = [`${local}@gmail.com`, `${local}+1@gmail.com`, `${local.slice(0, 3)}.${local.slice(3)}@googlemail.com`, `${local.toUpperCase()}+x@Gmail.com`]
     const codes: number[] = []
-    for (let i = 0; i < 4; i++) {
+    for (const [i, email] of spellings.entries()) {
       await primeAiFake({ text: 'ok' })
       const turn = await sendTurn(widget.id, `question ${i}`)
       const res = await $fetch<{ status: string }>(`/api/v1/helpinator/widgets/${widget.id}/handoff`, {
-        method: 'POST', headers: widgetHeaders(turn.token), body: { email: 'Target@Example.com' }
+        method: 'POST', headers: widgetHeaders(turn.token), body: { email }
       }).catch(e => e)
       codes.push(res.statusCode ?? 200)
     }
     expect(codes).toEqual([200, 200, 200, 429])
+  })
+
+  it('refuses handoff when the inbox app is off for the org, and the widget stops offering it', async () => {
+    const { org } = await createHelpinatorOrgWith(sql)
+    const p = await seedPortfolio(sql, org.id, 'P', { faq: 'x' })
+    const widget = await seedWidget(sql, { orgId: org.id, portfolioId: p.id, sectionKey: 'faq' })
+    await primeAiFake({ text: 'ok' })
+    const turn = await sendTurn(widget.id, 'question')
+    await sql`UPDATE org_apps SET enabled = false WHERE org_id = ${org.id} AND app_id = 'inbox'`
+    try {
+      const cfg = await $fetch<{ handoffAvailable: boolean }>(`/api/v1/helpinator/widgets/${widget.id}/config`, { headers: widgetHeaders() })
+      expect(cfg.handoffAvailable).toBe(false)
+      const res = await $fetch(`/api/v1/helpinator/widgets/${widget.id}/handoff`, {
+        method: 'POST', headers: widgetHeaders(turn.token), body: { email: 'visitor@example.com' }
+      }).catch(e => e)
+      expect(res.statusCode).toBe(503)
+      const [conv] = await sql`SELECT inbox_conversation_id FROM helpinator_conversations WHERE id = ${turn.conversationId}`
+      expect(conv!.inbox_conversation_id).toBeNull()
+    } finally {
+      await sql`UPDATE org_apps SET enabled = true WHERE org_id = ${org.id} AND app_id = 'inbox'`
+    }
   })
 })

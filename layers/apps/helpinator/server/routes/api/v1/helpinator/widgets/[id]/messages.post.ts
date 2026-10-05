@@ -15,7 +15,6 @@ import { z } from 'zod'
 import { createEventStream, getHeader, getRequestHeader, type H3Event } from 'h3'
 import { sql } from 'kysely'
 import { complete, resolveAiRun } from '#ai/server'
-import { helpinatorInbox } from '#helpinator/inbox'
 import { helpinatorWithWidget } from '../../../../../../utils/helpinator-public'
 import {
   HELPINATOR_MAX_MESSAGE_CHARS,
@@ -33,6 +32,7 @@ import {
 import {
   helpinatorCreateConversation,
   helpinatorDeleteMessage,
+  helpinatorHandoffAvailable,
   helpinatorFindSession,
   helpinatorInsertMessage,
   helpinatorIsLive,
@@ -150,6 +150,7 @@ export default defineEventHandler(async (event) => {
         libraries,
         chatRun: await resolveAiRun(tx, HELPINATOR_CHAT_FEATURE),
         embedRun: await helpinatorEmbedRun(tx),
+        handoffAvailable: await helpinatorHandoffAvailable(tx),
         scope: helpinatorScope(await helpinatorCurrentScope(tx))
       }
     })
@@ -160,7 +161,7 @@ export default defineEventHandler(async (event) => {
         defaultLibraryId: prep.conversation.default_library_id,
         defaultSectionKey: prep.widget.default_section_key,
         extraInstructions: prep.widget.extra_instructions,
-        handoffAvailable: helpinatorInbox.available,
+        handoffAvailable: prep.handoffAvailable,
         userMessage: parsed.data.message,
         embedRun: prep.embedRun
       })
