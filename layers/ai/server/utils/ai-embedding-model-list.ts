@@ -71,7 +71,7 @@ export function parseOpenRouterEmbeddingModels(payload: unknown): AiEmbeddingMod
 
 async function refresh(state: EmbeddingListState): Promise<AiEmbeddingModelInfo[]> {
   try {
-    const res = await fetch(`${getOpenRouterConfig().baseUrl}/embeddings/models`)
+    const res = await fetch(`${getOpenRouterConfig().baseUrl}/embeddings/models`, { signal: AbortSignal.timeout(15_000) })
     if (!res.ok) throw new Error(`OpenRouter ${res.status}`)
     const models = parseOpenRouterEmbeddingModels(await res.json())
     if (models.length === 0) throw new Error('OpenRouter returned no embedding models')
