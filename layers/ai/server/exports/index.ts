@@ -10,9 +10,39 @@
 // "Duplicated imports".
 
 export * from '#core/ai-fallback/types'
+export * from '#core/ai-fallback/vectors'
+export * from '#core/ai-fallback/chunk'
 
-export { isAiConfigured, complete, generate, validateApiKey } from '../utils/ai-client'
+export {
+  isAiConfigured,
+  resolveAiRun,
+  resolveAiEmbedRun,
+  complete,
+  generate,
+  validateApiKey,
+  isEmbeddingConfigured,
+  embed,
+  probeEmbeddingModel
+} from '../utils/ai-client'
 export type { AiKeyCheck } from '../utils/ai-client'
+
+export {
+  getEmbeddingModelList,
+  getEmbeddingModelInfo,
+  isKnownEmbeddingModel
+} from '../utils/ai-embedding-model-list'
+
+export {
+  registerAiReindexer,
+  getAiReindexers,
+  getAiIndexStaleness,
+  listStaleAiScopes,
+  listAiOrgScopes,
+  withAiScopeTx,
+  startAiReindex,
+  getAiReindexStatus
+} from '../utils/ai-reindex-registry'
+export type { AiIndexStaleness, AiReindexStatus, AiReindexScopeStatus } from '../utils/ai-reindex-registry'
 
 export { getHostApiKey } from '../utils/ai-config'
 
@@ -35,6 +65,7 @@ export {
   AI_SETTING_DEFAULT_MODEL,
   AI_SETTING_FEATURE_MODELS,
   AI_SETTING_API_KEY,
+  AI_SETTING_EMBEDDING_MODEL,
   sanitizeModelIdList,
   sanitizeModelId,
   sanitizeFeatureModels,
@@ -47,6 +78,7 @@ export {
   getAllowedModelIds,
   getAllowedModels,
   resolveDefaultModel,
-  resolveFeatureModel
+  resolveFeatureModel,
+  resolveEmbeddingModel
 } from '../utils/ai-settings'
 export type { AiOrgKey, AiOrgKeyStatus } from '../utils/ai-settings'

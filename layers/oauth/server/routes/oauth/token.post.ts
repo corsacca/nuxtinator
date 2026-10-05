@@ -2,8 +2,7 @@ import type { H3Event } from 'h3'
 import { sql } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { getUserPermissionsAcrossOrgs } from '#tenant/server'
-import { checkRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
-import { logEvent } from '#core/server/utils/activity-logger'
+import { consumeRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
 import { getOauthConfig } from '../../utils/oauth-config'
 import {
   sha256Hex,
@@ -55,7 +54,10 @@ export default defineEventHandler(async (event) => {
   // Rate limit
   const ip = getRequestIP(event, { xForwardedFor: true }) || 'unknown'
   const userAgent = getHeader(event, 'user-agent') || undefined
-  const rate = await checkRateLimit('ratelimit.oauth.token', 'ip', ip, 60 * 1000, 60)
+  // Counts and records in one locked step, so parallel requests can't all pass.
+  // Kept under the `ratelimit.*` namespace (not `oauth.*`) so it's prunable
+  // bookkeeping, not an audit event in the events view.
+  const rate = await consumeRateLimit('ratelimit.oauth.token', 'ip', ip, 60 * 1000, 60)
   if (!rate.allowed) {
     logRateLimitExceeded(ip, '/oauth/token', userAgent)
     setResponseStatus(event, 429)
@@ -63,10 +65,6 @@ export default defineEventHandler(async (event) => {
     setNoCache(event)
     return { error: 'too_many_requests' }
   }
-  // Record the attempt so the window above actually accumulates — checkRateLimit
-  // only counts, it never records. Kept under the `ratelimit.*` namespace (not
-  // `oauth.*`) so it's prunable bookkeeping, not an audit event in the events view.
-  logEvent({ eventType: 'ratelimit.oauth.token', metadata: { ip } })
 
   // Content-Type check (accept application/x-www-form-urlencoded[; charset=...])
   const contentType = getHeader(event, 'content-type') || ''

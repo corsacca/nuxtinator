@@ -21,6 +21,8 @@ import type { Transaction, Kysely } from 'kysely'
 import { sql } from 'kysely'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { db } from '#core/server/utils/database'
+// Tracks each request transaction so `afterCommit` work runs once it commits.
+import { runTransaction } from '#core/server/utils/after-commit'
 import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions, getUserPermissions } from '#core/server/utils/rbac'
 import { getUserGrantedPermissions } from '#core/server/utils/permission-grants'
@@ -79,7 +81,7 @@ async function runWithOrgContext<T>(
     })
   }
 
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
 
     const perms = await getRolePermissions(tx, memberRoles, orgId)
@@ -205,7 +207,7 @@ export async function computePermsForOrg(
 // `runWithOrgContext` reads them: inside a transaction with the GUC set, so
 // `custom_roles` and `user_permission_grants` are RLS-scoped to that org.
 async function resolveOrgPerms(userId: string, orgId: string): Promise<Set<Permission>> {
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
     const perms = await computePermsForOrg(tx, userId, orgId)
     for (const perm of await getUserGrantedPermissions(tx, userId)) {
@@ -440,7 +442,7 @@ export async function runInOrgTransaction<T>(
     throw createError({ statusCode: 400, statusMessage: 'No organization selected. Pass `org` or send the X-Active-Org header.' })
   }
 
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     if (orgId) {
       await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
     }
@@ -476,7 +478,7 @@ export async function withProjectOrgContext<T>(
   if (!orgId) {
     throw createError({ statusCode: 404, statusMessage: 'Project not found' })
   }
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
     return await fn(tx)
   })
@@ -508,6 +510,9 @@ export async function withRecordOrgContext<T>(
     idColumn?: string
     notFoundMessage?: string
     validateUuid?: boolean
+    // Public routes serving an app's records: refuse when the owning org is
+    // suspended or has the app disabled, as `defineTenantHandler` does.
+    appId?: string
   },
   fn: (tx: Transaction<Database>) => Promise<T>
 ): Promise<T> {
@@ -527,9 +532,18 @@ export async function withRecordOrgContext<T>(
   if (!orgId) {
     throw createError({ statusCode: 404, statusMessage: notFoundMessage })
   }
+  if (opts.appId) {
+    const org = await adminDb.selectFrom('orgs').select('suspended_at').where('id', '=', orgId).executeTakeFirst()
+    if (!org || org.suspended_at) {
+      throw createError({ statusCode: 423, statusMessage: 'This organization is suspended.' })
+    }
+  }
 
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     await sql`select set_config('app.current_org', ${orgId}, true)`.execute(tx)
+    if (opts.appId && !(await isAppEnabledForOrg(tx, orgId, opts.appId))) {
+      throw createError({ statusCode: 410, statusMessage: `App "${opts.appId}" is not enabled for this organization.` })
+    }
     return await fn(tx)
   })
 }
@@ -556,6 +570,21 @@ export async function isActiveOrgMember(
     .where('user_id', '=', userId)
     .executeTakeFirst()
   return !!membership
+}
+
+// Whether `appId` is enabled for the org bound to the current transaction (the
+// `app.current_org` GUC). False when no GUC is set. For public routes that
+// reach a second app on top of the `appId` `withRecordOrgContext` checks.
+export async function isAppEnabledForCurrentOrg(
+  tx: Transaction<Database>,
+  appId: string
+): Promise<boolean> {
+  const result = await sql<{ org_id: string | null }>`
+    select nullif(current_setting('app.current_org', true), '')::uuid as org_id
+  `.execute(tx)
+  const orgId = result.rows[0]?.org_id
+  if (!orgId) return false
+  return await isAppEnabledForOrg(tx, orgId, appId)
 }
 
 // Schema-retrofit helper for app layer migrations. Per-app tenancy migrations

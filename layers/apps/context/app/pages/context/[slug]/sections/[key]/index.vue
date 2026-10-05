@@ -14,6 +14,8 @@ interface SectionData {
   content: string
   last_edited_at: string | null
   last_edited_by_name: string | null
+  index_state?: 'none' | 'ok' | 'stale' | 'unindexed'
+  index_error?: string | null
   pending_suggestions: {
     total: number
     visible: Array<{ id: string, set_id: string, author_name: string | null, created_at: string }>
@@ -75,6 +77,22 @@ async function removeSection() {
     error.value = (e as { statusMessage?: string }).statusMessage ?? 'Remove failed.'
   } finally {
     removing.value = false
+  }
+}
+
+// The search index is rebuilt on every save; a failed rebuild shows below
+// with a button to retry without re-saving.
+const reindexing = ref(false)
+async function reindex() {
+  reindexing.value = true
+  error.value = null
+  try {
+    await $fetch(`/api/context/portfolios/${slug.value}/sections/${key.value}/reindex`, { method: 'POST' })
+    await refresh()
+  } catch (e) {
+    error.value = (e as Error).message ?? 'Re-embed failed.'
+  } finally {
+    reindexing.value = false
   }
 }
 
@@ -160,6 +178,38 @@ async function save() {
       </div>
 
       <ContextMarkdownToolbar v-if="editing" :textarea-id="`section-editor-${key}`" />
+
+      <UAlert
+        v-if="data?.index_state === 'stale' && !editing"
+        class="mx-3 mt-3"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        title="Search index didn't regenerate"
+        :description="`The assistant's search still sees the previous version of this section. ${data.index_error ?? ''}`"
+      >
+        <template #actions>
+          <UButton size="xs" color="warning" variant="solid" icon="i-lucide-refresh-cw" :loading="reindexing" @click="reindex">
+            Re-embed
+          </UButton>
+        </template>
+      </UAlert>
+
+      <UAlert
+        v-if="data?.index_state === 'unindexed' && !editing"
+        class="mx-3 mt-3"
+        color="info"
+        variant="subtle"
+        icon="i-lucide-info"
+        title="Not in the search index yet"
+        description="This section was written before search indexing was set up, so the assistant's search can't find it."
+      >
+        <template #actions>
+          <UButton size="xs" color="info" variant="solid" icon="i-lucide-refresh-cw" :loading="reindexing" @click="reindex">
+            Index now
+          </UButton>
+        </template>
+      </UAlert>
 
       <div class="flex-1 flex min-h-0">
         <div class="flex-1 flex min-h-0 overflow-auto">

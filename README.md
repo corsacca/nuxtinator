@@ -171,6 +171,7 @@ S3_PUBLIC_BASE_URL=               # public read URL (custom domain on the public
 - [documentation/getting-started.md](documentation/getting-started.md) — manual setup walkthrough (if you'd rather not use Claude)
 - [documentation/layers.md](documentation/layers.md) — what each layer owns, the `#tenant` kernel contract, how to write your own layer
 - [documentation/single-tenant-deploy.md](documentation/single-tenant-deploy.md) — deploying without `tenancy`
+- [documentation/deploy-behind-a-proxy.md](documentation/deploy-behind-a-proxy.md) — `NUXT_TRUSTED_PROXIES`: which proxies may speak for the client IP (Cloudflare, PaaS)
 - [documentation/tenancy.md](documentation/tenancy.md) — multi-tenant: roles, RLS, transaction-pooling
 - [documentation/dev-setup.md](documentation/dev-setup.md) — for working on this monorepo itself
 

@@ -10,17 +10,25 @@
 import { createError } from 'h3'
 import type {
   AiCompleteOptions,
+  AiCompletionRun,
+  AiEmbeddingRun,
   AiCompleteResult,
   AiDbClient,
+  AiEmbeddingModelInfo,
+  AiEmbedOptions,
+  AiEmbedResult,
   AiFeature,
   AiGenerateOptions,
   AiGenerateResult,
-  AiModelInfo
+  AiModelInfo,
+  AiReindexer
 } from './types'
 
-// Re-export the shared types so `#ai/server` carries them whether the real
-// layer or this fallback is active.
+// Re-export the shared types and the pure vector/chunk helpers so `#ai/server`
+// carries them whether the real layer or this fallback is active.
 export * from './types'
+export * from './vectors'
+export * from './chunk'
 
 function notConfigured(): never {
   throw createError({
@@ -32,6 +40,14 @@ function notConfigured(): never {
 
 export async function isAiConfigured(_tx: AiDbClient): Promise<boolean> {
   return false
+}
+
+export async function resolveAiRun(_tx: AiDbClient, _feature: string): Promise<AiCompletionRun> {
+  notConfigured()
+}
+
+export async function resolveAiEmbedRun(_tx: AiDbClient): Promise<AiEmbeddingRun> {
+  notConfigured()
 }
 
 export async function complete(_opts: AiCompleteOptions): Promise<AiCompleteResult> {
@@ -69,6 +85,30 @@ export async function resolveDefaultModel(_tx: AiDbClient): Promise<string> {
 
 export async function resolveFeatureModel(_tx: AiDbClient, _feature: string): Promise<string> {
   return ''
+}
+
+// --- Embeddings: nothing can embed without the AI layer ---
+
+export async function isEmbeddingConfigured(_tx: AiDbClient): Promise<boolean> {
+  return false
+}
+
+export async function embed(_opts: AiEmbedOptions): Promise<AiEmbedResult> {
+  notConfigured()
+}
+
+export async function getEmbeddingModelList(): Promise<AiEmbeddingModelInfo[]> {
+  return []
+}
+
+export async function resolveEmbeddingModel(_tx: AiDbClient): Promise<string> {
+  return ''
+}
+
+export function registerAiReindexer(_reindexer: AiReindexer): void {}
+
+export function getAiReindexers(): AiReindexer[] {
+  return []
 }
 
 export function supportsTemperature(_modelId: string): boolean {

@@ -14,10 +14,13 @@ import {
   type MergedSection,
   type PortfolioRef
 } from './section-settings'
+import { indexSectionAfterCommit } from './section-index'
 
 export const MAX_SECTION_BYTES = 100 * 1024
 
 export interface SectionRow {
+  index_state?: 'none' | 'ok' | 'stale'
+  index_error?: string | null
   id: string
   portfolio_id: string
   section_key: string
@@ -183,7 +186,7 @@ export async function loadSection(
 ): Promise<SectionRow | null> {
   const row = await tx
     .selectFrom('context_sections')
-    .select(['id', 'portfolio_id', 'section_key', 'content', 'last_edited_by', 'last_edited_at'])
+    .select(['id', 'portfolio_id', 'section_key', 'content', 'last_edited_by', 'last_edited_at', 'index_state', 'index_error'])
     .where('portfolio_id', '=', portfolioId)
     .where('section_key', '=', key)
     .executeTakeFirst()
@@ -261,6 +264,11 @@ export async function saveSectionContent(
     })
     .returning('id')
     .executeTakeFirstOrThrow()
+
+  // Keep the vector index in step with the content. Best-effort: a failure
+  // marks the section stale and never fails the save. Runs after the save
+  // commits, so the embedding call never holds the request's transaction.
+  await indexSectionAfterCommit(tx, section.id)
 
   return { section, versionId: version.id }
 }

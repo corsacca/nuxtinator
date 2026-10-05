@@ -11,13 +11,17 @@ import {
   AI_SETTINGS_NAMESPACE,
   AI_SETTING_DEFAULT_MODEL,
   AI_SETTING_FEATURE_MODELS,
+  AI_SETTING_EMBEDDING_MODEL,
   getHostApiKey,
   getModelList,
   getOrgApiKey,
   getAllowedModels,
   getAiFeatures,
   resolveDefaultModel,
-  resolveFeatureModel
+  resolveFeatureModel,
+  resolveEmbeddingModel,
+  getEmbeddingModelList,
+  getAiIndexStaleness
 } from '#ai/server'
 
 const ORG_SETTINGS_WRITE = 'org.settings.write' as Permission
@@ -33,8 +37,10 @@ export default defineEventHandler(async (event) => {
       resolveDefaultModel(tx)
     ])
 
+    const allFeatures = getAiFeatures()
+    const embeddingAvailable = allFeatures.some(f => f.kind === 'embedding')
     const features = await Promise.all(
-      getAiFeatures().map(async f => ({
+      allFeatures.filter(f => f.kind !== 'embedding').map(async f => ({
         key: f.key,
         label: f.label,
         description: f.description,
@@ -42,6 +48,15 @@ export default defineEventHandler(async (event) => {
         effectiveModel: await resolveFeatureModel(tx, f.key)
       }))
     )
+
+    const embeddingModels = embeddingAvailable ? await getEmbeddingModelList() : []
+    const [embeddingModel, effectiveEmbeddingModel, staleness] = embeddingAvailable
+      ? await Promise.all([
+          getSetting<string>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_EMBEDDING_MODEL),
+          resolveEmbeddingModel(tx),
+          getAiIndexStaleness(tx)
+        ])
+      : ['', '', { model: '', stored: [], stale: false }]
 
     return {
       key: { status: key.status, last4: key.last4 },
@@ -51,7 +66,13 @@ export default defineEventHandler(async (event) => {
       allowedModels,
       defaultModel,
       effectiveDefaultModel,
-      features
+      features,
+      embeddingAvailable,
+      embeddingModels,
+      embeddingModel,
+      effectiveEmbeddingModel,
+      embeddingStale: staleness.stale,
+      embeddingStoredModels: staleness.stored
     }
   })
 })

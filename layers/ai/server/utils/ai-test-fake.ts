@@ -8,13 +8,18 @@
 // State lives on a global symbol rather than in module scope: Nitro imports
 // routes lazily, so the control route and the client may not share a module
 // instance.
+import { createHash } from 'node:crypto'
+import { createError } from 'h3'
 import type {
   AiCompleteOptions,
   AiCompleteResult,
+  AiEmbedOptions,
+  AiEmbedResult,
   AiGenerateOptions,
   AiGenerateResult,
   AiToolCallRecord
 } from '#core/ai-fallback/types'
+import { AI_EMBED_DIMENSIONS } from '#core/ai-fallback/vectors'
 
 export interface AiFakeScript {
   // Text `complete()` returns. Default: `[[stub:<model>]]`.
@@ -28,6 +33,14 @@ export interface AiFakeScript {
   // Text a streaming `complete()` receives before the tool calls and then
   // discards, exercising a consumer's `onTextDiscard`. Needs `toolCalls`.
   discardedText?: string
+  // `complete()` waits this long before answering, like a slow model, so a
+  // suite can observe what the caller holds open during a turn.
+  delayMs?: number
+  // Same for each `embed()` call.
+  embedDelayMs?: number
+  // `complete()` fails with this status (after any tool calls), like a
+  // provider error mid-turn.
+  failWith?: number
 }
 
 export interface AiFakeToolResult extends AiToolCallRecord {
@@ -35,7 +48,7 @@ export interface AiFakeToolResult extends AiToolCallRecord {
 }
 
 export interface AiFakeCall {
-  kind: 'complete' | 'generate'
+  kind: 'complete' | 'generate' | 'embed'
   model: string
   system: AiCompleteOptions['system']
   messages: AiCompleteOptions['messages']
@@ -44,6 +57,8 @@ export interface AiFakeCall {
   toolResults: AiFakeToolResult[]
   // Whether the caller asked for text as it arrives.
   streamed?: boolean
+  // For `embed`: the strings embedded.
+  input?: string[]
 }
 
 interface AiFakeState {
@@ -105,6 +120,11 @@ export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Pr
     toolCalls.push(tc)
   }
   if (preface) opts.onTextDiscard?.()
+  if (state.script.delayMs) await new Promise(r => setTimeout(r, state.script.delayMs))
+  if (state.script.failWith) {
+    state.log.push(entry)
+    throw createError({ statusCode: state.script.failWith, statusMessage: 'The AI provider failed (fake).' })
+  }
 
   const text = state.script.text ?? `[[stub:${model}]]`
   if (opts.onTextDelta) {
@@ -154,4 +174,33 @@ function stubToolInput(opts: AiGenerateOptions): Record<string, unknown> {
     }
   }
   return out
+}
+
+// Deterministic embeddings so similarity tests are stable: identical text →
+// identical vector; texts sharing words → closer vectors. Each word hashes to
+// a handful of dimensions (a bag-of-words projection), normalised to unit
+// length. `[[fail]]` anywhere in an input makes the call throw, so consumers'
+// failure paths can be exercised.
+export function aiFakeEmbedVector(text: string): number[] {
+  const v = new Array<number>(AI_EMBED_DIMENSIONS).fill(0)
+  const words = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+  for (const w of words) {
+    const h = createHash('sha256').update(w).digest()
+    for (let i = 0; i < 4; i++) {
+      const idx = h.readUInt16BE(i * 2) % AI_EMBED_DIMENSIONS
+      v[idx] = v[idx]! + 1
+    }
+  }
+  const norm = Math.sqrt(v.reduce((s, n) => s + n * n, 0)) || 1
+  return v.map(n => n / norm)
+}
+
+export async function aiFakeEmbed(opts: AiEmbedOptions, model: string): Promise<AiEmbedResult> {
+  const state = getState()
+  state.log.push({ kind: 'embed', model, system: undefined, messages: [], tools: [], toolResults: [], input: [...opts.input] })
+  if (opts.input.some(t => t.includes('[[fail]]'))) {
+    throw createError({ statusCode: 502, statusMessage: 'The AI provider is busy. Try again in a moment.' })
+  }
+  if (state.script.embedDelayMs) await new Promise(r => setTimeout(r, state.script.embedDelayMs))
+  return { vectors: opts.input.map(aiFakeEmbedVector), model }
 }

@@ -4,6 +4,7 @@ import { encryptSecret, decryptSecret } from '#core/server/utils/secret-crypto'
 import type { AiDbClient, AiModelInfo } from '#core/ai-fallback/types'
 import { getHostApiKey } from './ai-config'
 import { getModelList, getModelInfo, isKnownModel } from './ai-model-list'
+import { getEmbeddingModelList, isKnownEmbeddingModel } from './ai-embedding-model-list'
 
 // The DB-backed half of the AI layer's config, in two scopes that stack:
 //
@@ -32,6 +33,7 @@ export const AI_SETTING_ENABLED_MODELS = 'enabled_models'
 export const AI_SETTING_DEFAULT_MODEL = 'default_model'
 export const AI_SETTING_FEATURE_MODELS = 'feature_models'
 export const AI_SETTING_API_KEY = 'api_key'
+export const AI_SETTING_EMBEDDING_MODEL = 'embedding_model'
 
 // Turn a raw (possibly bad) stored value into a clean string[] of ids.
 export function sanitizeModelIdList(value: unknown): string[] {
@@ -193,4 +195,21 @@ export async function resolveFeatureModel(tx: AiDbClient, feature: string): Prom
     [orgFeatures[feature], orgDefault, hostFeatures[feature], hostDefault],
     new Set(allowed)
   )
+}
+
+// --- Embedding model resolution ---
+
+// The org's own embedding model if still listed, else the host's, else ''.
+// There is no host-enabled set for embeddings: one model per scope is enough,
+// and an org on its own key may pick any listed one.
+export async function resolveEmbeddingModel(tx: AiDbClient): Promise<string> {
+  await getEmbeddingModelList()
+  const [orgModel, hostModel] = await Promise.all([
+    getSetting<string>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_EMBEDDING_MODEL),
+    getHostSetting<string>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_EMBEDDING_MODEL)
+  ])
+  for (const id of [orgModel, hostModel]) {
+    if (id && isKnownEmbeddingModel(id)) return id
+  }
+  return ''
 }

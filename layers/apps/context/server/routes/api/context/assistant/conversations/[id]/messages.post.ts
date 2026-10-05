@@ -139,7 +139,7 @@ export default defineEventHandler(async (event) => {
       const canApply = ctx.perms.has('context.write') && ctx.perms.has('context.assistant.apply')
 
       const history = historyToMessages(await listMessages(tx, conversation.id))
-      const assistant = await buildAssistantContext(tx, scope, canApply)
+      const assistant = await buildAssistantContext(tx, scope, canApply, { userMessage: parsed.data.message })
       const args: TurnArgs = { conversation, message: parsed.data.message, canApply, history, assistant }
 
       if (!wantsStream) return await runTurn(tx, args)

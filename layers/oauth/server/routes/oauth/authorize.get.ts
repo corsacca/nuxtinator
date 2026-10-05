@@ -2,8 +2,7 @@ import { sql } from 'kysely'
 import { db } from '#core/server/utils/database'
 import { getAuthUser } from '#core/server/utils/auth'
 import { runInOrgTransaction, getUserPermissionsAcrossOrgs } from '#tenant/server'
-import { checkRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
-import { logEvent } from '#core/server/utils/activity-logger'
+import { consumeRateLimit, logRateLimitExceeded } from '#core/server/utils/rate-limit'
 import { getOauthConfig } from '../../utils/oauth-config'
 import {
   isValidS256Challenge,
@@ -34,17 +33,16 @@ export default defineEventHandler(async (event) => {
   const ip = getRequestIP(event, { xForwardedFor: true }) || 'unknown'
   const userAgent = getHeader(event, 'user-agent') || undefined
 
-  const rate = await checkRateLimit('ratelimit.oauth.authorize', 'ip', ip, 60 * 1000, 60)
+  // Counts and records in one locked step, so parallel requests can't all pass.
+  // Kept under the `ratelimit.*` namespace (not `oauth.*`) so it's prunable
+  // bookkeeping, not an audit event in the events view.
+  const rate = await consumeRateLimit('ratelimit.oauth.authorize', 'ip', ip, 60 * 1000, 60)
   if (!rate.allowed) {
     logRateLimitExceeded(ip, '/oauth/authorize', userAgent)
     setResponseStatus(event, 429)
     if (rate.retryAfterSeconds) setResponseHeader(event, 'Retry-After', rate.retryAfterSeconds)
     return 'Rate limit exceeded'
   }
-  // Record the attempt so the window above actually accumulates — checkRateLimit
-  // only counts, it never records. Kept under the `ratelimit.*` namespace (not
-  // `oauth.*`) so it's prunable bookkeeping, not an audit event in the events view.
-  logEvent({ eventType: 'ratelimit.oauth.authorize', metadata: { ip } })
 
   const q = getQuery(event) as Record<string, string | string[] | undefined>
   const pick = (k: string): string | undefined => {

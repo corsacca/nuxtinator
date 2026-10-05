@@ -12,7 +12,7 @@ import { stat } from 'node:fs/promises'
 import { config as loadDotenv } from 'dotenv'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getHostAdminDb } from 'layer-core/test-helpers'
+import { getHostAdminDb } from '@nuxtinator/core/test-helpers'
 import {
   cleanupContextTestData,
   createTestPortfolio,

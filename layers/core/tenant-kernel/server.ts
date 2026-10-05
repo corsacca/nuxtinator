@@ -18,6 +18,8 @@
 import type { H3Event, EventHandler, EventHandlerRequest } from 'h3'
 import type { Transaction, Kysely } from 'kysely'
 import { db } from '#core/server/utils/database'
+// Tracks each request transaction so `afterCommit` work runs once it commits.
+import { runTransaction } from '#core/server/utils/after-commit'
 import { requireAuth } from '#core/server/utils/auth'
 import { getRolePermissions } from '#core/server/utils/rbac'
 import { getUserGrantedPermissions } from '#core/server/utils/permission-grants'
@@ -75,7 +77,7 @@ async function runWithSingleContext<T>(
   fn: TenantHandler<T>
 ): Promise<T> {
   const authUser = requireAuth(event)
-  return await db.transaction().execute(async (tx) => {
+  return await runTransaction(db, async (tx) => {
     const { roles, perms } = await resolveSinglePerms(tx, authUser.userId)
     return await fn(tx, {
       userId: authUser.userId,
@@ -222,7 +224,7 @@ export async function runInOrgTransaction<T>(
   maybeFn?: OrgTransactionFn<T>
 ): Promise<T> {
   const fn = (typeof optsOrFn === 'function' ? optsOrFn : maybeFn) as OrgTransactionFn<T>
-  return await db.transaction().execute(fn)
+  return await runTransaction(db, fn)
 }
 
 // Open a transaction scoped to the org that owns the given project. In single
@@ -238,7 +240,7 @@ export async function withProjectOrgContext<T>(
   _projectId: string,
   fn: (tx: Transaction<Database>) => Promise<T>
 ): Promise<T> {
-  return await db.transaction().execute(fn)
+  return await runTransaction(db, fn)
 }
 
 // Resolve the org that owns an arbitrary record and run `fn` in its context.
@@ -251,10 +253,11 @@ export async function withProjectOrgContext<T>(
 // without an authenticated tenant request.
 export async function withRecordOrgContext<T>(
   _event: H3Event,
-  _opts: { table: string, id: string, idColumn?: string, notFoundMessage?: string, validateUuid?: boolean },
+  // `appId` is ignored here: single deploys have no per-org app switch.
+  _opts: { table: string, id: string, idColumn?: string, notFoundMessage?: string, validateUuid?: boolean, appId?: string },
   fn: (tx: Transaction<Database>) => Promise<T>
 ): Promise<T> {
-  return await db.transaction().execute(fn)
+  return await runTransaction(db, fn)
 }
 
 // Membership check against the org bound to the current transaction (the GUC
@@ -264,6 +267,18 @@ export async function withRecordOrgContext<T>(
 export async function isActiveOrgMember(
   _tx: Transaction<Database>,
   _userId: string
+): Promise<boolean> {
+  return true
+}
+
+// Whether `appId` is on for the org bound to the current transaction. Single
+// deploys have no per-org app switch, so it always is. The tenancy layer
+// overrides it with the org's app settings. For public routes that reach a
+// second app (helpinator handing off into inbox) on top of the `appId` that
+// `withRecordOrgContext` already checks.
+export async function isAppEnabledForCurrentOrg(
+  _tx: Transaction<Database>,
+  _appId: string
 ): Promise<boolean> {
   return true
 }

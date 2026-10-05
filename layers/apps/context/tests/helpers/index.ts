@@ -18,11 +18,11 @@ import {
   createTestOrg,
   addTestMembership,
   type TestOrg
-} from 'layer-tenancy/test-helpers'
+} from '@nuxtinator/tenancy/test-helpers'
 
 import { CONTEXT_SECTIONS } from '../../server/utils/section-catalog'
 
-export * from 'layer-tenancy/test-helpers'
+export * from '@nuxtinator/tenancy/test-helpers'
 
 // --- The AI fake ---
 //

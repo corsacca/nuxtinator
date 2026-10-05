@@ -23,6 +23,12 @@ interface OrgConfig {
   defaultModel: string
   effectiveDefaultModel: string
   features: { key: string, model: string, effectiveModel: string }[]
+  embeddingAvailable: boolean
+  embeddingModels: { id: string }[]
+  embeddingModel: string
+  effectiveEmbeddingModel: string
+  embeddingStale: boolean
+  embeddingStoredModels: string[]
 }
 interface Status {
   configured: boolean
@@ -198,5 +204,30 @@ describe('ai org config', () => {
     expect(rows.map(r => r.event_type)).toEqual(['ai_org_key_set', 'ai_org_models_updated', 'ai_org_key_removed'])
     expect(JSON.stringify(rows)).not.toContain('sk-or-test')
     expect(rows[0]!.metadata?.last4).toBe('zz99')
+  })
+
+  it('an org may override the host embedding model; unset falls back to the host\'s', async () => {
+    const { auth: hostAdmin, opts } = await createAiOrg(sql)
+    await $fetch('/api/ai/admin/config', { method: 'PUT', body: { embedding_model: 'test/embed-small' }, ...hostAdmin })
+
+    let cfg = await getOrgConfig(opts)
+    expect(cfg.embeddingAvailable).toBe(true)
+    expect(cfg.embeddingModel).toBe('')
+    expect(cfg.effectiveEmbeddingModel).toBe('test/embed-small')
+    expect(cfg.embeddingStale).toBe(false)
+    expect(cfg.embeddingModels.map(m => m.id)).toContain('test/embed-large')
+
+    await expect(putOrgConfig(opts, { embedding_model: 'nope/model' })).rejects.toMatchObject({ statusCode: 400 })
+    await putOrgConfig(opts, { embedding_model: 'test/embed-large' })
+    cfg = await getOrgConfig(opts)
+    expect(cfg.embeddingModel).toBe('test/embed-large')
+    expect(cfg.effectiveEmbeddingModel).toBe('test/embed-large')
+
+    // Another org still sees the host's choice.
+    const other = await createAiOrg(sql)
+    expect((await getOrgConfig(other.opts)).effectiveEmbeddingModel).toBe('test/embed-small')
+
+    const run = await $fetch<{ started: boolean, status: { scopes: { orgId: string | null }[] } }>('/api/ai/org/reindex', { method: 'POST', ...opts })
+    expect(typeof run.started).toBe('boolean')
   })
 })

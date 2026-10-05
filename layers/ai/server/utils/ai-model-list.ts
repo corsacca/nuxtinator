@@ -93,7 +93,7 @@ export function parseOpenRouterModels(payload: unknown): AiModelInfo[] {
 
 async function refresh(state: ModelListState): Promise<AiModelInfo[]> {
   try {
-    const res = await fetch(`${getOpenRouterConfig().baseUrl}/models`)
+    const res = await fetch(`${getOpenRouterConfig().baseUrl}/models`, { signal: AbortSignal.timeout(15_000) })
     if (!res.ok) throw new Error(`OpenRouter ${res.status}`)
     const models = parseOpenRouterModels(await res.json())
     if (models.length === 0) throw new Error('OpenRouter returned no tool-capable models')

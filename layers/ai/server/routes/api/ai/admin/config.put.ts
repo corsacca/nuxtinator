@@ -1,6 +1,9 @@
 // PUT /api/ai/admin/config
 // Update the host's AI config. Partial: each of enabled_models / default_model
-// / feature_models is written only when present. The enabled set is narrowed
+// / feature_models / embedding_model is written only when present. A new
+// embedding model is probed with the host key first (one tiny embedding) so a
+// model the key cannot use, or one of the wrong width, is refused rather than
+// stored. The enabled set is narrowed
 // to models OpenRouter lists; the default and every feature choice must be ''
 // (unset) or a member of the enabled set as it stands after this write.
 // Operator-admin only; writes go to the deployment-global store with no org
@@ -15,11 +18,16 @@ import {
   AI_SETTING_ENABLED_MODELS,
   AI_SETTING_DEFAULT_MODEL,
   AI_SETTING_FEATURE_MODELS,
+  AI_SETTING_EMBEDDING_MODEL,
   getModelList,
+  getEmbeddingModelList,
   isKnownModel,
+  isKnownEmbeddingModel,
   sanitizeModelIdList,
   sanitizeModelId,
-  sanitizeFeatureModels
+  sanitizeFeatureModels,
+  getHostApiKey,
+  probeEmbeddingModel
 } from '#ai/server'
 
 export default defineEventHandler(async (event) => {
@@ -28,7 +36,23 @@ export default defineEventHandler(async (event) => {
 
   await getModelList()
 
+  // Probe outside the transaction: a network call must not hold a DB tx open.
+  let embeddingModel: string | undefined
+  if (body.embedding_model !== undefined) {
+    await getEmbeddingModelList()
+    embeddingModel = sanitizeModelId(body.embedding_model)
+    if (embeddingModel && !isKnownEmbeddingModel(embeddingModel)) {
+      throw createError({ statusCode: 400, statusMessage: 'That embedding model is not available on OpenRouter.' })
+    }
+    const hostKey = getHostApiKey()
+    if (embeddingModel && hostKey) await probeEmbeddingModel(hostKey, embeddingModel)
+  }
+
   await db.transaction().execute(async (tx) => {
+    if (embeddingModel !== undefined) {
+      await setHostSetting(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_EMBEDDING_MODEL, embeddingModel)
+    }
+
     if (body.enabled_models !== undefined) {
       const enabled = sanitizeModelIdList(body.enabled_models).filter(isKnownModel)
       await setHostSetting(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_ENABLED_MODELS, enabled)

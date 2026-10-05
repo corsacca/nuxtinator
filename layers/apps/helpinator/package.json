@@ -1,0 +1,38 @@
+{
+  "name": "@nuxtinator/helpinator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:widgets": "cd embeddables/helpinator-widget && bun install && bun run build"
+  },
+  "exports": {
+    ".": "./nuxt.config.ts",
+    "./test-helpers": "./tests/helpers/index.ts"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "dompurify": "^3.4.13",
+    "linkedom": "^0.18.13",
+    "marked": "^14.1.0",
+    "robots-parser": "^3.0.1",
+    "turndown": "^7.2.4"
+  },
+  "optionalDependencies": {
+    "@nuxtinator/ai": "*",
+    "@nuxtinator/context": "*",
+    "@nuxtinator/core": "*",
+    "@nuxtinator/inbox": "*",
+    "@nuxtinator/tenancy": "*"
+  },
+  "peerDependencies": {
+    "h3": "^1.0.0",
+    "kysely": "^0.28.0",
+    "nuxt": "^4.0.0",
+    "vue": "^3.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/turndown": "^5.0.6"
+  }
+}

@@ -14,22 +14,27 @@ import {
   AI_SETTING_ENABLED_MODELS,
   AI_SETTING_DEFAULT_MODEL,
   AI_SETTING_FEATURE_MODELS,
+  AI_SETTING_EMBEDDING_MODEL,
   getHostApiKey,
   getModelList,
   isKnownModel,
   modelInfoOrPlaceholder,
   getAiFeatures,
-  resolveFeatureModel
+  resolveFeatureModel,
+  getEmbeddingModelList,
+  listStaleAiScopes
 } from '#ai/server'
 
 export default defineEventHandler(async (event) => {
   await requireOperatorAdmin(event)
 
   const list = await getModelList()
-  const [enabledIds, defaultModel, featureModels] = await Promise.all([
+  const embeddingList = await getEmbeddingModelList()
+  const [enabledIds, defaultModel, featureModels, embeddingModel] = await Promise.all([
     getHostSetting<string[]>(db, AI_SETTINGS_NAMESPACE, AI_SETTING_ENABLED_MODELS),
     getHostSetting<string>(db, AI_SETTINGS_NAMESPACE, AI_SETTING_DEFAULT_MODEL),
-    getHostSetting<Record<string, string>>(db, AI_SETTINGS_NAMESPACE, AI_SETTING_FEATURE_MODELS)
+    getHostSetting<Record<string, string>>(db, AI_SETTINGS_NAMESPACE, AI_SETTING_FEATURE_MODELS),
+    getHostSetting<string>(db, AI_SETTINGS_NAMESPACE, AI_SETTING_EMBEDDING_MODEL)
   ])
 
   const enabled = enabledIds.map(id => ({
@@ -37,8 +42,12 @@ export default defineEventHandler(async (event) => {
     available: list.length > 0 && isKnownModel(id)
   }))
 
+  // Embedding features have no chat model; they only switch the embedding
+  // section on.
+  const allFeatures = getAiFeatures()
+  const embeddingAvailable = allFeatures.some(f => f.kind === 'embedding')
   const features = await Promise.all(
-    getAiFeatures().map(async f => ({
+    allFeatures.filter(f => f.kind !== 'embedding').map(async f => ({
       key: f.key,
       label: f.label,
       description: f.description,
@@ -47,11 +56,21 @@ export default defineEventHandler(async (event) => {
     }))
   )
 
+  // Orgs whose indexes were built with a model other than the one resolving
+  // for them now — the host page offers to rebuild these.
+  const staleScopes = embeddingAvailable
+    ? (await listStaleAiScopes()).map(s => ({ orgId: s.orgId, model: s.staleness.model, stored: s.staleness.stored }))
+    : []
+
   return {
     hostKeyConfigured: !!getHostApiKey(),
     modelListAvailable: list.length > 0,
     enabled,
     defaultModel,
-    features
+    features,
+    embeddingAvailable,
+    embeddingModelListAvailable: embeddingList.length > 0,
+    embeddingModel,
+    staleScopes
   }
 })
