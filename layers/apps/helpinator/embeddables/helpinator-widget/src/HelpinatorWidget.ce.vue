@@ -40,6 +40,8 @@ const appearance = computed(() => config.value?.appearance ?? {})
 const rootStyle = computed(() => ({ '--hp-default-primary': appearance.value.primary_color || '#2563eb' }))
 const positionClass = computed(() => appearance.value.position === 'bottom-left' ? 'hp-left' : 'hp-right')
 const hasUserMessage = computed(() => messages.value.some(m => m.role === 'user' && !m.pending))
+// Suggested questions only make sense before the conversation starts.
+const starters = computed(() => messages.value.length ? [] : (config.value?.starterQuestions ?? []))
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -134,6 +136,11 @@ watch(isOpen, (open) => {
     formError.value = ''
   }
 })
+
+function ask(question) {
+  input.value = question
+  send()
+}
 
 async function send() {
   const text = input.value.trim()
@@ -258,6 +265,19 @@ async function handoff() {
           <div class="hp-msg hp-bot" part="message bot-message">
             <div class="hp-bubble" v-html="renderMarkdown(appearance.greeting)" />
           </div>
+          <div v-if="starters.length" class="hp-starters" part="starters">
+            <button
+              v-for="q in starters"
+              :key="q"
+              type="button"
+              class="hp-starter"
+              part="starter"
+              :disabled="sending"
+              @click="ask(q)"
+            >
+              {{ q }}
+            </button>
+          </div>
           <div
             v-for="m in messages"
             :key="m.id"
@@ -368,7 +388,7 @@ async function handoff() {
  *   --helpinator-offset-x / --helpinator-offset-y     distance from the corner
  *   --helpinator-width / --helpinator-height          panel size
  * Parts for deeper overrides: launcher, panel, header, message, user-message,
- * bot-message, composer, send, form, banner.
+ * bot-message, starters, starter, composer, send, form, banner.
  */
 :host {
   all: initial;
@@ -502,6 +522,27 @@ svg {
 .hp-typing span:nth-child(2) { animation-delay: 0.2s; }
 .hp-typing span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes hp-blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+
+.hp-starters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.hp-starter {
+  max-width: 85%;
+  padding: 6px 12px;
+  border: 1px solid var(--hp-primary);
+  border-radius: 999px;
+  background: var(--hp-bg);
+  color: var(--hp-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: right;
+  cursor: pointer;
+}
+.hp-starter:hover { background: color-mix(in srgb, var(--hp-primary) 8%, var(--hp-bg)); }
+.hp-starter:disabled { opacity: 0.6; cursor: default; }
 
 .hp-status { font-size: 12px; color: var(--hp-muted); }
 .hp-banner {

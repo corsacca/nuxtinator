@@ -31,6 +31,8 @@ Requires `@nuxtinator/context` and `@nuxtinator/ai`. `@nuxtinator/inbox`
   - an allowed-origins list
   - a daily message cap
   - optional extra instructions
+  - up to six suggested questions, shown as clickable buttons under the
+    greeting until the visitor sends a message
   - appearance (colour, position, title, greeting, placeholder, handoff prompt)
 - **Embed helper.** The widget page shows the snippet to paste, a CSS-variables
   block to match the site's look, and a live preview of the saved widget.

@@ -22,6 +22,7 @@ export function helpinatorAdminWidget(w: HelpinatorWidgetRow) {
     appearance: helpinatorAppearanceOverrides(w.appearance),
     appearance_defaults: HELPINATOR_DEFAULT_APPEARANCE,
     extra_instructions: w.extra_instructions,
+    starter_questions: w.starter_questions,
     created_at: w.created_at,
     updated_at: w.updated_at
   }

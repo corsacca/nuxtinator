@@ -84,6 +84,8 @@ export interface HelpinatorWidgetsTable {
   enabled: Generated<boolean>
   appearance: ColumnType<HelpinatorAppearance, HelpinatorAppearance | string | undefined, HelpinatorAppearance | string>
   extra_instructions: Generated<string>
+  // Clickable suggestions shown before the visitor's first message.
+  starter_questions: Generated<string[]>
   created_by: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>

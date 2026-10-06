@@ -30,7 +30,8 @@ const form = reactive({
   daily_message_cap: 500,
   enabled: true,
   appearance: {} as HelpinatorAppearanceForm,
-  extra_instructions: ''
+  extra_instructions: '',
+  starter_questions: [] as string[]
 })
 const saved = ref<HelpinatorWidget | null>(null)
 const saving = ref(false)
@@ -48,6 +49,7 @@ function fill(w: HelpinatorWidget) {
   form.enabled = w.enabled
   form.appearance = { ...w.appearance_defaults, ...w.appearance }
   form.extra_instructions = w.extra_instructions
+  form.starter_questions = [...w.starter_questions]
 }
 
 if (!isNew.value) {
@@ -82,6 +84,12 @@ watch(defaultPortfolio, (p) => {
     form.default_section_key = p.sections[0]?.key ?? ''
   }
 })
+
+// Matches HELPINATOR_MAX_STARTER_QUESTIONS on the server.
+const MAX_STARTER_QUESTIONS = 6
+function addStarterQuestion() {
+  if (form.starter_questions.length < MAX_STARTER_QUESTIONS) form.starter_questions.push('')
+}
 
 const rebinding = computed(() => {
   if (!saved.value) return false
@@ -118,7 +126,8 @@ async function save() {
       daily_message_cap: Number(form.daily_message_cap),
       enabled: form.enabled,
       appearance: appearanceOverrides(),
-      extra_instructions: form.extra_instructions
+      extra_instructions: form.extra_instructions,
+      starter_questions: form.starter_questions.map(q => q.trim()).filter(Boolean)
     }
     const w = isNew.value
       ? await $fetch<HelpinatorWidget>('/api/helpinator/widgets', { method: 'POST', body })
@@ -297,6 +306,31 @@ async function togglePreview() {
             <UFormField label="Greeting" help="The first message visitors see. Markdown allowed.">
               <UTextarea v-model="form.appearance.greeting" :rows="2" :maxlength="500" class="w-full" />
             </UFormField>
+            <UFormField label="Suggested questions" help="Shown under the greeting as buttons visitors can click to ask. They disappear once the visitor sends a message.">
+              <div class="space-y-2">
+                <div v-for="(_, i) in form.starter_questions" :key="i" class="flex items-center gap-2">
+                  <UInput v-model="form.starter_questions[i]" :maxlength="200" class="flex-1" placeholder="e.g. What are your opening hours?" />
+                  <UButton
+                    icon="i-lucide-x"
+                    variant="ghost"
+                    color="neutral"
+                    size="sm"
+                    aria-label="Remove question"
+                    @click="form.starter_questions.splice(i, 1)"
+                  />
+                </div>
+                <UButton
+                  v-if="form.starter_questions.length < MAX_STARTER_QUESTIONS"
+                  icon="i-lucide-plus"
+                  variant="outline"
+                  color="neutral"
+                  size="sm"
+                  @click="addStarterQuestion"
+                >
+                  Add question
+                </UButton>
+              </div>
+            </UFormField>
             <UFormField label="Input placeholder">
               <UInput v-model="form.appearance.placeholder" :maxlength="120" class="w-full" />
             </UFormField>
@@ -357,7 +391,7 @@ async function togglePreview() {
               <code>--helpinator-border</code>, <code>--helpinator-bot-bubble</code>, <code>--helpinator-user-bubble</code>,
               <code>--helpinator-width</code>, <code>--helpinator-height</code>, <code>--helpinator-z-index</code>, and <code>::part()</code> selectors
               (<code>launcher</code>, <code>panel</code>, <code>header</code>, <code>message</code>, <code>user-message</code>,
-              <code>bot-message</code>, <code>composer</code>, <code>send</code>, <code>form</code>, <code>banner</code>).
+              <code>bot-message</code>, <code>starters</code>, <code>starter</code>, <code>composer</code>, <code>send</code>, <code>form</code>, <code>banner</code>).
             </p>
           </div>
           <p v-if="previewOn" class="text-xs text-(--ui-text-muted)">

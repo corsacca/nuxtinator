@@ -65,6 +65,23 @@ describe('admin + handoff', () => {
     expect(row!.ended_at).not.toBeNull()
   })
 
+  it('stores suggested questions cleaned up and serves them in the public config', async () => {
+    const { org, opts } = await createHelpinatorOrgWith(sql)
+    const lw = await seedLibrary(sql, { orgId: org.id, kind: 'website' })
+    const body = { name: 'S', library_ids: [lw.id], default_library_id: lw.id, allowed_origins: [SITE_ORIGIN] }
+    const w = await $fetch<{ id: string, starter_questions: string[] }>('/api/helpinator/widgets', {
+      method: 'POST', body: { ...body, starter_questions: ['  When do you open? ', '', 'When do you open?', 'Where are you?'] }, ...opts
+    })
+    expect(w.starter_questions).toEqual(['When do you open?', 'Where are you?'])
+    const cfg = await $fetch<{ starterQuestions: string[] }>(`/api/v1/helpinator/widgets/${w.id}/config`, { headers: widgetHeaders() })
+    expect(cfg.starterQuestions).toEqual(['When do you open?', 'Where are you?'])
+
+    const tooMany = await $fetch(`/api/helpinator/widgets/${w.id}`, {
+      method: 'PUT', body: { ...body, starter_questions: Array.from({ length: 7 }, (_, i) => `Q${i}`) }, ...opts
+    }).catch(e => e)
+    expect(tooMany.statusCode).toBe(400)
+  })
+
   it('rejects a section that is not in the default library\'s portfolio, and a default outside the list', async () => {
     const { org, opts } = await createHelpinatorOrgWith(sql)
     const a = await seedPortfolio(sql, org.id, 'A', { faq: 'x' })
