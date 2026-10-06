@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
+    "croner": "^9.0.0",
     "dompurify": "^3.4.13",
     "linkedom": "^0.18.13",
     "marked": "^14.1.0",

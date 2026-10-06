@@ -282,4 +282,33 @@ describe('website crawl', () => {
     expect(lib2.sources[0]!.status).toBe('error')
     expect(lib2.sources[0]!.last_error).toMatch(/interrupted/)
   })
+
+  it('the scheduled sweep re-crawls only sources whose last sync is older than the max age, across orgs', async () => {
+    const a = await createHelpinatorOrgWith(sql)
+    const b = await createHelpinatorOrgWith(sql)
+    const libA = await createWebsiteLibrary(a.opts)
+    const libB = await createWebsiteLibrary(b.opts)
+    const stale = await addSource(a.opts, libA.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    const fresh = await addSource(b.opts, libB.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    await waitForSync(a.opts, libA.id)
+    await waitForSync(b.opts, libB.id)
+    await sql`UPDATE helpinator_library_sources SET run_started_at = now() - interval '8 days', last_synced_at = now() - interval '8 days' WHERE id = ${stale.id}`
+    const [freshBefore] = await sql<{ last_synced_at: Date }[]>`SELECT last_synced_at FROM helpinator_library_sources WHERE id = ${fresh.id}`
+
+    site.pages.set('/docs/anvils', { html: article('Anvils', 'anvil forging', '<p>WEEKLY-UPDATE about quenching.</p>') })
+    const res = await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 7 } })
+    expect(res.started).toBe(1)
+
+    const rows = await sql<{ id: string, status: string, last_synced_at: Date }[]>`
+      SELECT id, status, last_synced_at FROM helpinator_library_sources WHERE id IN (${stale.id}, ${fresh.id})
+    `
+    const staleRow = rows.find(r => r.id === stale.id)!
+    expect(staleRow.status).toBe('done')
+    expect(Date.now() - staleRow.last_synced_at.getTime()).toBeLessThan(60_000)
+    expect(rows.find(r => r.id === fresh.id)!.last_synced_at.getTime()).toBe(freshBefore!.last_synced_at.getTime())
+    expect((await pagesOf(libA.id)).find(p => p.url.endsWith('/docs/anvils'))!.content).toContain('WEEKLY-UPDATE')
+
+    // Now nothing is due.
+    expect((await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 7 } })).started).toBe(0)
+  })
 })

@@ -19,7 +19,11 @@ export default defineNuxtConfig({
   runtimeConfig: {
     // Library chunks are pgvector columns; without the extension core's
     // migration runner skips helpinator_* migrations and warns.
-    migrationRequiredExtensions: { helpinator: ['vector'] }
+    migrationRequiredExtensions: { helpinator: ['vector'] },
+    // Scheduled website-library re-sync (server/plugins/helpinator-sync-sweep.ts):
+    // how often to check, and how old a source's last sync must be to re-crawl.
+    helpinatorSyncCron: process.env.HELPINATOR_SYNC_CRON || '0 2 * * *',
+    helpinatorSyncMaxAgeDays: Number(process.env.HELPINATOR_SYNC_MAX_AGE_DAYS) || 7
   },
 
   vue: {
