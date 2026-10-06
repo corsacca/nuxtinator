@@ -311,4 +311,24 @@ describe('website crawl', () => {
     // Now nothing is due.
     expect((await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 7 } })).started).toBe(0)
   })
+
+  it('a scheduled run cut off by a restart is due again on the next sweep, not counted as fresh', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    const source = await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    await waitForSync(opts, lib.id)
+    // Queued by a sweep (stamped just now), then the process died.
+    await sql`UPDATE helpinator_library_sources SET status = 'syncing', run_token = gen_random_uuid(), run_started_at = now() - interval '10 minutes', run_heartbeat_at = now() - interval '10 minutes', last_synced_at = now() - interval '8 days' WHERE id = ${source.id}`
+
+    const res = await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 7 } })
+    expect(res.started).toBeGreaterThanOrEqual(1)
+    const [row] = await sql<{ status: string, last_synced_at: Date }[]>`SELECT status, last_synced_at FROM helpinator_library_sources WHERE id = ${source.id}`
+    expect(row!.status).toBe('done')
+    expect(Date.now() - row!.last_synced_at.getTime()).toBeLessThan(60_000)
+  })
+
+  it('the scheduled sweep accepts a fractional max age', async () => {
+    const res = await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 1.5 } })
+    expect(res.started).toBeGreaterThanOrEqual(0)
+  })
 })

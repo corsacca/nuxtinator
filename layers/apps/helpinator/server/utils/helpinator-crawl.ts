@@ -506,10 +506,13 @@ const STALE_RUN = '5 minutes'
 // Mark this library's dead runs interrupted, so the UI stops polling and
 // "Sync all" comes back. Safe across processes: a live run keeps its
 // heartbeat fresh, and a newer run has a newer token anyway.
+// `run_started_at` is cleared because the run never happened: the scheduled
+// sync keys on it, and a run queued (or crawling) when the server stopped
+// would otherwise count as a fresh sync and wait a full cycle.
 export async function helpinatorExpireStaleRuns(tx: Tx, libraryId?: string): Promise<void> {
   let q = tx
     .updateTable('helpinator_library_sources')
-    .set({ status: 'error', run_token: null, last_error: 'The last sync was interrupted (the server restarted). Run it again.' })
+    .set({ status: 'error', run_token: null, run_started_at: null, last_error: 'The last sync was interrupted (the server restarted). Run it again.' })
     .where('status', '=', 'syncing')
     .where(sql<boolean>`coalesce(run_heartbeat_at, run_started_at, created_at) < now() - ${STALE_RUN}::interval`)
   if (libraryId) q = q.where('library_id', '=', libraryId)

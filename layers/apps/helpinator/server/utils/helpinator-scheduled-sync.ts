@@ -9,6 +9,8 @@
 // time), through the same run machinery as the "Sync all" button.
 import { sql } from 'kysely'
 import { db } from '#core/server/utils/database'
+import { isMigrationHeldBack } from '#core/server/utils/migration-status'
+import { isAppEnabledForCurrentOrg } from '#tenant/server'
 import { helpinatorScopeTx, helpinatorStartSourceSync, helpinatorExpireStaleRuns } from './helpinator-crawl'
 import type { HelpinatorSourceRow } from './helpinator-libraries'
 
@@ -55,11 +57,15 @@ export async function helpinatorWithSyncLock(fn: () => Promise<void>): Promise<v
 // Start a sync for every due website source and wait for them all to finish.
 // Returns how many were started.
 export async function helpinatorSyncDueSources(maxAgeDays: number): Promise<number> {
+  // Held back = no pgvector, so none of helpinator's tables exist.
+  if (await isMigrationHeldBack('helpinator')) return 0
   let chain: Promise<void> = Promise.resolve()
   let started = 0
   for (const orgId of await listOrgScopes()) {
     try {
       const due = await helpinatorScopeTx(orgId, async (tx) => {
+        // An org that turned the app off gets no crawls (or embedding costs).
+        if (!await isAppEnabledForCurrentOrg(tx, 'helpinator')) return []
         await helpinatorExpireStaleRuns(tx)
         return await tx
           .selectFrom('helpinator_library_sources as s')
@@ -69,7 +75,7 @@ export async function helpinatorSyncDueSources(maxAgeDays: number): Promise<numb
           .where('s.status', '!=', 'syncing')
           .where(eb => eb.or([
             eb(sql`coalesce(s.run_started_at, s.last_synced_at)`, 'is', null),
-            eb(sql`coalesce(s.run_started_at, s.last_synced_at)`, '<', sql`now() - make_interval(days => ${maxAgeDays})`)
+            eb(sql`coalesce(s.run_started_at, s.last_synced_at)`, '<', sql`now() - ${maxAgeDays}::float8 * interval '1 day'`)
           ]))
           .orderBy('s.created_at')
           .execute() as HelpinatorSourceRow[]
