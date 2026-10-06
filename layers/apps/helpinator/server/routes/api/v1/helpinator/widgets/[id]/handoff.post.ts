@@ -60,8 +60,6 @@ export default defineEventHandler(async (event) => {
         conversationId: conversation.id,
         widget,
         email,
-        kind: 'visitor',
-        userId: null,
         userAgent: getHeader(event, 'user-agent') ?? null
       })
     })

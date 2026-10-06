@@ -11,8 +11,7 @@ export interface HelpinatorHandoffInput {
   transcriptText: string
   // Escaped HTML transcript (the inbox message's HTML body + the ack appendix).
   transcriptHtml: string
-  // Staff elevation assigns to the elevating user; a visitor handoff leaves it
-  // unassigned (unassigned = needs dispatch).
+  // A visitor handoff leaves it unassigned (unassigned = needs dispatch).
   assignedUserId: string | null
   userAgent: string | null
 }

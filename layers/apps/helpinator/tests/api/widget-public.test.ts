@@ -219,7 +219,7 @@ describe('public widget API', () => {
     expect(handoff.statusCode).toBe(423)
   })
 
-  it('a disabled widget refuses handoff and the visitor email too', async () => {
+  it('a disabled widget refuses handoff', async () => {
     const { widget } = await setup()
     await primeAiFake({ text: 'ok' })
     const turn = await sendTurn(widget.id, 'hi')
@@ -228,10 +228,6 @@ describe('public widget API', () => {
       method: 'POST', headers: widgetHeaders(turn.token), body: { email: 'v@example.com' }
     }).catch(e => e)
     expect(handoff.statusCode).toBe(503)
-    const email = await $fetch(`/api/v1/helpinator/widgets/${widget.id}/email`, {
-      method: 'PUT', headers: widgetHeaders(turn.token), body: { email: 'v@example.com' }
-    }).catch(e => e)
-    expect(email.statusCode).toBe(503)
   })
 
   it('a disabled widget reports unavailable and refuses turns', async () => {
@@ -239,17 +235,5 @@ describe('public widget API', () => {
     const cfg = await $fetch<{ aiAvailable: boolean }>(`/api/v1/helpinator/widgets/${widget.id}/config`, { headers: widgetHeaders() })
     expect(cfg.aiAvailable).toBe(false)
     expect((await sendTurn(widget.id, 'hi').catch(e => e)).statusCode).toBe(503)
-  })
-
-  it('stores the optional visitor email without elevating', async () => {
-    const { widget } = await setup()
-    await primeAiFake({ text: 'ok' })
-    const turn = await sendTurn(widget.id, 'hi')
-    await $fetch(`/api/v1/helpinator/widgets/${widget.id}/email`, {
-      method: 'PUT', headers: widgetHeaders(turn.token), body: { email: 'Visitor@Example.com' }
-    })
-    const [row] = await sql`SELECT visitor_email, inbox_conversation_id FROM helpinator_conversations WHERE id = ${turn.conversationId}`
-    expect(row!.visitor_email).toBe('visitor@example.com')
-    expect(row!.inbox_conversation_id).toBeNull()
   })
 })

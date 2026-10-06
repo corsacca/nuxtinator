@@ -12,7 +12,7 @@ export const HELPINATOR_PERMISSION_META: Record<string, { title: string, descrip
   },
   'helpinator.manage': {
     title: 'Manage help widgets',
-    description: 'Create and configure help-chat widgets, and elevate conversations to the inbox.'
+    description: 'Create and configure help-chat widgets.'
   }
 }
 

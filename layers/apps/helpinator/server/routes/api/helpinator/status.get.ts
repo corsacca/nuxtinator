@@ -6,12 +6,10 @@ import { helpinatorHandoffAvailable } from '../../../utils/helpinator-conversati
 
 export default defineEventHandler(async (event) => {
   return await withOrgPermission(event, { appId: 'helpinator' }, 'helpinator.access', async (tx, ctx) => {
-    const inboxAvailable = await helpinatorHandoffAvailable(tx)
     return {
       aiConfigured: await helpinatorAiReady(tx),
-      inboxAvailable,
+      inboxAvailable: await helpinatorHandoffAvailable(tx),
       canManage: ctx.perms.has('helpinator.manage'),
-      canElevate: inboxAvailable && ctx.perms.has('helpinator.manage') && (ctx.perms as Set<string>).has('inbox.send'),
       // The widget form starts from these; it saves only what differs.
       appearanceDefaults: HELPINATOR_DEFAULT_APPEARANCE
     }

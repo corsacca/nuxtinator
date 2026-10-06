@@ -89,7 +89,7 @@ export interface HelpinatorWidgetsTable {
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
-// handoff_kind: 'visitor' (self-service "still need help") | 'staff' (manual elevation)
+// handoff_kind: 'visitor' (self-service "still need help") | 'staff' (manual elevation, since removed; older rows only)
 export type HelpinatorHandoffKind = 'visitor' | 'staff'
 
 export interface HelpinatorConversationsTable {

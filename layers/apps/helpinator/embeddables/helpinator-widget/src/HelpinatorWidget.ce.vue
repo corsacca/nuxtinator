@@ -28,11 +28,10 @@ const input = ref('')
 const sending = ref(false)
 const status = ref('')
 const error = ref('')
-const panel = ref(null) // 'email' | 'handoff' | null
+const panel = ref(null) // 'handoff' | null
 const emailDraft = ref('')
 const formBusy = ref(false)
 const formError = ref('')
-const notice = ref('')
 const listEl = ref(null)
 const inputEl = ref(null)
 const emailEl = ref(null)
@@ -79,7 +78,6 @@ function resetConversation() {
   visitorEmail.value = null
   handedOff.value = false
   panel.value = null
-  notice.value = ''
   error.value = ''
   clearState(props.widgetId)
   persist()
@@ -131,7 +129,7 @@ watch(isOpen, (open) => {
     scrollToEnd()
     nextTick(() => inputEl.value?.focus())
   } else {
-    // Closing the widget dismisses any open email/handoff form.
+    // Closing the widget dismisses any open handoff form.
     panel.value = null
     formError.value = ''
   }
@@ -206,26 +204,6 @@ function openPanel(kind) {
   formError.value = ''
 }
 
-async function saveEmail() {
-  if (!token.value) {
-    formError.value = 'Ask a question first, then add your email.'
-    return
-  }
-  formBusy.value = true
-  formError.value = ''
-  try {
-    const res = await api.value.setEmail(token.value, emailDraft.value.trim() || null)
-    visitorEmail.value = res.visitorEmail
-    panel.value = null
-    notice.value = res.visitorEmail ? `Thanks — we'll use ${res.visitorEmail} if we need to follow up.` : ''
-    persist()
-  } catch (err) {
-    formError.value = err.message
-  } finally {
-    formBusy.value = false
-  }
-}
-
 async function handoff() {
   formBusy.value = true
   formError.value = ''
@@ -235,7 +213,6 @@ async function handoff() {
     visitorEmail.value = email.toLowerCase()
     handedOff.value = true
     panel.value = null
-    notice.value = ''
     persist()
     scrollToEnd()
   } catch (err) {
@@ -299,20 +276,19 @@ async function handoff() {
             Thanks — a team member will follow up by email{{ visitorEmail ? ` at ${visitorEmail}` : '' }}.
             You can keep chatting here in the meantime.
           </div>
-          <div v-if="notice" class="hp-notice">{{ notice }}</div>
         </div>
 
         <div v-if="panel" class="hp-form" part="form">
           <p class="hp-form-text">
-            {{ panel === 'handoff' ? appearance.handoff_prompt : 'Leave your email so our team can follow up if needed (optional).' }}
+            {{ appearance.handoff_prompt }}
           </p>
-          <form @submit.prevent="panel === 'handoff' ? handoff() : saveEmail()">
+          <form @submit.prevent="handoff">
             <input
               ref="emailEl"
               v-model="emailDraft"
               class="hp-input"
               type="email"
-              :required="panel === 'handoff'"
+              required
               placeholder="you@example.com"
               autocomplete="email"
               aria-label="Your email"
@@ -320,7 +296,7 @@ async function handoff() {
             <div class="hp-form-actions">
               <button type="button" class="hp-link" @click="panel = null">Cancel</button>
               <button type="submit" class="hp-btn" :disabled="formBusy">
-                {{ panel === 'handoff' ? 'Send to the team' : 'Save' }}
+                Send to the team
               </button>
             </div>
           </form>
@@ -356,15 +332,6 @@ async function handoff() {
             @click="openPanel('handoff')"
           >
             Still need help?
-          </button>
-          <button
-            v-if="config.handoffAvailable && !handedOff"
-            type="button"
-            class="hp-link"
-            :disabled="!hasUserMessage"
-            @click="openPanel('email')"
-          >
-            {{ visitorEmail ? 'Change email' : 'Add your email' }}
           </button>
         </footer>
       </template>
@@ -536,7 +503,7 @@ svg {
 .hp-typing span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes hp-blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 
-.hp-status, .hp-notice { font-size: 12px; color: var(--hp-muted); }
+.hp-status { font-size: 12px; color: var(--hp-muted); }
 .hp-banner {
   font-size: 13px;
   padding: 10px 12px;

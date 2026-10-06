@@ -80,10 +80,8 @@ the prompt.
   token rejected.
 - Prompt guardrails / output filtering are tone aids only, not a security boundary.
 
-## Email, handoff & elevation
+## Email & handoff
 
-- Optional "your email" field available at any time; saving it does not elevate.
-  Stored on the helpinator conversation; the CRM channel is only created on elevation.
 - "Still need help?" is always visible; the bot also suggests it when it can't answer.
 - **Self-service handoff** → inbox intake util with `source='helpinator'`:
   transcript as first message, conversation `open` + **unassigned** (unassigned =
@@ -94,9 +92,6 @@ the prompt.
   dots folded).
 - At most one handoff per conversation. Afterwards the bot keeps answering with
   a "team will follow up by email" banner; later turns are not synced to inbox.
-- **Manual elevation** (admin, only when an email was given): same intake util,
-  **no auto-ack**, assigned to the elevating admin, then redirects into the inbox
-  conversation with the composer ready to reply.
 - Human replies go by email only — never shown in the widget.
 - Staff are notified only on handoff (inbox's existing notifications).
 
@@ -170,10 +165,9 @@ per-page section override, staff notifications for new (non-handoff) chats.
   cap), origins, transcript rendering.
 - Public API `/api/v1/helpinator/widgets/:id/…` (CORS middleware, origin allowlist):
   `GET config`, `POST messages` (SSE stream or JSON; creates the conversation
-  lazily and returns the token), `GET conversation`, `PUT email`, `POST handoff`.
+  lazily and returns the token), `GET conversation`, `POST handoff`.
 - Admin API `/api/helpinator/…`: widgets CRUD + portfolio/section picker
-  (`helpinator.manage`), conversations list/detail (`helpinator.access`),
-  `POST conversations/:id/elevate` (`helpinator.manage` + `inbox.send`).
+  (`helpinator.manage`), conversations list/detail (`helpinator.access`).
 - Pages: `/helpinator` (conversation log), `/helpinator/conversations/:id`,
   `/helpinator/widgets`, `/helpinator/widgets/:id` (form, snippet, live preview).
 - Embeddable `embeddables/helpinator-widget` (Vue custom element, marked + DOMPurify)

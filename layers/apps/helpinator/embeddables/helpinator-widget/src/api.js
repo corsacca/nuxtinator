@@ -39,7 +39,6 @@ export function createApi(host, widgetId) {
   return {
     config: () => json('/config'),
     conversation: token => json('/conversation', { token }),
-    setEmail: (token, email) => json('/email', { method: 'PUT', token, body: { email } }),
     handoff: (token, email) => json('/handoff', { method: 'POST', token, body: { email } }),
 
     // One turn, streamed. `on` receives each server-sent event by name.
