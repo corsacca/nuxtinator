@@ -25,6 +25,12 @@ const route = useRoute()
 const id = computed(() => String(route.params.id ?? ''))
 const sidebarOpen = ref(false)
 
+// Where to go once the set is fully decided, when the review was opened from a section.
+const returnTo = computed(() => {
+  const r = route.query.return
+  return typeof r === 'string' && r.startsWith('/context/') ? r : null
+})
+
 const { data, error: loadError } = await useAsyncData(
   () => `context-suggestion-${id.value}`,
   () => $fetch<SetResponse>(`/api/context/suggestions/${id.value}`)
@@ -53,6 +59,7 @@ const prevId = computed(() => queueIndex.value > 0 ? queueIds.value[queueIndex.v
 const nextId = computed(() => queueIndex.value >= 0 ? queueIds.value[queueIndex.value + 1] : undefined)
 
 async function advance() {
+  if (returnTo.value) return navigateTo(returnTo.value)
   const target = nextId.value ?? queueIds.value.find(q => q !== id.value)
   await refreshQueue()
   await navigateTo(target ? `/context/suggestions/${target}` : '/context/suggestions')
@@ -154,7 +161,7 @@ const confirmCopy = computed(() => {
           aria-label="Open sidebar"
           @click="sidebarOpen = true"
         />
-        <UButton variant="ghost" icon="i-lucide-arrow-left" size="sm" to="/context/suggestions" aria-label="Back to suggestions" />
+        <UButton variant="ghost" icon="i-lucide-arrow-left" size="sm" :to="returnTo ?? '/context/suggestions'" aria-label="Back" />
         <div class="flex-1 min-w-0">
           <h1 class="font-semibold truncate">
             {{ set ? `Suggested changes to ${set.portfolio_name}` : 'Suggestion' }}
