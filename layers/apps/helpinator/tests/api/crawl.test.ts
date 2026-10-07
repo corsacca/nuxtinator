@@ -149,6 +149,30 @@ describe('website crawl', () => {
     expect((await pagesOf(lib.id)).map(p => p.url)).toEqual([`${site.origin}/docs`, `${site.origin}/docs/anvils`, `${site.origin}/docs/horseshoes`])
   })
 
+  it('keeps a page\'s content when readability would return only the site menu', async () => {
+    // Elementor/WordPress shape: readability picks the page-wide wrapper, then
+    // drops the content blocks because their class says "widget", leaving the
+    // menu. A pick that is mostly links falls back to the stripped body.
+    const links = Array.from({ length: 12 }, (_, i) => `<li><a href="/m${i}">Menu entry ${i}</a></li>`).join('')
+    site.pages.set('/mobile', { html: `<!doctype html><html><head><title>Mobile App</title></head><body>
+<div class="off-canvas-wrapper"><ul class="menu">${links}</ul>
+<div class="elementor-widget-wrap"><div class="elementor-widget">
+<p><b>The mobile app is no longer in development.</b></p>
+<p>Development continued through 2023, but with limited usage and a complex setup the app is no longer maintained. It is still in the app stores, but some features may not work. Use a mobile browser instead.</p>
+</div></div></div>
+</body></html>` })
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    await addSource(opts, lib.id, `${site.origin}/mobile`, { restrict_to_path: true, max_pages: 1 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+
+    const [page] = await pagesOf(lib.id)
+    expect(page!.content).toContain('no longer in development')
+    expect(page!.content).toContain('Use a mobile browser instead')
+    expect(page!.content).not.toContain('Menu entry')
+  })
+
   it('reports an unreachable start page as an error and never blocks a re-sync', async () => {
     const { opts } = await createHelpinatorOrgWith(sql)
     const lib = await createWebsiteLibrary(opts)

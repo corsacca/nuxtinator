@@ -134,8 +134,20 @@ function cleanMarkdown(md: string): string {
     .trim()
 }
 
+// Share of an element's text that sits inside links. Menus are near 1.
+function linkDensity(el: DomNode): number {
+  const total = (el.textContent ?? '').replace(/\s+/g, '').length
+  if (!total) return 0
+  let linked = 0
+  for (const a of Array.from(el.querySelectorAll('a'))) linked += (a.textContent ?? '').replace(/\s+/g, '').length
+  return linked / total
+}
+
 // Readability picks the main article; the fallback is the whole body with
 // chrome elements stripped, for pages readability rejects (short listings).
+// Readability can return just a site menu: on Elementor pages it picks the
+// page-wide wrapper, then drops the content blocks because their class says
+// "widget". A pick that is mostly links is treated as a rejection.
 export function helpinatorExtract(html: string, url: string): HelpinatorExtracted {
   const document = parseDom(html)
   const docTitle = (document.querySelector('title')?.textContent ?? '').trim()
@@ -150,9 +162,14 @@ export function helpinatorExtract(html: string, url: string): HelpinatorExtracte
   }
 
   let contentHtml = article?.content ?? ''
+  if (contentHtml.trim() && linkDensity(parseDom(`<html><body>${contentHtml}</body></html>`).body!) > 0.5) contentHtml = ''
   if (!contentHtml.trim()) {
     for (const sel of ['nav', 'header', 'footer', 'aside', '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]']) {
       for (const el of Array.from(document.querySelectorAll(sel))) el.remove()
+    }
+    // Menus not marked up as <nav>: link lists, and the blocks wrapping them.
+    for (const el of Array.from(document.querySelectorAll('ul, ol, div'))) {
+      if (Array.from(el.querySelectorAll('a')).length >= 5 && linkDensity(el) > 0.8) el.remove()
     }
     contentHtml = (document.querySelector('main') ?? document.body)?.innerHTML ?? ''
   }
