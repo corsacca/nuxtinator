@@ -240,7 +240,13 @@ async function handoff() {
       :aria-label="appearance.title"
     >
       <header class="hp-header" part="header">
-        <span class="hp-title">{{ appearance.title }}</span>
+        <div class="hp-heading">
+          <span class="hp-title">{{ appearance.title }}</span>
+          <span class="hp-subtitle">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>
+            AI assistant
+          </span>
+        </div>
         <button
           v-if="hasUserMessage"
           class="hp-icon-btn"
@@ -263,6 +269,10 @@ async function handoff() {
       <template v-else>
         <div ref="listEl" class="hp-messages" aria-live="polite">
           <div class="hp-msg hp-bot" part="message bot-message">
+            <span class="hp-sender" part="sender">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>
+              AI assistant
+            </span>
             <div class="hp-bubble" v-html="renderMarkdown(appearance.greeting)" />
           </div>
           <div v-if="starters.length" class="hp-starters" part="starters">
@@ -285,6 +295,10 @@ async function handoff() {
             :class="m.role === 'user' ? 'hp-user' : 'hp-bot'"
             :part="m.role === 'user' ? 'message user-message' : 'message bot-message'"
           >
+            <span v-if="m.role !== 'user'" class="hp-sender" part="sender">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>
+              AI assistant
+            </span>
             <div v-if="m.role === 'user'" class="hp-bubble">{{ m.content }}</div>
             <div v-else-if="m.content" class="hp-bubble" v-html="renderMarkdown(m.content)" />
             <div v-else class="hp-bubble hp-typing" aria-label="Assistant is typing">
@@ -343,6 +357,7 @@ async function handoff() {
         </form>
 
         <footer v-if="!panel" class="hp-footer">
+          <span class="hp-disclaimer">AI-generated answers can be wrong.</span>
           <button
             v-if="config.handoffAvailable && !handedOff"
             type="button"
@@ -388,7 +403,7 @@ async function handoff() {
  *   --helpinator-offset-x / --helpinator-offset-y     distance from the corner
  *   --helpinator-width / --helpinator-height          panel size
  * Parts for deeper overrides: launcher, panel, header, message, user-message,
- * bot-message, starters, starter, composer, send, form, banner.
+ * bot-message, sender, starters, starter, composer, send, form, banner.
  */
 :host {
   all: initial;
@@ -461,7 +476,16 @@ svg {
   background: var(--hp-primary);
   color: var(--hp-on-primary);
 }
-.hp-title { flex: 1; font-weight: 600; font-size: 15px; }
+.hp-heading { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.hp-title { font-weight: 600; font-size: 15px; }
+.hp-subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.hp-subtitle svg { width: 12px; height: 12px; }
 .hp-icon-btn {
   border: none;
   background: transparent;
@@ -488,6 +512,15 @@ svg {
 }
 .hp-msg { display: flex; }
 .hp-user { justify-content: flex-end; }
+.hp-bot { flex-direction: column; align-items: flex-start; gap: 2px; }
+.hp-sender {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--hp-muted);
+}
+.hp-sender svg { width: 11px; height: 11px; }
 .hp-bubble {
   max-width: 85%;
   padding: 8px 12px;
@@ -622,6 +655,7 @@ svg {
   padding: 0 14px 10px;
   min-height: 4px;
 }
+.hp-disclaimer { font-size: 12px; color: var(--hp-muted); }
 .hp-link {
   border: none;
   background: none;
