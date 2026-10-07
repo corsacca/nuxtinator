@@ -19,7 +19,7 @@ import {
   AI_SETTING_EMBEDDING_MODEL,
   getAllowedModelIds,
   getAiFeatureKind,
-  modelKind,
+  modelFitsKind,
   sanitizeModelId,
   sanitizeFeatureModels,
   getEmbeddingModelList,
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
       if (id && !allowed.has(id)) {
         throw createError({ statusCode: 400, statusMessage: 'That model is not available to this organization.' })
       }
-      if (id && modelKind(id) !== 'chat') {
+      if (id && !modelFitsKind(id, 'chat')) {
         throw createError({ statusCode: 400, statusMessage: 'The default model must be a chat model.' })
       }
       await setSetting(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_DEFAULT_MODEL, id)
@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
         if (!allowed.has(id)) {
           throw createError({ statusCode: 400, statusMessage: `The model for "${feature}" is not available to this organization.` })
         }
-        if (modelKind(id) !== getAiFeatureKind(feature)) {
+        if (!modelFitsKind(id, getAiFeatureKind(feature))) {
           throw createError({ statusCode: 400, statusMessage: `The model for "${feature}" is the wrong kind of model for that feature.` })
         }
       }

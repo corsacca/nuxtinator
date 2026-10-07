@@ -25,7 +25,7 @@ import {
   getAiFeatureKind,
   isKnownModel,
   isKnownEmbeddingModel,
-  modelKind,
+  modelFitsKind,
   sanitizeModelIdList,
   sanitizeModelId,
   sanitizeFeatureModels,
@@ -68,7 +68,7 @@ export default defineEventHandler(async (event) => {
       if (id && !enabledSet.has(id)) {
         throw createError({ statusCode: 400, statusMessage: 'The default model must be one of the enabled models.' })
       }
-      if (id && modelKind(id) !== 'chat') {
+      if (id && !modelFitsKind(id, 'chat')) {
         throw createError({ statusCode: 400, statusMessage: 'The default model must be a chat model.' })
       }
       await setHostSetting(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_DEFAULT_MODEL, id)
@@ -80,7 +80,7 @@ export default defineEventHandler(async (event) => {
         if (!enabledSet.has(id)) {
           throw createError({ statusCode: 400, statusMessage: `The model for "${feature}" must be one of the enabled models.` })
         }
-        if (modelKind(id) !== getAiFeatureKind(feature)) {
+        if (!modelFitsKind(id, getAiFeatureKind(feature))) {
           throw createError({ statusCode: 400, statusMessage: `The model for "${feature}" is the wrong kind of model for that feature.` })
         }
       }

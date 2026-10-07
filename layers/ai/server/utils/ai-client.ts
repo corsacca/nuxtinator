@@ -452,6 +452,29 @@ export async function generate<T = Record<string, unknown>>(
   return { input, model, finishReason }
 }
 
+// Transcription servers pick the decoder from the upload's file extension, so
+// MIME subtypes that aren't extensions map to the one the format uses.
+const AUDIO_EXTENSIONS: Record<string, string> = {
+  'mpeg': 'mp3',
+  'mp3': 'mp3',
+  'x-m4a': 'm4a',
+  'm4a': 'm4a',
+  'mp4': 'mp4',
+  'aac': 'aac',
+  'wav': 'wav',
+  'x-wav': 'wav',
+  'wave': 'wav',
+  'webm': 'webm',
+  'ogg': 'ogg',
+  'flac': 'flac',
+  'x-flac': 'flac'
+}
+
+function audioExtension(mimeType: string): string {
+  const subtype = mimeType.split('/')[1]?.split(';')[0]?.trim().toLowerCase() ?? ''
+  return AUDIO_EXTENSIONS[subtype] ?? (subtype || 'bin')
+}
+
 // Speech-to-text through the OpenAI-compatible `audio/transcriptions`
 // endpoint of the feature's model. Retried on transient failure like a
 // non-streaming chat call.
@@ -463,7 +486,7 @@ export async function transcribe(opts: AiTranscribeOptions): Promise<AiTranscrib
   }
 
   const blob = opts.audio instanceof Blob ? opts.audio : new Blob([opts.audio as BlobPart], { type: opts.mimeType })
-  const filename = opts.filename || `audio.${opts.mimeType.split('/')[1]?.split(';')[0] || 'bin'}`
+  const filename = opts.filename || `audio.${audioExtension(opts.mimeType)}`
 
   const data = await withAiRetries(async () => {
     // A fresh form per attempt: a sent body stream can't be replayed.

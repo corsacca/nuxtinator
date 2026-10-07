@@ -14,7 +14,8 @@ import { parseTinfoilModels } from './tinfoil-models'
 // Each catalog is cached in-process for an hour and served stale while a
 // refresh runs, so pickers and generation keep working through a provider
 // outage once its list has loaded at least once. A failed refresh backs off
-// briefly instead of retrying on every call.
+// briefly instead of retrying on every call; a catalog that is still empty
+// reads as "unknown" (every id passes) rather than as "no models".
 //
 // State lives on a global symbol rather than in module scope: Nitro imports
 // routes lazily, so two importers may not share a module instance.
@@ -93,7 +94,8 @@ function perMillion(value: unknown): number | null {
 // by name. Temperature and reasoning support come from `supported_parameters`;
 // caching support from the presence of cache-read pricing, which OpenRouter
 // reports only for models that honour prompt caching; image input from
-// `architecture.input_modalities`.
+// `architecture.input_modalities`; whether reasoning can be switched off from
+// `reasoning.mandatory`.
 export function parseOpenRouterModels(payload: unknown): AiProviderModelInfo[] {
   const data = (payload as { data?: unknown } | null)?.data
   if (!Array.isArray(data)) return []
@@ -112,6 +114,7 @@ export function parseOpenRouterModels(payload: unknown): AiProviderModelInfo[] {
     const pricing = (m.pricing && typeof m.pricing === 'object' ? m.pricing : {}) as Record<string, unknown>
     const architecture = (m.architecture && typeof m.architecture === 'object' ? m.architecture : {}) as Record<string, unknown>
     const inputs = Array.isArray(architecture.input_modalities) ? architecture.input_modalities : []
+    const reasoningMeta = (m.reasoning && typeof m.reasoning === 'object' ? m.reasoning : {}) as Record<string, unknown>
     const name = typeof m.name === 'string' && m.name.trim() ? m.name.trim() : id
     out.push({
       id,
@@ -126,7 +129,12 @@ export function parseOpenRouterModels(payload: unknown): AiProviderModelInfo[] {
       supportsImages: inputs.includes('image'),
       requestPrice: null,
       reasoning: params.includes('reasoning')
-        ? { enable: { reasoning: { effort: '$EFFORT' } }, disable: { reasoning: { enabled: false } }, effortMap: {} }
+        ? {
+            enable: { reasoning: { effort: '$EFFORT' } },
+            // A model that reasons mandatorily rejects `effort: 'none'`.
+            disable: reasoningMeta.mandatory === true ? null : { reasoning: { effort: 'none' } },
+            effortMap: {}
+          }
         : null
     })
   }
@@ -174,13 +182,16 @@ function activeProviders(): AiProvider[] {
 async function ensureSource(state: ModelListState, provider: AiProvider): Promise<void> {
   const source = state.sources[provider]
   if (Date.now() < source.nextAttemptAt) return
+  const firstAttempt = source.nextAttemptAt === 0
   if (!source.inflight) {
     source.inflight = refresh(state, provider).finally(() => {
       source.inflight = null
     })
   }
-  // Stale-while-revalidate: only the very first load has to wait.
-  if (source.models.length > 0) return
+  // Only the first attempt after boot has to wait. Later refreshes, including
+  // retries of a catalog that never loaded, run in the background so one
+  // provider's outage doesn't stall calls that go to the other.
+  if (!firstAttempt) return
   await source.inflight
 }
 

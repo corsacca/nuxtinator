@@ -83,7 +83,7 @@ export {
   getEffectiveApiKey,
   getProviderApiKey,
   modelInfoOrPlaceholder,
-  modelKind,
+  modelFitsKind,
   getHostEnabledModelIds,
   getAllowedModelIds,
   getAllowedModels,

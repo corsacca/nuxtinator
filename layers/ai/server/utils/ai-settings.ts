@@ -2,7 +2,7 @@ import { createError } from 'h3'
 import { getSetting, setSetting, getHostSetting } from '#core/server/utils/settings-store'
 import { encryptSecret, decryptSecret } from '#core/server/utils/secret-crypto'
 import type { AiDbClient } from '#core/ai-fallback/types'
-import type { AiFeatureKind, AiModelKind, AiProvider, AiProviderModelInfo } from '../../types/ai-ext'
+import type { AiFeatureKind, AiProvider, AiProviderModelInfo } from '../../types/ai-ext'
 import { getHostApiKey, getTinfoilConfig } from './ai-config'
 import { getAllModels, getModelInfo, isKnownModel } from './ai-model-list'
 import { getEmbeddingModelList, isKnownEmbeddingModel } from './ai-embedding-model-list'
@@ -160,8 +160,11 @@ export function modelInfoOrPlaceholder(id: string): AiProviderModelInfo {
   }
 }
 
-export function modelKind(id: string): AiModelKind {
-  return getModelInfo(id)?.kind ?? 'chat'
+// Whether `id` can serve `kind`. A model missing from the loaded catalogs has
+// no known kind and passes, as isKnownModel passes an id it can't check.
+export function modelFitsKind(id: string, kind: AiFeatureKind): boolean {
+  const known = getModelInfo(id)?.kind
+  return known === undefined || known === kind
 }
 
 // The host-enabled set, narrowed to models their provider still lists.
@@ -190,7 +193,7 @@ export async function getAllowedModels(tx: AiDbClient): Promise<AiProviderModelI
 // First candidate of `kind` the org may use, in precedence order; '' when none.
 function firstAllowed(candidates: (string | undefined)[], allowed: Set<string>, kind: AiFeatureKind): string {
   for (const c of candidates) {
-    if (c && allowed.has(c) && modelKind(c) === kind) return c
+    if (c && allowed.has(c) && modelFitsKind(c, kind)) return c
   }
   return ''
 }
