@@ -20,14 +20,15 @@ export default defineNitroPlugin(() => {
   }
   const maxAgeDays = Math.max(1, Number(config.helpinatorSyncMaxAgeDays) || 7)
 
+  // Returns the promise so croner's `protect` can skip overlapping ticks.
   const run = () =>
-    void helpinatorWithSyncLock(async () => {
+    helpinatorWithSyncLock(async () => {
       const started = await helpinatorSyncDueSources(maxAgeDays)
       if (started) console.log(`[helpinator] scheduled sync finished — ${started} source(s) re-crawled`)
     }).catch(err => console.error('[helpinator] scheduled sync error:', err))
 
   new Cron(cronExpr, { protect: true, timezone: 'UTC' }, run)
-  setTimeout(run, 60_000)
+  setTimeout(() => void run(), 60_000)
 
   console.log(`[helpinator] scheduled library sync started — cron "${cronExpr}" (UTC), re-crawls sources older than ${maxAgeDays} day(s)`)
 })

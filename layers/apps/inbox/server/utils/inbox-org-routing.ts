@@ -10,6 +10,7 @@
 // table.
 import { sql, type Transaction } from 'kysely'
 import { db } from '#core/server/utils/database'
+import { withAdvisoryLock } from '#core/server/utils/advisory-lock'
 import type { Database } from '#core/server/database/schema'
 import { getInboxSettings } from './inbox-settings'
 
@@ -24,11 +25,14 @@ function isTenancyMode(): boolean {
 }
 
 // The set of org scopes a sweep must visit. `[null]` in single mode (no
-// GUC); one entry per org in multi mode.
-export async function inboxListOrgScopes(): Promise<(string | null)[]> {
+// GUC); one entry per org in multi mode. `activeOnly` skips suspended orgs,
+// for sweeps that would spend money on them (fetches, embeddings).
+export async function inboxListOrgScopes(opts: { activeOnly?: boolean } = {}): Promise<(string | null)[]> {
   if (!isTenancyMode()) return [null]
   // Raw SQL — `orgs` is a tenancy-only table not in core's Kysely schema.
-  const res = await sql<{ id: string }>`select id from orgs`.execute(db)
+  const res = opts.activeOnly
+    ? await sql<{ id: string }>`select id from orgs where suspended_at is null`.execute(db)
+    : await sql<{ id: string }>`select id from orgs`.execute(db)
   return res.rows.map(r => r.id)
 }
 
@@ -50,44 +54,16 @@ export async function inboxWithScopeTx<T>(
 // deployments, and keep it distinct from core's 84100723915584200xx family.
 export const INBOX_SEND_SWEEP_LOCK_KEY = '7203914082716530041'
 
+// See core's withAdvisoryLock for the anchor connection and its idle timeout.
+// Losing the lock mid-run only risks an overlapping sweep, which per-message
+// claims already make safe, so the default 5-minute allowance suits the inbox.
 export async function inboxWithAdvisoryLock(
   key: string,
   label: string,
   fn: () => Promise<void>,
-  staleAfterMs = 5 * 60 * 1000
+  staleAfterMs?: number
 ): Promise<void> {
-  // Session-scoped lock ops must share ONE pinned connection: `db` is a pool,
-  // and if acquire and unlock ran as independent queries they could land on
-  // different sessions — the unlock would no-op ("you don't own a lock"
-  // warning) and the lock would stay held by the acquiring session, silently
-  // skipping every later run until the pool happens to reuse that session.
-  // The pinned connection sits idle while fn() runs (fn opens its own
-  // transactions from the pool); it only anchors the lock.
-  //
-  // A crash closes the socket and frees the lock, but an orphaned connection
-  // doesn't: a dev hot-reload (or a hung fn) leaves the session open and the
-  // lock held for the life of the process, so every later run skips. The
-  // idle_session_timeout makes Postgres drop the anchor once it has sat idle
-  // for staleAfterMs, freeing the lock. Losing the lock mid-run only risks an
-  // overlapping sweep, which per-message claims already make safe.
-  await db.connection().execute(async (conn) => {
-    const lockRow = await sql<{ got: boolean }>`
-      select pg_try_advisory_lock(${sql.raw(key)}::bigint) as got
-    `.execute(conn)
-    if (!lockRow.rows[0]?.got) {
-      console.log(`[inbox] another replica holds the ${label} lock — skipping`)
-      return
-    }
-    try {
-      await sql`select set_config('idle_session_timeout', ${String(staleAfterMs)}, false)`.execute(conn)
-      await fn()
-    } finally {
-      // The session may already be gone (timed out above); its lock went with it.
-      await sql`select pg_advisory_unlock(${sql.raw(key)}::bigint), set_config('idle_session_timeout', '0', false)`
-        .execute(conn)
-        .catch(() => {})
-    }
-  })
+  await withAdvisoryLock(key, { scope: 'inbox', label, staleAfterMs }, fn)
 }
 
 // Resolve which org's inbox a tokenless inbound recipient belongs to, by

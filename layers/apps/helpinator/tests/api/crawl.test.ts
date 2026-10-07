@@ -173,6 +173,27 @@ describe('website crawl', () => {
     expect(page!.content).not.toContain('Menu entry')
   })
 
+  it('keeps a listing page\'s links while still dropping an unmarked menu', async () => {
+    // Mostly links, so readability's pick is rejected; the fallback must tell
+    // descriptive entries (content) from short labels (menu).
+    const items = ['Getting started guide for new planters', 'Training videos on disciple making', 'How to set up your prayer team', 'Downloadable coaching checklist as a PDF', 'Questions people ask about the mobile app', 'Contact the support team for account help']
+    const list = items.map((t, i) => `<li><a href="/r${i}">${t}</a></li>`).join('')
+    const menu = ['Home', 'About', 'Blog', 'Contact us', 'Give'].map((t, i) => `<li><a href="/m${i}">${t}</a></li>`).join('')
+    site.pages.set('/resources', { html: `<!doctype html><html><head><title>Resources</title></head><body>
+<div class="top"><ul>${menu}</ul></div>
+<div class="content"><h1>Resources</h1><p>Everything below.</p><ul>${list}</ul></div>
+</body></html>` })
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    await addSource(opts, lib.id, `${site.origin}/resources`, { restrict_to_path: true, max_pages: 1 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+
+    const [page] = await pagesOf(lib.id)
+    for (const item of items) expect(page!.content).toContain(item)
+    expect(page!.content).not.toContain('Contact us')
+  })
+
   it('reports an unreachable start page as an error and never blocks a re-sync', async () => {
     const { opts } = await createHelpinatorOrgWith(sql)
     const lib = await createWebsiteLibrary(opts)

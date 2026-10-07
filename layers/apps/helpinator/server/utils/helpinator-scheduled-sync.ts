@@ -9,6 +9,7 @@
 // time), through the same run machinery as the "Sync all" button.
 import { sql } from 'kysely'
 import { db } from '#core/server/utils/database'
+import { withAdvisoryLock } from '#core/server/utils/advisory-lock'
 import { isMigrationHeldBack } from '#core/server/utils/migration-status'
 import { isAppEnabledForCurrentOrg } from '#tenant/server'
 import { helpinatorScopeTx, helpinatorStartSourceSync, helpinatorExpireStaleRuns } from './helpinator-crawl'
@@ -31,27 +32,19 @@ function isTenancyMode(): boolean {
 async function listOrgScopes(): Promise<(string | null)[]> {
   if (!isTenancyMode()) return [null]
   // Raw SQL — `orgs` is a tenancy-only table not in core's Kysely schema.
-  const res = await sql<{ id: string }>`select id from orgs`.execute(db)
+  // Suspended orgs serve no answers, so they get no crawls (or embedding costs).
+  const res = await sql<{ id: string }>`select id from orgs where suspended_at is null`.execute(db)
   return res.rows.map(r => r.id)
 }
 
-// Session-scoped lock on ONE pinned connection (acquire and unlock must share
-// a session); fn() opens its own transactions from the pool.
+// A sweep crawls every due source in turn, so it can run for hours; the lock
+// anchor's idle allowance (see core's withAdvisoryLock) is sized to match.
+// Losing the lock mid-run is harmless: a sweep marks all its sources
+// 'syncing' up front, so an overlapping sweep finds nothing due.
+const SYNC_LOCK_STALE_AFTER_MS = 3 * 60 * 60 * 1000
+
 export async function helpinatorWithSyncLock(fn: () => Promise<void>): Promise<void> {
-  await db.connection().execute(async (conn) => {
-    const lockRow = await sql<{ got: boolean }>`
-      select pg_try_advisory_lock(${sql.raw(HELPINATOR_SYNC_SWEEP_LOCK_KEY)}::bigint) as got
-    `.execute(conn)
-    if (!lockRow.rows[0]?.got) {
-      console.log('[helpinator] another replica holds the library sync lock — skipping')
-      return
-    }
-    try {
-      await fn()
-    } finally {
-      await sql`select pg_advisory_unlock(${sql.raw(HELPINATOR_SYNC_SWEEP_LOCK_KEY)}::bigint)`.execute(conn)
-    }
-  })
+  await withAdvisoryLock(HELPINATOR_SYNC_SWEEP_LOCK_KEY, { scope: 'helpinator', label: 'library sync', staleAfterMs: SYNC_LOCK_STALE_AFTER_MS }, fn)
 }
 
 // Start a sync for every due website source and wait for them all to finish.

@@ -88,10 +88,11 @@ export async function syncInboxGroundingForOrg(orgId: string | null): Promise<In
   return { synced, failed, pruned }
 }
 
-// Sweep every org scope (the scheduler body). One org's failure never aborts the
+// Sweep every active org scope (the scheduler body; suspended orgs are skipped,
+// sparing their fetches and embeddings). One org's failure never aborts the
 // others.
 export async function syncAllInboxGrounding(): Promise<void> {
-  for (const orgId of await inboxListOrgScopes()) {
+  for (const orgId of await inboxListOrgScopes({ activeOnly: true })) {
     try {
       const r = await syncInboxGroundingForOrg(orgId)
       if (r.synced.length || r.failed.length || r.pruned) {

@@ -37,6 +37,7 @@ interface DomNode {
   remove(): void
   querySelector(sel: string): DomNode | null
   querySelectorAll(sel: string): Iterable<DomNode>
+  closest(sel: string): DomNode | null
   cloneNode(deep: boolean): DomNode
 }
 interface DomDocument extends DomNode {
@@ -143,6 +144,20 @@ function linkDensity(el: DomNode): number {
   return linked / total
 }
 
+// A site menu, as opposed to a listing page's content: mostly links, 5 or
+// more of them, with short labels ("About", "Contact us"). Listing entries
+// read as titles or sentences, so they average more words per link. Anything
+// inside (or wrapping) the page's main content is never a menu.
+const MENU_MIN_LINKS = 5
+const MENU_MAX_WORDS_PER_LINK = 4
+function looksLikeMenu(el: DomNode): boolean {
+  if (el.closest('main, article') || el.querySelector('main, article')) return false
+  const links = Array.from(el.querySelectorAll('a'))
+  if (links.length < MENU_MIN_LINKS || linkDensity(el) <= 0.8) return false
+  const words = links.reduce((n, a) => n + (a.textContent ?? '').trim().split(/\s+/).filter(Boolean).length, 0)
+  return words / links.length <= MENU_MAX_WORDS_PER_LINK
+}
+
 // Readability picks the main article; the fallback is the whole body with
 // chrome elements stripped, for pages readability rejects (short listings).
 // Readability can return just a site menu: on Elementor pages it picks the
@@ -167,9 +182,10 @@ export function helpinatorExtract(html: string, url: string): HelpinatorExtracte
     for (const sel of ['nav', 'header', 'footer', 'aside', '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]']) {
       for (const el of Array.from(document.querySelectorAll(sel))) el.remove()
     }
-    // Menus not marked up as <nav>: link lists, and the blocks wrapping them.
+    // Menus not marked up as <nav>: short-label link lists, and the blocks
+    // wrapping them.
     for (const el of Array.from(document.querySelectorAll('ul, ol, div'))) {
-      if (Array.from(el.querySelectorAll('a')).length >= 5 && linkDensity(el) > 0.8) el.remove()
+      if (looksLikeMenu(el)) el.remove()
     }
     contentHtml = (document.querySelector('main') ?? document.body)?.innerHTML ?? ''
   }

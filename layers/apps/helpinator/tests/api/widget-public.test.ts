@@ -230,6 +230,18 @@ describe('public widget API', () => {
     expect(handoff.statusCode).toBe(503)
   })
 
+  it('the retired visitor-email route answers 410 for cached widget bundles', async () => {
+    const { widget } = await setup()
+    await primeAiFake({ text: 'ok' })
+    const turn = await sendTurn(widget.id, 'hi')
+    const res = await $fetch(`/api/v1/helpinator/widgets/${widget.id}/email`, {
+      method: 'PUT', headers: widgetHeaders(turn.token), body: { email: 'v@example.com' }
+    }).catch(e => e)
+    expect(res.statusCode).toBe(410)
+    const [row] = await sql`SELECT visitor_email FROM helpinator_conversations WHERE id = ${turn.conversationId}`
+    expect(row!.visitor_email).toBeNull()
+  })
+
   it('a disabled widget reports unavailable and refuses turns', async () => {
     const { widget } = await setup({ enabled: false })
     const cfg = await $fetch<{ aiAvailable: boolean }>(`/api/v1/helpinator/widgets/${widget.id}/config`, { headers: widgetHeaders() })
