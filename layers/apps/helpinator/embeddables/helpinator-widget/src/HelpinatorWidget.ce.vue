@@ -380,8 +380,8 @@ async function handoff() {
       :aria-expanded="isOpen"
       @click="isOpen = !isOpen"
     >
-      <svg v-if="!isOpen" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+      <svg v-if="!isOpen" class="hp-logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3l9.4 18h-3.9L12 9.5 6.5 21H2.6z" />
       </svg>
       <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
     </button>
@@ -447,6 +447,7 @@ async function handoff() {
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.2);
 }
 .hp-launcher svg { width: 26px; height: 26px; }
+.hp-launcher svg.hp-logo { fill: currentColor; stroke: none; }
 
 svg {
   fill: none;
