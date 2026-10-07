@@ -24,8 +24,10 @@ import {
 export * from '@nuxtinator/tenancy/test-helpers'
 
 // The ids of the fixed model list the booted host serves under VITEST
-// (server/utils/ai-model-list.ts AI_TEST_MODELS): alpha, beta, gamma.
+// (server/utils/ai-model-list.ts AI_TEST_MODELS): the chat models alpha, beta,
+// gamma, and one transcription model.
 export const AI_TEST_MODEL_IDS = ['test/alpha', 'test/beta', 'test/gamma'] as const
+export const AI_TEST_TRANSCRIPTION_MODEL_ID = 'test/whisper'
 
 // An operator-admin user (users.is_admin) in a fresh org with membership, plus
 // X-Active-Org opts so calls look like normal in-org traffic. Pass

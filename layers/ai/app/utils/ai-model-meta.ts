@@ -1,7 +1,8 @@
-import type { AiModelInfo } from '#core/ai-fallback/types'
+import type { AiProviderModelInfo } from '../../types/ai-ext'
 
 // One-line price + context summary for a model, shared by the pickers and the
-// enabled-models list: "$3 in · $15 out /M · 200K ctx".
+// enabled-models list: "$3 in · $15 out /M · 200K ctx", or "$0.01 / request"
+// for request-priced models.
 
 function price(n: number | null): string {
   if (n === null) return '—'
@@ -14,8 +15,10 @@ function context(n: number | null): string {
   return n >= 1000 ? `${Math.round(n / 1000)}K ctx` : `${n} ctx`
 }
 
-export function modelMeta(m: AiModelInfo): string {
-  const parts = [`${price(m.promptPrice)} in · ${price(m.completionPrice)} out /M`]
+export function modelMeta(m: AiProviderModelInfo): string {
+  const parts = m.requestPrice !== null
+    ? [`${price(m.requestPrice)} / request`]
+    : [`${price(m.promptPrice)} in · ${price(m.completionPrice)} out /M`]
   const ctx = context(m.contextLength)
   if (ctx) parts.push(ctx)
   return parts.join(' · ')

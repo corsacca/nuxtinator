@@ -1,10 +1,13 @@
 import { createError } from 'h3'
 import { getSetting, setSetting, getHostSetting } from '#core/server/utils/settings-store'
 import { encryptSecret, decryptSecret } from '#core/server/utils/secret-crypto'
-import type { AiDbClient, AiModelInfo } from '#core/ai-fallback/types'
-import { getHostApiKey } from './ai-config'
-import { getModelList, getModelInfo, isKnownModel } from './ai-model-list'
+import type { AiDbClient } from '#core/ai-fallback/types'
+import type { AiFeatureKind, AiModelKind, AiProvider, AiProviderModelInfo } from '../../types/ai-ext'
+import { getHostApiKey, getTinfoilConfig } from './ai-config'
+import { getAllModels, getModelInfo, isKnownModel } from './ai-model-list'
 import { getEmbeddingModelList, isKnownEmbeddingModel } from './ai-embedding-model-list'
+import { getAiFeatureKind } from './ai-feature-registry'
+import { providerOf } from './ai-provider'
 
 // The DB-backed half of the AI layer's config, in two scopes that stack:
 //
@@ -22,7 +25,12 @@ import { getEmbeddingModelList, isKnownEmbeddingModel } from './ai-embedding-mod
 // Resolution for a feature walks org choice → org default → host choice →
 // host default, skipping any model the org may not use right now. What an org
 // may use depends on whose key pays: on the host's key only the host-enabled
-// set; on its own key any model OpenRouter lists.
+// set; on its own key any model OpenRouter lists plus the host-enabled Tinfoil
+// models (Tinfoil always runs on the host's key).
+//
+// Features have a kind. Chat features walk the full chain above; transcription
+// features walk only the feature choices (org, then host), since the default
+// model is a chat model. A candidate of the wrong kind is skipped.
 //
 // Every read merges code-owned defaults with stored overrides through core's
 // settings store; the registrations live in register-ai.ts. Callers pass the
@@ -126,10 +134,16 @@ export async function getEffectiveApiKey(tx: AiDbClient): Promise<string> {
   return getHostApiKey()
 }
 
+// The key a call to `provider` runs with. Tinfoil has only the host's key.
+export async function getProviderApiKey(tx: AiDbClient, provider: AiProvider): Promise<string> {
+  if (provider === 'tinfoil') return getTinfoilConfig().apiKey
+  return await getEffectiveApiKey(tx)
+}
+
 // --- Model resolution ---
 
 // Placeholder info for an id that is stored but not in the live list.
-export function modelInfoOrPlaceholder(id: string): AiModelInfo {
+export function modelInfoOrPlaceholder(id: string): AiProviderModelInfo {
   return getModelInfo(id) ?? {
     id,
     name: id,
@@ -137,35 +151,46 @@ export function modelInfoOrPlaceholder(id: string): AiModelInfo {
     completionPrice: null,
     contextLength: null,
     supportsTemperature: false,
-    supportsCaching: false
+    supportsCaching: false,
+    provider: providerOf(id),
+    kind: 'chat',
+    supportsImages: false,
+    requestPrice: null,
+    reasoning: null
   }
 }
 
-// The host-enabled set, narrowed to models OpenRouter still lists.
+export function modelKind(id: string): AiModelKind {
+  return getModelInfo(id)?.kind ?? 'chat'
+}
+
+// The host-enabled set, narrowed to models their provider still lists.
 export async function getHostEnabledModelIds(tx: AiDbClient): Promise<string[]> {
-  await getModelList()
+  await getAllModels()
   const enabled = await getHostSetting<string[]>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_ENABLED_MODELS)
   return enabled.filter(isKnownModel)
 }
 
-// The ids the active org may run: every listed model on its own key, the
-// host-enabled set on the host's.
+// The ids the active org may run: on its own key every OpenRouter model plus
+// the host-enabled Tinfoil models; on the host's key the host-enabled set.
 export async function getAllowedModelIds(tx: AiDbClient): Promise<string[]> {
   if (await hasOrgApiKey(tx)) {
-    return (await getModelList()).map(m => m.id)
+    const openrouter = (await getAllModels()).filter(m => m.provider === 'openrouter').map(m => m.id)
+    const hostTinfoil = (await getHostEnabledModelIds(tx)).filter(id => providerOf(id) === 'tinfoil')
+    return [...openrouter, ...hostTinfoil]
   }
   return await getHostEnabledModelIds(tx)
 }
 
-export async function getAllowedModels(tx: AiDbClient): Promise<AiModelInfo[]> {
+export async function getAllowedModels(tx: AiDbClient): Promise<AiProviderModelInfo[]> {
   const ids = await getAllowedModelIds(tx)
   return ids.map(modelInfoOrPlaceholder)
 }
 
-// First candidate the org may use, in precedence order; '' when none.
-function firstAllowed(candidates: (string | undefined)[], allowed: Set<string>): string {
+// First candidate of `kind` the org may use, in precedence order; '' when none.
+function firstAllowed(candidates: (string | undefined)[], allowed: Set<string>, kind: AiFeatureKind): string {
   for (const c of candidates) {
-    if (c && allowed.has(c)) return c
+    if (c && allowed.has(c) && modelKind(c) === kind) return c
   }
   return ''
 }
@@ -177,12 +202,13 @@ export async function resolveDefaultModel(tx: AiDbClient): Promise<string> {
     getSetting<string>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_DEFAULT_MODEL),
     getHostSetting<string>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_DEFAULT_MODEL)
   ])
-  return firstAllowed([orgDefault, hostDefault], new Set(allowed))
+  return firstAllowed([orgDefault, hostDefault], new Set(allowed), 'chat')
 }
 
 // The model a feature runs on for the active org: org feature choice → org
-// default → host feature choice → host default, first one the org may use.
-// '' when nothing resolves; callers must not run model-less.
+// default → host feature choice → host default (chat features), or org feature
+// choice → host feature choice (transcription features), first one the org
+// may use. '' when nothing resolves; callers must not run model-less.
 export async function resolveFeatureModel(tx: AiDbClient, feature: string): Promise<string> {
   const [allowed, orgFeatures, orgDefault, hostFeatures, hostDefault] = await Promise.all([
     getAllowedModelIds(tx),
@@ -191,10 +217,11 @@ export async function resolveFeatureModel(tx: AiDbClient, feature: string): Prom
     getHostSetting<Record<string, string>>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_FEATURE_MODELS),
     getHostSetting<string>(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_DEFAULT_MODEL)
   ])
-  return firstAllowed(
-    [orgFeatures[feature], orgDefault, hostFeatures[feature], hostDefault],
-    new Set(allowed)
-  )
+  const kind = getAiFeatureKind(feature)
+  const candidates = kind === 'chat'
+    ? [orgFeatures[feature], orgDefault, hostFeatures[feature], hostDefault]
+    : [orgFeatures[feature], hostFeatures[feature]]
+  return firstAllowed(candidates, new Set(allowed), kind)
 }
 
 // --- Embedding model resolution ---
