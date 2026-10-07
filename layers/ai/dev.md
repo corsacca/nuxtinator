@@ -65,6 +65,25 @@ This is the shared AI backend built for Phase 10a of the inbox plan
   org-prefixed, so its requests carry no X-Active-Org and `withOrgContext` would
   404 there. Its "effective" values are therefore the host chain only.
 
+- **Tinfoil as a second provider.** Model ids
+  `tinfoil/<modelName>` route to Tinfoil; everything else is OpenRouter
+  ([server/utils/ai-provider.ts](server/utils/ai-provider.ts)). Requests go
+  through the SDK's attested, body-encrypting `SecureClient.fetch`
+  ([server/utils/tinfoil-client.ts](server/utils/tinfoil-client.ts)); host key
+  only. The catalog is the JSON Tinfoil's pricing page reads
+  (`api.tinfoil.sh/api/config/models`, undocumented) parsed by
+  [server/utils/tinfoil-models.ts](server/utils/tinfoil-models.ts): tool-capable
+  chat models plus file-upload transcription models, with prices, image
+  support and the per-model request fragments that switch reasoning on/off.
+  Embeddings stay on OpenRouter.
+- **Model kinds.** Models are `chat` or `transcription`; features declare a
+  `kind` (default chat, or `embedding` for a vector index). Transcription
+  features resolve org choice → host choice only (the default model is a chat
+  model). Pickers and the config PUTs enforce kind.
+- **Layer-only types.** Image parts, reasoning levels, provider/kind fields
+  and `transcribe` types live in [types/ai-ext.ts](types/ai-ext.ts), on top of
+  core's `#core/ai-fallback/types` (the surface the throwing fallback shares).
+
 ## Gotchas (hard-won)
 
 1. **Adding routes can trip TS2589 elsewhere.** This layer's `/api/ai/*` routes
@@ -77,7 +96,8 @@ This is the shared AI backend built for Phase 10a of the inbox plan
 2. **VITEST short-circuits at the network boundary.** `isAiConfigured(tx)` returns
    true under VITEST (no key needed); `generate`/`complete` route to the
    primeable fake in [server/utils/ai-test-fake.ts](server/utils/ai-test-fake.ts);
-   the model list is the fixed `AI_TEST_MODELS` (alpha/beta/gamma); `validateApiKey`
+   the model list is the fixed `AI_TEST_MODELS` (alpha/beta/gamma, plus the
+   `test/whisper` transcription model); `validateApiKey`
    accepts anything but the literal `invalid`; a feature with nothing configured
    runs on `test/alpha` so consumer suites need no host config. Unprimed,
    `complete` returns `[[stub:<model>]]` and `generate` a schema-shaped stub.
@@ -94,9 +114,22 @@ This is the shared AI backend built for Phase 10a of the inbox plan
    working, and the pages show a "model list unavailable" notice instead of
    emptying the pickers.
 
+6. **Whisper's `prompt` drops text on Tinfoil.** With a vocabulary prompt,
+   `whisper-large-v3-turbo` returned only the last sentence of a clip that
+   transcribes fully without one. Don't pass `prompt` to it. `voxtral-small-24b`
+   accepts `.m4a` despite the docs listing mp3/wav only.
+7. **Bundle the Tinfoil SDK.** Left external, Nitro hoists its
+   `@noble/hashes` 2.x over the 1.x another dependency needs and the server
+   crashes at boot (`ERR_PACKAGE_PATH_NOT_EXPORTED ./crypto`). nuxt.config
+   inlines the SDK and its crypto stack.
+8. **All orgs share one Tinfoil prompt-cache scope** (one host key, one
+   `userCacheSecret`). Per-org scoping (a per-org `user_cache_secret` in the
+   body) is needed before this serves orgs that mustn't observe each other's
+   cache timing.
+
 ## Files
 
-- Client: [server/utils/ai-client.ts](server/utils/ai-client.ts) (OpenRouter fetch,
+- Client: [server/utils/ai-client.ts](server/utils/ai-client.ts) (OpenRouter/Tinfoil requests,
   key/model resolution, key verification, error map) · env config
   [server/utils/ai-config.ts](server/utils/ai-config.ts) · tool loop
   [server/utils/ai-tool-loop.ts](server/utils/ai-tool-loop.ts) (pure, unit-tested)
@@ -105,7 +138,10 @@ This is the shared AI backend built for Phase 10a of the inbox plan
   + control route [server/routes/api/_test/ai.ts](server/routes/api/_test/ai.ts)
   · live model list [server/utils/ai-model-list.ts](server/utils/ai-model-list.ts)
   · settings + resolution [server/utils/ai-settings.ts](server/utils/ai-settings.ts)
-  · feature registry [server/utils/ai-feature-registry.ts](server/utils/ai-feature-registry.ts).
+  · feature registry [server/utils/ai-feature-registry.ts](server/utils/ai-feature-registry.ts)
+  · provider routing [server/utils/ai-provider.ts](server/utils/ai-provider.ts)
+  · Tinfoil transport [server/utils/tinfoil-client.ts](server/utils/tinfoil-client.ts)
+  + catalog parser [server/utils/tinfoil-models.ts](server/utils/tinfoil-models.ts) (pure, unit-tested).
 - Barrel: [server/exports/index.ts](server/exports/index.ts) (`#ai/server`) ·
   client types [app/utils/ai-manifest.ts](app/utils/ai-manifest.ts) (`#ai`).
 - Boot: [server/plugins/register-ai.ts](server/plugins/register-ai.ts) (settings,
@@ -122,6 +158,7 @@ This is the shared AI backend built for Phase 10a of the inbox plan
 - Tests: [tests/unit/ai-model-list.test.ts](tests/unit/ai-model-list.test.ts) (parser)
   · [tests/unit/ai-tool-loop.test.ts](tests/unit/ai-tool-loop.test.ts) (pure)
   · [tests/unit/ai-stream.test.ts](tests/unit/ai-stream.test.ts) (pure)
+  · [tests/unit/tinfoil-models.test.ts](tests/unit/tinfoil-models.test.ts) (Tinfoil catalog parser)
   · [tests/api/ai-admin.test.ts](tests/api/ai-admin.test.ts) (host endpoints,
   gating, validation, cross-org sharing)
   · [tests/api/ai-org.test.ts](tests/api/ai-org.test.ts) (org key lifecycle,

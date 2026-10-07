@@ -1,8 +1,9 @@
-// The `#ai/server` alias surface. Re-exports the OpenRouter client, the live
-// model list, org/host model + key resolution, and the feature registry for
-// consumer layers. Mirrors the exact surface of core's `#ai/server` fallback
-// (ai-fallback/ai.ts) so consumers see one interface whether or not this layer
-// is loaded.
+// The `#ai/server` alias surface. Re-exports the OpenRouter/Tinfoil client, the
+// live model list, org/host model + key resolution, and the feature registry
+// for consumer layers. A superset of core's `#ai/server` fallback
+// (ai-fallback/ai.ts): the shared names behave the same whether or not this
+// layer is loaded; `transcribe`, image parts, reasoning levels, providers and
+// model kinds exist only here.
 //
 // Lives in server/exports/ (not server/utils/) so nitro's auto-import scan
 // doesn't double-import these names — the source files ARE auto-imported inside
@@ -10,6 +11,7 @@
 // "Duplicated imports".
 
 export * from '#core/ai-fallback/types'
+export type * from '../../types/ai-ext'
 export * from '#core/ai-fallback/vectors'
 export * from '#core/ai-fallback/chunk'
 
@@ -19,6 +21,7 @@ export {
   resolveAiEmbedRun,
   complete,
   generate,
+  transcribe,
   validateApiKey,
   isEmbeddingConfigured,
   embed,
@@ -44,10 +47,14 @@ export {
 } from '../utils/ai-reindex-registry'
 export type { AiIndexStaleness, AiReindexStatus, AiReindexScopeStatus } from '../utils/ai-reindex-registry'
 
-export { getHostApiKey } from '../utils/ai-config'
+export { getHostApiKey, isTinfoilConfigured } from '../utils/ai-config'
+
+export { providerOf, wireModelId, TINFOIL_MODEL_PREFIX } from '../utils/ai-provider'
 
 export {
+  getAllModels,
   getModelList,
+  getTranscriptionModels,
   getModelInfo,
   isKnownModel,
   supportsTemperature,
@@ -56,7 +63,8 @@ export {
 
 export {
   registerAiFeature,
-  getAiFeatures
+  getAiFeatures,
+  getAiFeatureKind
 } from '../utils/ai-feature-registry'
 
 export {
@@ -73,7 +81,9 @@ export {
   setOrgApiKey,
   hasOrgApiKey,
   getEffectiveApiKey,
+  getProviderApiKey,
   modelInfoOrPlaceholder,
+  modelFitsKind,
   getHostEnabledModelIds,
   getAllowedModelIds,
   getAllowedModels,

@@ -76,6 +76,19 @@ describe('parseOpenRouterModels', () => {
     expect(out[0]!.name).toBe('a/anon')
   })
 
+  it('switches reasoning off with effort none, except where it is mandatory', () => {
+    const out = parseOpenRouterModels({
+      data: [
+        model({ id: 'a/optional', supported_parameters: ['tools', 'reasoning'] }),
+        model({ id: 'b/mandatory', supported_parameters: ['tools', 'reasoning'], reasoning: { mandatory: true } }),
+        model({ id: 'c/none' })
+      ]
+    })
+    expect(out.find(m => m.id === 'a/optional')!.reasoning!.disable).toEqual({ reasoning: { effort: 'none' } })
+    expect(out.find(m => m.id === 'b/mandatory')!.reasoning!.disable).toBeNull()
+    expect(out.find(m => m.id === 'c/none')!.reasoning).toBeNull()
+  })
+
   it('returns an empty list for a payload with no data array', () => {
     expect(parseOpenRouterModels(null)).toEqual([])
     expect(parseOpenRouterModels({})).toEqual([])

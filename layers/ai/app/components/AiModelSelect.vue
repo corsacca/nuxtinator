@@ -3,8 +3,8 @@ import type { AiModelInfo } from '#ai'
 import { modelMeta } from '../utils/ai-model-meta'
 
 // Searchable model picker over a caller-supplied list (the host-enabled set,
-// the org's allowed set, or the whole OpenRouter list). Each entry shows the
-// model's name, id, price per million tokens and context window. A current
+// the org's allowed set, or the whole model list). Each entry shows the
+// model's name, id, provider, price and context window. A current
 // value missing from the list is shown as unavailable rather than dropped, so
 // a stale choice stays visible until it's changed.
 
@@ -29,6 +29,8 @@ interface Option {
   id: string
   name: string
   meta: string
+  tinfoil?: boolean
+  transcription?: boolean
   unavailable?: boolean
 }
 
@@ -39,7 +41,13 @@ interface Option {
 const CLEAR_VALUE = '__clear__'
 
 const options = computed<Option[]>(() => {
-  const out: Option[] = props.items.map(m => ({ id: m.id, name: m.name, meta: modelMeta(m) }))
+  const out: Option[] = props.items.map(m => ({
+    id: m.id,
+    name: m.name,
+    meta: modelMeta(m),
+    tinfoil: m.provider === 'tinfoil',
+    transcription: m.kind === 'transcription'
+  }))
   if (props.modelValue && !props.items.some(m => m.id === props.modelValue)) {
     out.unshift({ id: props.modelValue, name: props.modelValue, meta: 'No longer available', unavailable: true })
   }
@@ -81,6 +89,24 @@ function onUpdate(value: unknown) {
             size="sm"
           >
             Unavailable
+          </UBadge>
+          <UBadge
+            v-if="item.tinfoil"
+            color="success"
+            variant="subtle"
+            size="sm"
+            icon="i-lucide-shield-check"
+          >
+            Tinfoil
+          </UBadge>
+          <UBadge
+            v-if="item.transcription"
+            color="info"
+            variant="subtle"
+            size="sm"
+            icon="i-lucide-audio-lines"
+          >
+            Transcription
           </UBadge>
         </div>
         <div

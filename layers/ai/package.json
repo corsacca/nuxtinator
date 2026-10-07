@@ -6,6 +6,9 @@
   "exports": {
     ".": "./nuxt.config.ts"
   },
+  "dependencies": {
+    "tinfoil": "^1.2.1"
+  },
   "optionalDependencies": {
     "@nuxtinator/core": "*"
   },

@@ -85,6 +85,28 @@ vector` when their role may; otherwise a superuser runs it once beforehand.
    is enabled on a fresh deployment — the code carries no model ids, so AI
    features stay off until an admin picks.
 
+## Tinfoil (confidential inference)
+
+Set `TINFOIL_API_KEY` and Tinfoil's models join the pickers, prefixed
+`tinfoil/` (e.g. `tinfoil/glm-5-3-flash`). Every Tinfoil request goes through
+the SDK's `SecureClient`: the enclave's attestation is verified first and each
+request body is encrypted to the attested key, so prompts, images and audio
+are readable only inside the verified enclave. A failed verification refuses
+the request. Tinfoil always runs on the host's key — orgs can't store their
+own — and an org with its own OpenRouter key may still pick the Tinfoil models
+the host enabled.
+
+Tinfoil also brings speech-to-text: features registered with
+`kind: 'transcription'` pick from its transcription models and call
+`transcribe()`.
+
+```bash
+TINFOIL_API_KEY=tk_...
+# optional:
+TINFOIL_CATALOG_URL=https://api.tinfoil.sh/api/config/models
+TINFOIL_USER_CACHE_SECRET=<random>   # scopes Tinfoil's prompt cache; random per process when unset
+```
+
 ## Whose key, whose models
 
 | Org has its own key? | Key used | Models the org may pick |
@@ -118,6 +140,26 @@ const { input } = await generate<{ reply: string }>({
     parameters: { type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'] }
   }
 })
+```
+
+### Images, reasoning and transcription
+
+```ts
+import { generate, transcribe, registerAiFeature } from '#ai/server'
+
+registerAiFeature({ key: 'notes.transcribe', label: 'Notes — transcribe', kind: 'transcription' })
+
+// Images ride as content parts; a model that can't read images is a 400.
+await generate({
+  tx, feature: 'notes.file', tool,
+  messages: [{ role: 'user', content: [
+    { type: 'text', text: 'File this receipt' },
+    { type: 'image', mediaType: 'image/jpeg', data: base64 }
+  ] }],
+  reasoning: 'low'   // 'off' | 'low' | 'medium' | 'high'; sent only to models whose catalog says how
+})
+
+const { text } = await transcribe({ tx, feature: 'notes.transcribe', audio: bytes, mimeType: 'audio/mp4' })
 ```
 
 ## Testing against the fake

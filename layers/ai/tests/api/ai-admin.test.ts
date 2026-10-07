@@ -4,7 +4,7 @@
 // stub (fixed model list, no key needed).
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { $fetch } from '@nuxt/test-utils/e2e'
-import { getHostAdminDb, createAiOrg, cleanupAiTestData, clearAiHostConfig, AI_TEST_MODEL_IDS } from '../helpers'
+import { getHostAdminDb, createAiOrg, cleanupAiTestData, clearAiHostConfig, AI_TEST_MODEL_IDS, AI_TEST_TRANSCRIPTION_MODEL_ID } from '../helpers'
 
 interface AiEnabled {
   id: string
@@ -17,7 +17,7 @@ interface AiConfig {
   modelListAvailable: boolean
   enabled: AiEnabled[]
   defaultModel: string
-  features: { key: string, label: string, model: string, effectiveModel: string }[]
+  features: { key: string, label: string, kind: string, model: string, effectiveModel: string }[]
   embeddingAvailable: boolean
   embeddingModelListAvailable: boolean
   embeddingModel: string
@@ -26,6 +26,7 @@ interface AiConfig {
 
 const sql = getHostAdminDb()
 const [ALPHA, BETA, GAMMA] = AI_TEST_MODEL_IDS
+const WHISPER = AI_TEST_TRANSCRIPTION_MODEL_ID
 
 async function getConfig(opts: object): Promise<AiConfig> {
   return $fetch<AiConfig>('/api/ai/admin/config', { ...opts })
@@ -117,6 +118,24 @@ describe('ai admin config', () => {
     const chosen = after.features.find(f => f.key === feature)!
     expect(chosen.model).toBe(BETA)
     expect(chosen.effectiveModel).toBe(BETA)
+  })
+
+  it('lists models with their provider and kind', async () => {
+    const { opts } = await createAiOrg(sql)
+    const { models } = await $fetch<{ models: { id: string, provider: string, kind: string }[] }>('/api/ai/models', { ...opts })
+    expect(models.find(m => m.id === ALPHA)).toMatchObject({ provider: 'openrouter', kind: 'chat' })
+    expect(models.find(m => m.id === WHISPER)).toMatchObject({ kind: 'transcription' })
+  })
+
+  it('refuses a transcription model as the default or for a chat feature', async () => {
+    const { opts } = await createAiOrg(sql)
+    await putConfig(opts, { enabled_models: [ALPHA, WHISPER] })
+    await expect(putConfig(opts, { default_model: WHISPER })).rejects.toMatchObject({ statusCode: 400 })
+
+    const { features } = await getConfig(opts)
+    const chat = features.find(f => f.kind === 'chat')
+    if (!chat) return
+    await expect(putConfig(opts, { feature_models: { [chat.key]: WHISPER } })).rejects.toMatchObject({ statusCode: 400 })
   })
 
   it('shares one config across orgs (host-level)', async () => {
