@@ -50,7 +50,12 @@ export async function inboxWithScopeTx<T>(
 // deployments, and keep it distinct from core's 84100723915584200xx family.
 export const INBOX_SEND_SWEEP_LOCK_KEY = '7203914082716530041'
 
-export async function inboxWithAdvisoryLock(key: string, label: string, fn: () => Promise<void>): Promise<void> {
+export async function inboxWithAdvisoryLock(
+  key: string,
+  label: string,
+  fn: () => Promise<void>,
+  staleAfterMs = 5 * 60 * 1000
+): Promise<void> {
   // Session-scoped lock ops must share ONE pinned connection: `db` is a pool,
   // and if acquire and unlock ran as independent queries they could land on
   // different sessions — the unlock would no-op ("you don't own a lock"
@@ -58,6 +63,13 @@ export async function inboxWithAdvisoryLock(key: string, label: string, fn: () =
   // skipping every later run until the pool happens to reuse that session.
   // The pinned connection sits idle while fn() runs (fn opens its own
   // transactions from the pool); it only anchors the lock.
+  //
+  // A crash closes the socket and frees the lock, but an orphaned connection
+  // doesn't: a dev hot-reload (or a hung fn) leaves the session open and the
+  // lock held for the life of the process, so every later run skips. The
+  // idle_session_timeout makes Postgres drop the anchor once it has sat idle
+  // for staleAfterMs, freeing the lock. Losing the lock mid-run only risks an
+  // overlapping sweep, which per-message claims already make safe.
   await db.connection().execute(async (conn) => {
     const lockRow = await sql<{ got: boolean }>`
       select pg_try_advisory_lock(${sql.raw(key)}::bigint) as got
@@ -67,9 +79,13 @@ export async function inboxWithAdvisoryLock(key: string, label: string, fn: () =
       return
     }
     try {
+      await sql`select set_config('idle_session_timeout', ${String(staleAfterMs)}, false)`.execute(conn)
       await fn()
     } finally {
-      await sql`select pg_advisory_unlock(${sql.raw(key)}::bigint)`.execute(conn)
+      // The session may already be gone (timed out above); its lock went with it.
+      await sql`select pg_advisory_unlock(${sql.raw(key)}::bigint), set_config('idle_session_timeout', '0', false)`
+        .execute(conn)
+        .catch(() => {})
     }
   })
 }

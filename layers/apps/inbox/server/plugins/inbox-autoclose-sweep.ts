@@ -13,10 +13,10 @@ export default defineNitroPlugin(() => {
   const config = useRuntimeConfig()
   const cronExpr = String(config.inboxAutoCloseCron || '0 4 * * *')
 
-  new Cron(cronExpr, { protect: true, timezone: 'UTC' }, () => {
-    void inboxWithAdvisoryLock(INBOX_AUTO_CLOSE_LOCK_KEY, 'auto-close sweep', async () => { await inboxRunAutoCloseSweep() })
+  new Cron(cronExpr, { protect: true, timezone: 'UTC' }, () =>
+    inboxWithAdvisoryLock(INBOX_AUTO_CLOSE_LOCK_KEY, 'auto-close sweep', async () => { await inboxRunAutoCloseSweep() })
       .catch(err => console.error('[inbox] auto-close sweep error:', err))
-  })
+  )
 
   console.log(`[inbox] auto-close sweep started — cron "${cronExpr}" (UTC)`)
 })
