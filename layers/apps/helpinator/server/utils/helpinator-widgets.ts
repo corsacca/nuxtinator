@@ -80,6 +80,14 @@ export function helpinatorNormalizeOrigins(list: string[]): string[] {
   return [...out]
 }
 
+export const HELPINATOR_MAX_STARTER_QUESTIONS = 6
+const STARTER_QUESTION_MAX = 200
+
+// Trimmed, de-duplicated, blanks dropped.
+export function helpinatorNormalizeStarterQuestions(list: string[]): string[] {
+  return [...new Set(list.map(q => q.trim()).filter(Boolean))]
+}
+
 export const HelpinatorWidgetInput = z.object({
   name: z.string().trim().min(1).max(200),
   library_ids: z.array(z.string().uuid()).min(1).max(20),
@@ -90,7 +98,8 @@ export const HelpinatorWidgetInput = z.object({
   daily_message_cap: z.number().int().min(1).max(100_000).default(500),
   enabled: z.boolean().default(true),
   appearance: z.record(z.unknown()).default({}),
-  extra_instructions: z.string().max(4000).default('')
+  extra_instructions: z.string().max(4000).default(''),
+  starter_questions: z.array(z.string().max(STARTER_QUESTION_MAX)).max(HELPINATOR_MAX_STARTER_QUESTIONS).default([])
 })
 export type HelpinatorWidgetInputValue = z.infer<typeof HelpinatorWidgetInput>
 
@@ -159,6 +168,7 @@ export async function helpinatorCreateWidget(
       enabled: input.enabled,
       appearance: sql`${JSON.stringify(helpinatorAppearanceOverrides(input.appearance))}::text::jsonb`,
       extra_instructions: input.extra_instructions.trim(),
+      starter_questions: helpinatorNormalizeStarterQuestions(input.starter_questions),
       created_by: userId
     })
     .returningAll()
@@ -185,6 +195,7 @@ export async function helpinatorUpdateWidget(
       enabled: input.enabled,
       appearance: sql`${JSON.stringify(helpinatorAppearanceOverrides(input.appearance))}::text::jsonb`,
       extra_instructions: input.extra_instructions.trim(),
+      starter_questions: helpinatorNormalizeStarterQuestions(input.starter_questions),
       updated_at: sql`now()`
     })
     .where('id', '=', id)
@@ -213,6 +224,8 @@ export async function helpinatorDeleteWidget(tx: Tx, id: string): Promise<void> 
 export interface HelpinatorPublicConfig {
   id: string
   appearance: Required<HelpinatorAppearance>
+  // Offered as clickable chips until the visitor sends a message.
+  starterQuestions: string[]
   // False when the widget is disabled, has no libraries, or AI isn't
   // configured — the widget then shows a short "unavailable" state instead of
   // the chat.
@@ -228,6 +241,7 @@ export function helpinatorPublicConfig(
   return {
     id: widget.id,
     appearance: helpinatorResolvedAppearance(widget.appearance),
+    starterQuestions: widget.starter_questions,
     aiAvailable: widget.enabled && widget.library_ids.length > 0 && flags.aiConfigured,
     handoffAvailable: flags.handoffAvailable
   }

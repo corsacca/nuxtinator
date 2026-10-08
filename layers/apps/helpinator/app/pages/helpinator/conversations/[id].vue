@@ -1,7 +1,5 @@
 <script setup lang="ts">
-// One help-chat transcript, read-only. Staff can elevate it to the inbox when
-// the visitor left an email: it's assigned to them and they land in the inbox
-// composer, ready to reply (the visitor gets nothing until they do).
+// One help-chat transcript, read-only.
 import type { HelpinatorConversationSummary, HelpinatorTranscriptMessage } from '../../../utils/helpinator-types'
 import { helpinatorErrorMessage } from '../../../utils/helpinator-types'
 
@@ -9,11 +7,10 @@ definePageMeta({ middleware: 'auth' })
 
 const route = useRoute()
 const pathTo = useHelpinatorPath()
-const toast = useToast()
 const id = computed(() => String(route.params.id))
 
 const { data: status } = useHelpinatorStatus()
-const { data, error, refresh } = useFetch<{
+const { data, error } = useFetch<{
   conversation: HelpinatorConversationSummary
   messages: HelpinatorTranscriptMessage[]
 }>(() => `/api/helpinator/conversations/${id.value}`)
@@ -22,8 +19,6 @@ const conversation = computed(() => data.value?.conversation)
 // The server only stores http(s) page URLs; older rows may hold anything, so
 // only those render as a link.
 const pageHref = computed(() => /^https?:\/\//i.test(conversation.value?.page_url ?? '') ? conversation.value!.page_url! : null)
-const confirmElevate = ref(false)
-const elevating = ref(false)
 
 function when(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—'
@@ -34,22 +29,8 @@ function unreadHits(m: HelpinatorTranscriptMessage) {
   return m.search_hits.filter(h => !m.pages_loaded.some(p => p.ref === h.ref))
 }
 
-function inboxLink(inboxId: string, reply = false): string {
-  return pathTo(`/inbox/${inboxId}${reply ? '?reply=1' : ''}`)
-}
-
-async function elevate() {
-  elevating.value = true
-  try {
-    const res = await $fetch<{ inboxConversationId: string }>(`/api/helpinator/conversations/${id.value}/elevate`, { method: 'POST' })
-    confirmElevate.value = false
-    await navigateTo(inboxLink(res.inboxConversationId, true))
-  } catch (err) {
-    toast.add({ title: 'Could not elevate', description: helpinatorErrorMessage(err), color: 'error' })
-    await refresh()
-  } finally {
-    elevating.value = false
-  }
+function inboxLink(inboxId: string): string {
+  return pathTo(`/inbox/${inboxId}`)
 }
 </script>
 
@@ -193,42 +174,8 @@ async function elevate() {
               Open in inbox
             </UButton>
           </UCard>
-          <UCard v-else-if="status?.canElevate">
-            <p class="text-sm mb-3 text-(--ui-text-muted)">
-              {{ conversation.visitor_email
-                ? 'Move this conversation to the inbox, assigned to you, and write the visitor a reply.'
-                : 'The visitor didn\'t leave an email, so this can\'t be sent to the inbox.' }}
-            </p>
-            <UButton
-              :disabled="!conversation.visitor_email"
-              icon="i-lucide-arrow-up-right"
-              block
-              @click="confirmElevate = true"
-            >
-              Elevate to inbox
-            </UButton>
-          </UCard>
         </aside>
       </div>
-
-      <UModal v-model:open="confirmElevate" title="Elevate to inbox?">
-        <template #body>
-          <p class="text-sm">
-            This creates an inbox conversation with the transcript, assigned to you, and opens the reply
-            composer. Nothing is sent to {{ conversation?.visitor_email }} until you send your reply.
-          </p>
-        </template>
-        <template #footer>
-          <div class="flex justify-end gap-2 w-full">
-            <UButton variant="ghost" color="neutral" @click="confirmElevate = false">
-              Cancel
-            </UButton>
-            <UButton :loading="elevating" @click="elevate">
-              Elevate and reply
-            </UButton>
-          </div>
-        </template>
-      </UModal>
     </div>
   </HelpinatorShell>
 </template>

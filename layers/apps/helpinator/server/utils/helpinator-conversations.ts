@@ -1,10 +1,10 @@
-// Conversation + message persistence, the transcript renderer, and the inbox
-// handoff shared by the visitor's "still need help?" and staff elevation.
+// Conversation + message persistence, the transcript renderer, and the
+// visitor's "still need help?" inbox handoff.
 import { sql, type Selectable, type Transaction } from 'kysely'
 import type { Database } from '#core/server/database/schema'
 import { isAppEnabledForCurrentOrg } from '#tenant/server'
 import { helpinatorInbox } from '#helpinator/inbox'
-import type { HelpinatorHandoffKind, HelpinatorPageLoaded, HelpinatorSearchHitLogged } from '../database/schema'
+import type { HelpinatorPageLoaded, HelpinatorSearchHitLogged } from '../database/schema'
 import { helpinatorSameBinding, type HelpinatorWidgetRow } from './helpinator-widgets'
 import { helpinatorCurrentScope } from './helpinator-guards'
 
@@ -116,14 +116,6 @@ export async function helpinatorDeleteMessage(tx: Tx, message: HelpinatorMessage
   }
 }
 
-export async function helpinatorSetVisitorEmail(tx: Tx, conversationId: string, email: string | null): Promise<void> {
-  await tx
-    .updateTable('helpinator_conversations')
-    .set({ visitor_email: email })
-    .where('id', '=', conversationId)
-    .execute()
-}
-
 // What the widget needs to restore itself (and the admin detail view).
 export function helpinatorPublicMessage(m: HelpinatorMessageRow) {
   return { id: m.id, role: m.role, content: m.content, createdAt: m.created_at }
@@ -182,8 +174,6 @@ export async function helpinatorHandOff(tx: Tx, opts: {
   conversationId: string
   widget: HelpinatorWidgetRow
   email: string
-  kind: HelpinatorHandoffKind
-  userId: string | null
   userAgent: string | null
 }): Promise<HelpinatorHandoffResult> {
   if (!helpinatorInbox.available) {
@@ -203,16 +193,13 @@ export async function helpinatorHandOff(tx: Tx, opts: {
   const messages = await helpinatorListMessages(tx, opts.conversationId)
   if (messages.length === 0) throw createError({ statusCode: 400, statusMessage: 'Nothing to hand off yet.' })
 
-  // A visitor handoff mails an address the visitor typed, and nothing proves
-  // the visitor owns it (a verified address only proves SOMEONE there reads
-  // the org's mail). So nothing the visitor wrote, or the bot was steered into
+  // A handoff mails an address the visitor typed, and nothing proves the
+  // visitor owns it (a verified address only proves SOMEONE there reads the
+  // org's mail). So nothing the visitor wrote, or the bot was steered into
   // writing, goes into what that address receives: the subject is the org's
   // widget name (it is also the auto-ack's subject) and the ack carries no
-  // transcript. Staff elevations can carry the visitor's first question.
-  const firstQuestion = messages.find(m => m.role === 'user')?.content.split('\n').find(l => l.trim())?.trim() ?? ''
-  const subject = (opts.kind === 'visitor'
-    ? `Help chat: ${opts.widget.name}`
-    : `Help chat: ${firstQuestion || opts.widget.name}`).slice(0, 120)
+  // transcript.
+  const subject = `Help chat: ${opts.widget.name}`.slice(0, 120)
   const header = locked.page_url ? `Help chat from ${locked.page_url}` : `Help chat (${opts.widget.name})`
   const transcriptText = `${header}\n\n${helpinatorTranscriptText(messages)}`
   const transcriptHtml = `<p><strong>${escapeHtml(header)}</strong></p>\n${helpinatorTranscriptHtml(messages)}`
@@ -222,7 +209,7 @@ export async function helpinatorHandOff(tx: Tx, opts: {
     subject,
     transcriptText,
     transcriptHtml,
-    assignedUserId: opts.kind === 'staff' ? opts.userId : null,
+    assignedUserId: null,
     userAgent: opts.userAgent
   })
 
@@ -231,21 +218,17 @@ export async function helpinatorHandOff(tx: Tx, opts: {
     .set({
       visitor_email: opts.email,
       inbox_conversation_id: record.inboxConversationId,
-      handoff_kind: opts.kind,
+      handoff_kind: 'visitor',
       handed_off_at: sql`now()`,
-      handed_off_by: opts.userId
+      handed_off_by: null
     })
     .where('id', '=', opts.conversationId)
     .execute()
 
   const scope = await helpinatorCurrentScope(tx)
-  // Visitor handoff: notify staff, and send the inbox's fixed auto-ack.
-  // Staff elevation: the elevating admin owns it and writes the first reply.
+  // Notify staff, and send the inbox's fixed auto-ack.
   return {
     inboxConversationId: record.inboxConversationId,
-    afterCommit: () => helpinatorInbox.afterHandoff(scope, record, {
-      notify: opts.kind === 'visitor',
-      ack: opts.kind === 'visitor'
-    })
+    afterCommit: () => helpinatorInbox.afterHandoff(scope, record, { notify: true, ack: true })
   }
 }

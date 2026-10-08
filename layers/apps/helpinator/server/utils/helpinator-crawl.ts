@@ -37,6 +37,7 @@ interface DomNode {
   remove(): void
   querySelector(sel: string): DomNode | null
   querySelectorAll(sel: string): Iterable<DomNode>
+  closest(sel: string): DomNode | null
   cloneNode(deep: boolean): DomNode
 }
 interface DomDocument extends DomNode {
@@ -134,8 +135,34 @@ function cleanMarkdown(md: string): string {
     .trim()
 }
 
+// Share of an element's text that sits inside links. Menus are near 1.
+function linkDensity(el: DomNode): number {
+  const total = (el.textContent ?? '').replace(/\s+/g, '').length
+  if (!total) return 0
+  let linked = 0
+  for (const a of Array.from(el.querySelectorAll('a'))) linked += (a.textContent ?? '').replace(/\s+/g, '').length
+  return linked / total
+}
+
+// A site menu, as opposed to a listing page's content: mostly links, 5 or
+// more of them, with short labels ("About", "Contact us"). Listing entries
+// read as titles or sentences, so they average more words per link. Anything
+// inside (or wrapping) the page's main content is never a menu.
+const MENU_MIN_LINKS = 5
+const MENU_MAX_WORDS_PER_LINK = 4
+function looksLikeMenu(el: DomNode): boolean {
+  if (el.closest('main, article') || el.querySelector('main, article')) return false
+  const links = Array.from(el.querySelectorAll('a'))
+  if (links.length < MENU_MIN_LINKS || linkDensity(el) <= 0.8) return false
+  const words = links.reduce((n, a) => n + (a.textContent ?? '').trim().split(/\s+/).filter(Boolean).length, 0)
+  return words / links.length <= MENU_MAX_WORDS_PER_LINK
+}
+
 // Readability picks the main article; the fallback is the whole body with
 // chrome elements stripped, for pages readability rejects (short listings).
+// Readability can return just a site menu: on Elementor pages it picks the
+// page-wide wrapper, then drops the content blocks because their class says
+// "widget". A pick that is mostly links is treated as a rejection.
 export function helpinatorExtract(html: string, url: string): HelpinatorExtracted {
   const document = parseDom(html)
   const docTitle = (document.querySelector('title')?.textContent ?? '').trim()
@@ -150,9 +177,15 @@ export function helpinatorExtract(html: string, url: string): HelpinatorExtracte
   }
 
   let contentHtml = article?.content ?? ''
+  if (contentHtml.trim() && linkDensity(parseDom(`<html><body>${contentHtml}</body></html>`).body!) > 0.5) contentHtml = ''
   if (!contentHtml.trim()) {
     for (const sel of ['nav', 'header', 'footer', 'aside', '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]']) {
       for (const el of Array.from(document.querySelectorAll(sel))) el.remove()
+    }
+    // Menus not marked up as <nav>: short-label link lists, and the blocks
+    // wrapping them.
+    for (const el of Array.from(document.querySelectorAll('ul, ol, div'))) {
+      if (looksLikeMenu(el)) el.remove()
     }
     contentHtml = (document.querySelector('main') ?? document.body)?.innerHTML ?? ''
   }
@@ -506,10 +539,13 @@ const STALE_RUN = '5 minutes'
 // Mark this library's dead runs interrupted, so the UI stops polling and
 // "Sync all" comes back. Safe across processes: a live run keeps its
 // heartbeat fresh, and a newer run has a newer token anyway.
+// `run_started_at` is cleared because the run never happened: the scheduled
+// sync keys on it, and a run queued (or crawling) when the server stopped
+// would otherwise count as a fresh sync and wait a full cycle.
 export async function helpinatorExpireStaleRuns(tx: Tx, libraryId?: string): Promise<void> {
   let q = tx
     .updateTable('helpinator_library_sources')
-    .set({ status: 'error', run_token: null, last_error: 'The last sync was interrupted (the server restarted). Run it again.' })
+    .set({ status: 'error', run_token: null, run_started_at: null, last_error: 'The last sync was interrupted (the server restarted). Run it again.' })
     .where('status', '=', 'syncing')
     .where(sql<boolean>`coalesce(run_heartbeat_at, run_started_at, created_at) < now() - ${STALE_RUN}::interval`)
   if (libraryId) q = q.where('library_id', '=', libraryId)

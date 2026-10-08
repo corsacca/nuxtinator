@@ -1,5 +1,5 @@
-// Admin API (widgets CRUD, conversation log, permissions) and the two paths
-// into the inbox: the visitor's "still need help?" handoff and staff elevation.
+// Admin API (widgets CRUD, conversation log, permissions) and the visitor's
+// "still need help?" handoff into the inbox.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { $fetch } from '@nuxt/test-utils/e2e'
@@ -63,6 +63,23 @@ describe('admin + handoff', () => {
     })
     const [row] = await sql`SELECT ended_at FROM helpinator_conversations WHERE id = ${turn.conversationId}`
     expect(row!.ended_at).not.toBeNull()
+  })
+
+  it('stores suggested questions cleaned up and serves them in the public config', async () => {
+    const { org, opts } = await createHelpinatorOrgWith(sql)
+    const lw = await seedLibrary(sql, { orgId: org.id, kind: 'website' })
+    const body = { name: 'S', library_ids: [lw.id], default_library_id: lw.id, allowed_origins: [SITE_ORIGIN] }
+    const w = await $fetch<{ id: string, starter_questions: string[] }>('/api/helpinator/widgets', {
+      method: 'POST', body: { ...body, starter_questions: ['  When do you open? ', '', 'When do you open?', 'Where are you?'] }, ...opts
+    })
+    expect(w.starter_questions).toEqual(['When do you open?', 'Where are you?'])
+    const cfg = await $fetch<{ starterQuestions: string[] }>(`/api/v1/helpinator/widgets/${w.id}/config`, { headers: widgetHeaders() })
+    expect(cfg.starterQuestions).toEqual(['When do you open?', 'Where are you?'])
+
+    const tooMany = await $fetch(`/api/helpinator/widgets/${w.id}`, {
+      method: 'PUT', body: { ...body, starter_questions: Array.from({ length: 7 }, (_, i) => `Q${i}`) }, ...opts
+    }).catch(e => e)
+    expect(tooMany.statusCode).toBe(400)
   })
 
   it('rejects a section that is not in the default library\'s portfolio, and a default outside the list', async () => {
@@ -133,27 +150,6 @@ describe('admin + handoff', () => {
     expect(again.status).toBe('already_handed_off')
     const count = await sql`SELECT count(*)::int AS n FROM inbox_conversations WHERE source = 'helpinator' AND org_id = ${org.id}`
     expect(count[0]!.n).toBe(1)
-  })
-
-  it('staff elevation needs a visitor email, assigns to the elevating user', async () => {
-    const { org, user, opts } = await createHelpinatorOrgWith(sql)
-    const p = await seedPortfolio(sql, org.id, 'P', { faq: 'x' })
-    const widget = await seedWidget(sql, { orgId: org.id, portfolioId: p.id, sectionKey: 'faq' })
-    await primeAiFake({ text: 'answer' })
-    const turn = await sendTurn(widget.id, 'question')
-
-    const noEmail = await $fetch(`/api/helpinator/conversations/${turn.conversationId}/elevate`, { method: 'POST', ...opts }).catch(e => e)
-    expect(noEmail.statusCode).toBe(400)
-
-    await $fetch(`/api/v1/helpinator/widgets/${widget.id}/email`, {
-      method: 'PUT', headers: widgetHeaders(turn.token), body: { email: 'v@example.com' }
-    })
-    const res = await $fetch<{ inboxConversationId: string }>(`/api/helpinator/conversations/${turn.conversationId}/elevate`, { method: 'POST', ...opts })
-    const [inbox] = await sql`SELECT status, source, assigned_user_id FROM inbox_conversations WHERE id = ${res.inboxConversationId}`
-    expect(inbox).toMatchObject({ status: 'open', source: 'helpinator', assigned_user_id: user.id })
-
-    const dup = await $fetch(`/api/helpinator/conversations/${turn.conversationId}/elevate`, { method: 'POST', ...opts }).catch(e => e)
-    expect(dup.statusCode).toBe(409)
   })
 
   it('limits visitor handoffs per mailbox, whichever client asks and however the address is spelled', async () => {

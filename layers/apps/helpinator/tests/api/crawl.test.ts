@@ -149,6 +149,51 @@ describe('website crawl', () => {
     expect((await pagesOf(lib.id)).map(p => p.url)).toEqual([`${site.origin}/docs`, `${site.origin}/docs/anvils`, `${site.origin}/docs/horseshoes`])
   })
 
+  it('keeps a page\'s content when readability would return only the site menu', async () => {
+    // Elementor/WordPress shape: readability picks the page-wide wrapper, then
+    // drops the content blocks because their class says "widget", leaving the
+    // menu. A pick that is mostly links falls back to the stripped body.
+    const links = Array.from({ length: 12 }, (_, i) => `<li><a href="/m${i}">Menu entry ${i}</a></li>`).join('')
+    site.pages.set('/mobile', { html: `<!doctype html><html><head><title>Mobile App</title></head><body>
+<div class="off-canvas-wrapper"><ul class="menu">${links}</ul>
+<div class="elementor-widget-wrap"><div class="elementor-widget">
+<p><b>The mobile app is no longer in development.</b></p>
+<p>Development continued through 2023, but with limited usage and a complex setup the app is no longer maintained. It is still in the app stores, but some features may not work. Use a mobile browser instead.</p>
+</div></div></div>
+</body></html>` })
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    await addSource(opts, lib.id, `${site.origin}/mobile`, { restrict_to_path: true, max_pages: 1 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+
+    const [page] = await pagesOf(lib.id)
+    expect(page!.content).toContain('no longer in development')
+    expect(page!.content).toContain('Use a mobile browser instead')
+    expect(page!.content).not.toContain('Menu entry')
+  })
+
+  it('keeps a listing page\'s links while still dropping an unmarked menu', async () => {
+    // Mostly links, so readability's pick is rejected; the fallback must tell
+    // descriptive entries (content) from short labels (menu).
+    const items = ['Getting started guide for new planters', 'Training videos on disciple making', 'How to set up your prayer team', 'Downloadable coaching checklist as a PDF', 'Questions people ask about the mobile app', 'Contact the support team for account help']
+    const list = items.map((t, i) => `<li><a href="/r${i}">${t}</a></li>`).join('')
+    const menu = ['Home', 'About', 'Blog', 'Contact us', 'Give'].map((t, i) => `<li><a href="/m${i}">${t}</a></li>`).join('')
+    site.pages.set('/resources', { html: `<!doctype html><html><head><title>Resources</title></head><body>
+<div class="top"><ul>${menu}</ul></div>
+<div class="content"><h1>Resources</h1><p>Everything below.</p><ul>${list}</ul></div>
+</body></html>` })
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    await addSource(opts, lib.id, `${site.origin}/resources`, { restrict_to_path: true, max_pages: 1 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+
+    const [page] = await pagesOf(lib.id)
+    for (const item of items) expect(page!.content).toContain(item)
+    expect(page!.content).not.toContain('Contact us')
+  })
+
   it('reports an unreachable start page as an error and never blocks a re-sync', async () => {
     const { opts } = await createHelpinatorOrgWith(sql)
     const lib = await createWebsiteLibrary(opts)
@@ -281,5 +326,54 @@ describe('website crawl', () => {
     const lib2 = await getLibrary(opts, lib.id)
     expect(lib2.sources[0]!.status).toBe('error')
     expect(lib2.sources[0]!.last_error).toMatch(/interrupted/)
+  })
+
+  it('the scheduled sweep re-crawls only sources whose last sync is older than the max age, across orgs', async () => {
+    const a = await createHelpinatorOrgWith(sql)
+    const b = await createHelpinatorOrgWith(sql)
+    const libA = await createWebsiteLibrary(a.opts)
+    const libB = await createWebsiteLibrary(b.opts)
+    const stale = await addSource(a.opts, libA.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    const fresh = await addSource(b.opts, libB.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    await waitForSync(a.opts, libA.id)
+    await waitForSync(b.opts, libB.id)
+    await sql`UPDATE helpinator_library_sources SET run_started_at = now() - interval '8 days', last_synced_at = now() - interval '8 days' WHERE id = ${stale.id}`
+    const [freshBefore] = await sql<{ last_synced_at: Date }[]>`SELECT last_synced_at FROM helpinator_library_sources WHERE id = ${fresh.id}`
+
+    site.pages.set('/docs/anvils', { html: article('Anvils', 'anvil forging', '<p>WEEKLY-UPDATE about quenching.</p>') })
+    const res = await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 7 } })
+    expect(res.started).toBe(1)
+
+    const rows = await sql<{ id: string, status: string, last_synced_at: Date }[]>`
+      SELECT id, status, last_synced_at FROM helpinator_library_sources WHERE id IN (${stale.id}, ${fresh.id})
+    `
+    const staleRow = rows.find(r => r.id === stale.id)!
+    expect(staleRow.status).toBe('done')
+    expect(Date.now() - staleRow.last_synced_at.getTime()).toBeLessThan(60_000)
+    expect(rows.find(r => r.id === fresh.id)!.last_synced_at.getTime()).toBe(freshBefore!.last_synced_at.getTime())
+    expect((await pagesOf(libA.id)).find(p => p.url.endsWith('/docs/anvils'))!.content).toContain('WEEKLY-UPDATE')
+
+    // Now nothing is due.
+    expect((await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 7 } })).started).toBe(0)
+  })
+
+  it('a scheduled run cut off by a restart is due again on the next sweep, not counted as fresh', async () => {
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    const source = await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    await waitForSync(opts, lib.id)
+    // Queued by a sweep (stamped just now), then the process died.
+    await sql`UPDATE helpinator_library_sources SET status = 'syncing', run_token = gen_random_uuid(), run_started_at = now() - interval '10 minutes', run_heartbeat_at = now() - interval '10 minutes', last_synced_at = now() - interval '8 days' WHERE id = ${source.id}`
+
+    const res = await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 7 } })
+    expect(res.started).toBeGreaterThanOrEqual(1)
+    const [row] = await sql<{ status: string, last_synced_at: Date }[]>`SELECT status, last_synced_at FROM helpinator_library_sources WHERE id = ${source.id}`
+    expect(row!.status).toBe('done')
+    expect(Date.now() - row!.last_synced_at.getTime()).toBeLessThan(60_000)
+  })
+
+  it('the scheduled sweep accepts a fractional max age', async () => {
+    const res = await $fetch<{ started: number }>('/api/_test/helpinator-sync-sweep', { method: 'POST', body: { maxAgeDays: 1.5 } })
+    expect(res.started).toBeGreaterThanOrEqual(0)
   })
 })

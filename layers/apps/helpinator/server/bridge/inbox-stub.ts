@@ -1,5 +1,5 @@
 // `#helpinator/inbox` when the inbox layer is NOT loaded. Never imports inbox
-// or crm, so the layer builds without them; handoff and elevation report
+// or crm, so the layer builds without them; handoff reports
 // unavailable and the widget hides its "still need help?" option.
 import { createError } from 'h3'
 import type { HelpinatorInboxBridge } from './types'

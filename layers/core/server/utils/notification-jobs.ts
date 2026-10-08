@@ -25,6 +25,7 @@
 
 import { sql, type Transaction } from 'kysely'
 import { db } from '#core/server/utils/database'
+import { withAdvisoryLock } from '#core/server/utils/advisory-lock'
 import type { Database } from '#core/server/database/schema'
 import {
   sendImmediateNotificationEmail,
@@ -72,30 +73,14 @@ async function withScopeTx<T>(
   })
 }
 
-// Cross-replica gate: only one process per cluster runs a given job. The lock
-// is session-scoped, so a crash releases it automatically.
-async function withAdvisoryLock(key: string, label: string, fn: () => Promise<void>): Promise<void> {
-  // Session-scoped lock ops must share ONE pinned connection: `db` is a pool,
-  // and if acquire and unlock ran as independent queries they could land on
-  // different sessions — the unlock would no-op ("you don't own a lock"
-  // warning) and the lock would stay held by the acquiring session, silently
-  // skipping every later run until the pool happens to reuse that session.
-  // The pinned connection sits idle while fn() runs (fn opens its own
-  // transactions from the pool); it only anchors the lock.
-  await db.connection().execute(async (conn) => {
-    const lockRow = await sql<{ got: boolean }>`
-      select pg_try_advisory_lock(${sql.raw(key)}::bigint) as got
-    `.execute(conn)
-    if (!lockRow.rows[0]?.got) {
-      console.log(`[notifications] another replica holds the ${label} lock — skipping`)
-      return
-    }
-    try {
-      await fn()
-    } finally {
-      await sql`select pg_advisory_unlock(${sql.raw(key)}::bigint)`.execute(conn)
-    }
-  })
+// Cross-replica gate: only one process per cluster runs a given job. Rows are
+// stamped only after their email goes out, so an overlapping run would send
+// duplicates: the idle allowance is generous (a hung or orphaned run blocks
+// the job for that long, not for the life of the process).
+const LOCK_STALE_AFTER_MS = 30 * 60 * 1000
+
+function withJobLock(key: string, label: string, fn: () => Promise<void>): Promise<void> {
+  return withAdvisoryLock(key, { scope: 'notifications', label, staleAfterMs: LOCK_STALE_AFTER_MS }, fn)
 }
 
 // Distinct, committed lock keys — don't change without coordinating across
@@ -132,7 +117,7 @@ async function stampEmailed(orgId: string | null, ids: string[]): Promise<void> 
 }
 
 export async function runImmediateSweep(): Promise<void> {
-  await withAdvisoryLock(IMMEDIATE_LOCK_KEY, 'immediate', async () => {
+  await withJobLock(IMMEDIATE_LOCK_KEY, 'immediate', async () => {
     for (const org of await listOrgScopes()) {
       const orgId = org?.id ?? null
       let rows: NotificationEmailRow[] = []
@@ -150,7 +135,7 @@ export async function runImmediateSweep(): Promise<void> {
 }
 
 export async function runDigest(): Promise<void> {
-  await withAdvisoryLock(DIGEST_LOCK_KEY, 'digest', async () => {
+  await withJobLock(DIGEST_LOCK_KEY, 'digest', async () => {
     // One digest email per user, aggregated across all of that user's orgs
     // and grouped by org inside the email.
     const perUser = new Map<string, DigestOrgGroup[]>()
@@ -190,7 +175,7 @@ export async function runDigest(): Promise<void> {
 }
 
 export async function runRetention(): Promise<void> {
-  await withAdvisoryLock(RETENTION_LOCK_KEY, 'retention', async () => {
+  await withJobLock(RETENTION_LOCK_KEY, 'retention', async () => {
     const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000)
     for (const org of await listOrgScopes()) {
       await withScopeTx(org?.id ?? null, async (tx) => {

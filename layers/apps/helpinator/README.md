@@ -8,7 +8,7 @@ who still needs help is handed off to the shared inbox.
 
 Requires `@nuxtinator/context` and `@nuxtinator/ai`. `@nuxtinator/inbox`
 (which needs `@nuxtinator/crm`) is **optional**. Without it, the widget hides
-"Still need help?" and staff can't elevate conversations.
+"Still need help?".
 
 ## Features
 
@@ -31,6 +31,8 @@ Requires `@nuxtinator/context` and `@nuxtinator/ai`. `@nuxtinator/inbox`
   - an allowed-origins list
   - a daily message cap
   - optional extra instructions
+  - up to six suggested questions, shown as clickable buttons under the
+    greeting until the visitor sends a message
   - appearance (colour, position, title, greeting, placeholder, handoff prompt)
 - **Embed helper.** The widget page shows the snippet to paste, a CSS-variables
   block to match the site's look, and a live preview of the saved widget.
@@ -47,10 +49,6 @@ Requires `@nuxtinator/context` and `@nuxtinator/ai`. `@nuxtinator/inbox`
   unassigned** inbox conversation (`source: 'helpinator'`) with the transcript
   as its first message. The visitor gets the inbox auto-ack plus a copy of the
   transcript. This happens at most once per conversation.
-- **Staff elevation.** This needs `helpinator.manage` + `inbox.send`, and only
-  works when the visitor left an email. It creates the inbox conversation
-  **assigned to the elevating user**, sends the visitor nothing, and opens the
-  inbox composer (`/inbox/<id>?reply=1`).
 - **Log.** Read-only, filterable per widget and by handoff state. Each reply
   lists the searches it ran and the pages it read. Each conversation shows its page URL,
   origin and user agent. Raw IPs are never stored.
@@ -130,8 +128,7 @@ user-message | bot-message | composer | send | form | banner)`.
 ## Permissions
 
 - `helpinator.access`: open the app and read the conversation log.
-- `helpinator.manage`: configure widgets and elevate conversations. Elevation
-  also needs `inbox.send`.
+- `helpinator.manage`: configure widgets.
 
 Default grants: `admin` gets both, `member` gets neither.
 

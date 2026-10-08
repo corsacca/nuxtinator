@@ -79,6 +79,7 @@ export interface HelpinatorWidget {
   appearance: Partial<HelpinatorAppearanceForm>
   appearance_defaults: HelpinatorAppearanceForm
   extra_instructions: string
+  starter_questions: string[]
   created_at: string
   updated_at: string
 }

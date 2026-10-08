@@ -84,12 +84,14 @@ export interface HelpinatorWidgetsTable {
   enabled: Generated<boolean>
   appearance: ColumnType<HelpinatorAppearance, HelpinatorAppearance | string | undefined, HelpinatorAppearance | string>
   extra_instructions: Generated<string>
+  // Clickable suggestions shown before the visitor's first message.
+  starter_questions: Generated<string[]>
   created_by: string | null
   created_at: ColumnType<Date, Date | string | undefined, Date | string>
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>
 }
 
-// handoff_kind: 'visitor' (self-service "still need help") | 'staff' (manual elevation)
+// handoff_kind: 'visitor' (self-service "still need help") | 'staff' (manual elevation, since removed; older rows only)
 export type HelpinatorHandoffKind = 'visitor' | 'staff'
 
 export interface HelpinatorConversationsTable {

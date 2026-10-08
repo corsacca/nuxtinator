@@ -4,7 +4,6 @@ export interface HelpinatorStatus {
   aiConfigured: boolean
   inboxAvailable: boolean
   canManage: boolean
-  canElevate: boolean
   appearanceDefaults: HelpinatorAppearanceForm
 }
 

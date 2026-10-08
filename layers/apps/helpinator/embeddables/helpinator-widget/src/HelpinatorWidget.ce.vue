@@ -28,18 +28,20 @@ const input = ref('')
 const sending = ref(false)
 const status = ref('')
 const error = ref('')
-const panel = ref(null) // 'email' | 'handoff' | null
+const panel = ref(null) // 'handoff' | null
 const emailDraft = ref('')
 const formBusy = ref(false)
 const formError = ref('')
-const notice = ref('')
 const listEl = ref(null)
 const inputEl = ref(null)
+const emailEl = ref(null)
 
 const appearance = computed(() => config.value?.appearance ?? {})
 const rootStyle = computed(() => ({ '--hp-default-primary': appearance.value.primary_color || '#2563eb' }))
 const positionClass = computed(() => appearance.value.position === 'bottom-left' ? 'hp-left' : 'hp-right')
 const hasUserMessage = computed(() => messages.value.some(m => m.role === 'user' && !m.pending))
+// Suggested questions only make sense before the conversation starts.
+const starters = computed(() => messages.value.length ? [] : (config.value?.starterQuestions ?? []))
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -78,7 +80,6 @@ function resetConversation() {
   visitorEmail.value = null
   handedOff.value = false
   panel.value = null
-  notice.value = ''
   error.value = ''
   clearState(props.widgetId)
   persist()
@@ -129,8 +130,17 @@ watch(isOpen, (open) => {
   if (open) {
     scrollToEnd()
     nextTick(() => inputEl.value?.focus())
+  } else {
+    // Closing the widget dismisses any open handoff form.
+    panel.value = null
+    formError.value = ''
   }
 })
+
+function ask(question) {
+  input.value = question
+  send()
+}
 
 async function send() {
   const text = input.value.trim()
@@ -190,30 +200,15 @@ function onKeydown(e) {
   }
 }
 
+// The form replaces the composer while open, so move focus with it.
+watch(panel, (val) => {
+  nextTick(() => (val ? emailEl.value : inputEl.value)?.focus())
+})
+
 function openPanel(kind) {
   panel.value = panel.value === kind ? null : kind
   emailDraft.value = visitorEmail.value || ''
   formError.value = ''
-}
-
-async function saveEmail() {
-  if (!token.value) {
-    formError.value = 'Ask a question first, then add your email.'
-    return
-  }
-  formBusy.value = true
-  formError.value = ''
-  try {
-    const res = await api.value.setEmail(token.value, emailDraft.value.trim() || null)
-    visitorEmail.value = res.visitorEmail
-    panel.value = null
-    notice.value = res.visitorEmail ? `Thanks — we'll use ${res.visitorEmail} if we need to follow up.` : ''
-    persist()
-  } catch (err) {
-    formError.value = err.message
-  } finally {
-    formBusy.value = false
-  }
 }
 
 async function handoff() {
@@ -225,7 +220,6 @@ async function handoff() {
     visitorEmail.value = email.toLowerCase()
     handedOff.value = true
     panel.value = null
-    notice.value = ''
     persist()
     scrollToEnd()
   } catch (err) {
@@ -246,7 +240,13 @@ async function handoff() {
       :aria-label="appearance.title"
     >
       <header class="hp-header" part="header">
-        <span class="hp-title">{{ appearance.title }}</span>
+        <div class="hp-heading">
+          <span class="hp-title">{{ appearance.title }}</span>
+          <span class="hp-subtitle">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>
+            AI assistant
+          </span>
+        </div>
         <button
           v-if="hasUserMessage"
           class="hp-icon-btn"
@@ -269,7 +269,24 @@ async function handoff() {
       <template v-else>
         <div ref="listEl" class="hp-messages" aria-live="polite">
           <div class="hp-msg hp-bot" part="message bot-message">
+            <span class="hp-sender" part="sender">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>
+              AI assistant
+            </span>
             <div class="hp-bubble" v-html="renderMarkdown(appearance.greeting)" />
+          </div>
+          <div v-if="starters.length" class="hp-starters" part="starters">
+            <button
+              v-for="q in starters"
+              :key="q"
+              type="button"
+              class="hp-starter"
+              part="starter"
+              :disabled="sending"
+              @click="ask(q)"
+            >
+              {{ q }}
+            </button>
           </div>
           <div
             v-for="m in messages"
@@ -278,6 +295,10 @@ async function handoff() {
             :class="m.role === 'user' ? 'hp-user' : 'hp-bot'"
             :part="m.role === 'user' ? 'message user-message' : 'message bot-message'"
           >
+            <span v-if="m.role !== 'user'" class="hp-sender" part="sender">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>
+              AI assistant
+            </span>
             <div v-if="m.role === 'user'" class="hp-bubble">{{ m.content }}</div>
             <div v-else-if="m.content" class="hp-bubble" v-html="renderMarkdown(m.content)" />
             <div v-else class="hp-bubble hp-typing" aria-label="Assistant is typing">
@@ -289,19 +310,19 @@ async function handoff() {
             Thanks — a team member will follow up by email{{ visitorEmail ? ` at ${visitorEmail}` : '' }}.
             You can keep chatting here in the meantime.
           </div>
-          <div v-if="notice" class="hp-notice">{{ notice }}</div>
         </div>
 
         <div v-if="panel" class="hp-form" part="form">
           <p class="hp-form-text">
-            {{ panel === 'handoff' ? appearance.handoff_prompt : 'Leave your email so our team can follow up if needed (optional).' }}
+            {{ appearance.handoff_prompt }}
           </p>
-          <form @submit.prevent="panel === 'handoff' ? handoff() : saveEmail()">
+          <form @submit.prevent="handoff">
             <input
+              ref="emailEl"
               v-model="emailDraft"
               class="hp-input"
               type="email"
-              :required="panel === 'handoff'"
+              required
               placeholder="you@example.com"
               autocomplete="email"
               aria-label="Your email"
@@ -309,7 +330,7 @@ async function handoff() {
             <div class="hp-form-actions">
               <button type="button" class="hp-link" @click="panel = null">Cancel</button>
               <button type="submit" class="hp-btn" :disabled="formBusy">
-                {{ panel === 'handoff' ? 'Send to the team' : 'Save' }}
+                Send to the team
               </button>
             </div>
           </form>
@@ -318,7 +339,8 @@ async function handoff() {
 
         <div v-if="error" class="hp-error hp-error-bar">{{ error }}</div>
 
-        <form class="hp-composer" part="composer" @submit.prevent="send">
+        <!-- The form above replaces the composer and footer, so there's only one text box to type in. -->
+        <form v-if="!panel" class="hp-composer" part="composer" @submit.prevent="send">
           <textarea
             ref="inputEl"
             v-model="input"
@@ -334,7 +356,8 @@ async function handoff() {
           </button>
         </form>
 
-        <footer class="hp-footer">
+        <footer v-if="!panel" class="hp-footer">
+          <span class="hp-disclaimer">AI-generated answers can be wrong.</span>
           <button
             v-if="config.handoffAvailable && !handedOff"
             type="button"
@@ -344,15 +367,6 @@ async function handoff() {
             @click="openPanel('handoff')"
           >
             Still need help?
-          </button>
-          <button
-            v-if="config.handoffAvailable && !handedOff"
-            type="button"
-            class="hp-link"
-            :disabled="!hasUserMessage"
-            @click="openPanel('email')"
-          >
-            {{ visitorEmail ? 'Change email' : 'Add your email' }}
           </button>
         </footer>
       </template>
@@ -366,8 +380,8 @@ async function handoff() {
       :aria-expanded="isOpen"
       @click="isOpen = !isOpen"
     >
-      <svg v-if="!isOpen" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+      <svg v-if="!isOpen" class="hp-logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3l9.4 18h-3.9L12 9.5 6.5 21H2.6z" />
       </svg>
       <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
     </button>
@@ -389,7 +403,7 @@ async function handoff() {
  *   --helpinator-offset-x / --helpinator-offset-y     distance from the corner
  *   --helpinator-width / --helpinator-height          panel size
  * Parts for deeper overrides: launcher, panel, header, message, user-message,
- * bot-message, composer, send, form, banner.
+ * bot-message, sender, starters, starter, composer, send, form, banner.
  */
 :host {
   all: initial;
@@ -433,6 +447,7 @@ async function handoff() {
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.2);
 }
 .hp-launcher svg { width: 26px; height: 26px; }
+.hp-launcher svg.hp-logo { fill: currentColor; stroke: none; }
 
 svg {
   fill: none;
@@ -462,7 +477,16 @@ svg {
   background: var(--hp-primary);
   color: var(--hp-on-primary);
 }
-.hp-title { flex: 1; font-weight: 600; font-size: 15px; }
+.hp-heading { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.hp-title { font-weight: 600; font-size: 15px; }
+.hp-subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.hp-subtitle svg { width: 12px; height: 12px; }
 .hp-icon-btn {
   border: none;
   background: transparent;
@@ -489,6 +513,15 @@ svg {
 }
 .hp-msg { display: flex; }
 .hp-user { justify-content: flex-end; }
+.hp-bot { flex-direction: column; align-items: flex-start; gap: 2px; }
+.hp-sender {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--hp-muted);
+}
+.hp-sender svg { width: 11px; height: 11px; }
 .hp-bubble {
   max-width: 85%;
   padding: 8px 12px;
@@ -524,7 +557,28 @@ svg {
 .hp-typing span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes hp-blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 
-.hp-status, .hp-notice { font-size: 12px; color: var(--hp-muted); }
+.hp-starters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.hp-starter {
+  max-width: 85%;
+  padding: 6px 12px;
+  border: 1px solid var(--hp-primary);
+  border-radius: 999px;
+  background: var(--hp-bg);
+  color: var(--hp-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: right;
+  cursor: pointer;
+}
+.hp-starter:hover { background: color-mix(in srgb, var(--hp-primary) 8%, var(--hp-bg)); }
+.hp-starter:disabled { opacity: 0.6; cursor: default; }
+
+.hp-status { font-size: 12px; color: var(--hp-muted); }
 .hp-banner {
   font-size: 13px;
   padding: 10px 12px;
@@ -602,6 +656,7 @@ svg {
   padding: 0 14px 10px;
   min-height: 4px;
 }
+.hp-disclaimer { font-size: 12px; color: var(--hp-muted); }
 .hp-link {
   border: none;
   background: none;
