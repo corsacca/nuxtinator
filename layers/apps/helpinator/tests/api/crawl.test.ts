@@ -290,6 +290,64 @@ describe('website crawl', () => {
     expect((await pagesOf(lib.id)).map(p => p.url)).toEqual([`${site.origin}/docs`, `${site.origin}/docs/anvils`, `${site.origin}/docs/horseshoes`])
   })
 
+  it('a page reached by a redirect is stored under its own URL, whichever fetch answers first', async () => {
+    // /docs links an old URL (redirecting onto /docs/anvils/) ahead of
+    // /docs/anvils itself; both land on the same page at the same depth.
+    site.pages.set('/docs', { html: article('Docs', 'the docs index', '<p><a href="/docs/old-anvils">Old anvils</a> <a href="/docs/anvils">Anvils</a></p>') })
+    site.pages.set('/docs/old-anvils', { html: '', redirect: '/docs/anvils/' })
+    site.pages.set('/docs/anvils/', { html: article('Anvils', 'anvil forging') })
+    // First run: the direct fetch answers last.
+    site.pages.set('/docs/anvils', { html: article('Anvils', 'anvil forging'), delayMs: 400 })
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    const source = await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    await waitForSync(opts, lib.id)
+    const anvilsId = async () => (await sql<{ id: string }[]>`
+      SELECT id FROM helpinator_library_pages WHERE library_id = ${lib.id} AND url = ${`${site.origin}/docs/anvils`}
+    `)[0]?.id
+    const urls = async () => (await pagesOf(lib.id)).map(p => p.url)
+    expect(await urls()).toEqual([`${site.origin}/docs`, `${site.origin}/docs/anvils`])
+    const firstId = await anvilsId()
+    expect(firstId).toBeDefined()
+
+    // Second run: the redirect answers last. Same URL, same row.
+    site.pages.set('/docs/anvils', { html: article('Anvils', 'anvil forging') })
+    site.pages.set('/docs/anvils/', { html: article('Anvils', 'anvil forging'), delayMs: 400 })
+    await $fetch(`/api/helpinator/libraries/${lib.id}/sources/${source.id}/sync`, { method: 'POST', ...opts })
+    await waitForSync(opts, lib.id)
+    expect(await urls()).toEqual([`${site.origin}/docs`, `${site.origin}/docs/anvils`])
+    expect(await anvilsId()).toBe(firstId)
+  })
+
+  it('a transient failure part-way down keeps the pages below it', async () => {
+    seedDeepAnvils()
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    const source = await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10, max_depth: 3 })
+    await waitForSync(opts, lib.id)
+    const before = (await pagesOf(lib.id)).map(p => p.url)
+    expect(before).toContain(`${site.origin}/docs/anvils/tempering/quench`)
+
+    // /docs/anvils is down for this run, so tempering and quench go unvisited.
+    site.pages.set('/docs/anvils', { html: '', status: 503 })
+    site.hits.length = 0
+    await $fetch(`/api/helpinator/libraries/${lib.id}/sources/${source.id}/sync`, { method: 'POST', ...opts })
+    const done = await waitForSync(opts, lib.id)
+    const s = done.sources[0]!
+    expect(s.status).toBe('done')
+    expect(s.last_error).toContain('/docs/anvils: HTTP 503')
+    expect(site.hits).not.toContain('/docs/anvils/tempering')
+    expect((await pagesOf(lib.id)).map(p => p.url)).toEqual(before)
+    expect(s.page_count).toBe(before.length)
+
+    // Back up: a clean run prunes as usual.
+    seedDeepAnvils()
+    site.pages.delete('/docs/anvils/tempering/quench')
+    await $fetch(`/api/helpinator/libraries/${lib.id}/sources/${source.id}/sync`, { method: 'POST', ...opts })
+    await waitForSync(opts, lib.id)
+    expect((await pagesOf(lib.id)).map(p => p.url)).not.toContain(`${site.origin}/docs/anvils/tempering/quench`)
+  })
+
   it('reports an unreachable start page as an error and never blocks a re-sync', async () => {
     const { opts } = await createHelpinatorOrgWith(sql)
     const lib = await createWebsiteLibrary(opts)

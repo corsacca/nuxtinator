@@ -297,9 +297,24 @@ interface RunContext {
   // Final URLs (after redirects) already taken by a page of this run, so a
   // link that redirects onto another (`/docs/a/` → `/docs/a`) is stored once.
   claimed: Set<string>
-  // Set by the first worker that hits a superseded token or an unexpected
-  // error; every worker stops at its next URL.
+  // Every URL this run fetches (or has fetched) under its own address. A
+  // link that redirects onto one of them leaves the page to it, so which URL
+  // stores a page doesn't depend on which fetch answers first.
+  queued: Set<string>
+  // A page whose links the crawl needed failed transiently, so the pages
+  // below it went unvisited: the run can't tell which stored pages vanished.
+  incomplete: boolean
+  // Set by the first worker that hits a superseded token; every worker stops
+  // at its next URL.
   stopped: unknown
+}
+
+// A transient failure keeps the page's stored copy and, when the crawl
+// needed its links, the copies of everything below it.
+function keepAfterFailure(ctx: RunContext, url: string, wantLinks: boolean, message: string): void {
+  ctx.counters.failed.push(`${url}: ${message}`)
+  ctx.counters.keep.add(url)
+  if (wantLinks) ctx.incomplete = true
 }
 
 // Fetch, extract and store one page. Three steps so no tx spans the network:
@@ -318,13 +333,11 @@ async function processUrl(ctx: RunContext, url: string, wantLinks: boolean, pref
     fetched = prefetched ?? await fetchHtml(url)
   } catch (err) {
     // Timeouts and network errors are transient: keep the stored copy.
-    counters.failed.push(`${url}: ${(err as Error)?.message ?? 'fetch failed'}`)
-    counters.keep.add(url)
+    keepAfterFailure(ctx, url, wantLinks, (err as Error)?.message ?? 'fetch failed')
     return []
   }
   if (fetched.status === 429 || fetched.status >= 500) {
-    counters.failed.push(`${url}: HTTP ${fetched.status}`)
-    counters.keep.add(url)
+    keepAfterFailure(ctx, url, wantLinks, `HTTP ${fetched.status}`)
     return []
   }
   if (!fetched.html) {
@@ -332,7 +345,7 @@ async function processUrl(ctx: RunContext, url: string, wantLinks: boolean, pref
     return []
   }
   const finalKey = helpinatorNormalizeUrl(fetched.finalUrl) ?? url
-  if (ctx.claimed.has(finalKey)) {
+  if (ctx.claimed.has(finalKey) || (finalKey !== url && ctx.queued.has(finalKey))) {
     counters.skipped++
     return []
   }
@@ -481,8 +494,7 @@ async function crawlLevel(ctx: RunContext, items: { url: string, prefetched?: Fe
           if (err instanceof Superseded) throw err
           const message = (err as { statusMessage?: string, message?: string })?.statusMessage || (err as Error)?.message || 'failed'
           console.error(`[helpinator] crawl of ${url} failed:`, err)
-          ctx.counters.failed.push(`${url}: ${message}`)
-          ctx.counters.keep.add(url)
+          keepAfterFailure(ctx, url, wantLinks, message)
         }
         await setProgress(ctx.orgId, ctx.source.id, ctx.token, 'item-done')
         await sleep(GAP_MS)
@@ -518,6 +530,8 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
       orgId, source, token, startedAt, embedRun, counters,
       scope: helpinatorCrawlScope(first.finalUrl, source.restrict_to_path),
       claimed: new Set(),
+      queued: new Set([source.url]),
+      incomplete: false,
       stopped: null
     }
 
@@ -537,6 +551,7 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
         seen.add(url)
         if (!robots.isAllowed(url)) continue
         out.push(url)
+        ctx.queued.add(url)
         total++
       }
       return out
@@ -554,18 +569,29 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
 
     // Pages of this source not seen this run are gone from the site — except
     // those whose fetch failed transiently, which keep their last good copy.
-    await helpinatorScopeTx(orgId, async (tx) => {
+    // An incomplete run deletes nothing (pages below a failed one weren't
+    // looked at) and counts what it leaves stored; the next clean run prunes.
+    const totals = await helpinatorScopeTx(orgId, async (tx) => {
       await assertToken(tx, source.id, token)
+      if (ctx.incomplete) {
+        const row = await tx
+          .selectFrom('helpinator_library_pages')
+          .select(eb => [eb.fn.countAll<string>().as('pages'), eb.fn.coalesce(eb.fn.sum<string>('bytes'), eb.lit(0)).as('bytes')])
+          .where('source_id', '=', source.id)
+          .executeTakeFirstOrThrow()
+        return { page_count: Number(row.pages), bytes: Number(row.bytes) }
+      }
       let q = tx
         .deleteFrom('helpinator_library_pages')
         .where('source_id', '=', source.id)
         .where('fetched_at', '<', startedAt)
       if (counters.keep.size) q = q.where('url', 'not in', [...counters.keep])
       await q.execute()
+      return { page_count: counters.pages, bytes: counters.bytes }
     })
 
     const errorNote = counters.failed.length ? `${counters.failed.length} page(s) failed: ${counters.failed.slice(0, 3).join('; ')}` : null
-    await finish(orgId, source.id, token, { status: 'done', page_count: counters.pages, bytes: counters.bytes, last_error: errorNote })
+    await finish(orgId, source.id, token, { status: 'done', ...totals, last_error: errorNote })
   } catch (err) {
     if (err instanceof Superseded) return
     const message = ((err as { statusMessage?: string, message?: string })?.statusMessage || (err as Error)?.message || 'Crawl failed').slice(0, 500)

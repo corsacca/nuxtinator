@@ -392,8 +392,10 @@ async function prunePage(p: HelpinatorPageSummary) {
           <p class="text-xs text-(--ui-text-muted)">
             The entry's page and the same-site pages it links to are fetched — following links as many
             levels deep as the entry's depth, nearest pages first, up to its max pages — then read with a
-            readability extractor, and indexed for search. Pages are read-only: to correct or add to what
-            a site says, put it in a portfolio library the widget also uses.
+            readability extractor, and indexed for search. Each crawl keeps only the pages it reaches, so
+            raising the depth can swap out pages that no longer fit under max pages; raise max pages too
+            to keep them. Pages are read-only: to correct or add to what a site says, put it in a
+            portfolio library the widget also uses.
           </p>
         </div>
       </UCard>
