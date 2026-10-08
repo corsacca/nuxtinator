@@ -1,5 +1,5 @@
 // The website crawler against an in-process fixture site: discovery rules
-// (same host, one hop, path restriction, max pages, skipped PDFs and off-site
+// (same host, per-entry depth, path restriction, max pages, skipped PDFs and off-site
 // links, robots.txt), readability extraction to markdown, the content-hash
 // skip on re-crawl, vanished pages, per-library URL ownership, and pruning.
 import { describe, it, expect, afterEach, beforeEach, beforeAll, afterAll } from 'vitest'
@@ -192,6 +192,102 @@ describe('website crawl', () => {
     const [page] = await pagesOf(lib.id)
     for (const item of items) expect(page!.content).toContain(item)
     expect(page!.content).not.toContain('Contact us')
+  })
+
+  // /docs → /docs/anvils → /docs/anvils/tempering → /docs/anvils/tempering/quench
+  function seedDeepAnvils() {
+    site.pages.set('/docs/anvils', { html: article('Anvils', 'anvil forging', '<p><a href="/docs/anvils/tempering">Tempering</a></p>') })
+    site.pages.set('/docs/anvils/tempering', { html: article('Tempering', 'tempering steel', '<p><a href="/docs/anvils/tempering/quench">Quench</a></p>') })
+    site.pages.set('/docs/anvils/tempering/quench', { html: article('Quench', 'quenching') })
+  }
+
+  it('follows links one level deep by default', async () => {
+    seedDeepAnvils()
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    const source = await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 }) as { max_depth?: number }
+    expect(source.max_depth).toBe(1)
+    await waitForSync(opts, lib.id)
+    const urls = (await pagesOf(lib.id)).map(p => p.url)
+    expect(urls).toContain(`${site.origin}/docs/anvils`)
+    expect(urls).not.toContain(`${site.origin}/docs/anvils/tempering`)
+    // The start page is fetched once per run, not again for indexing.
+    expect(site.hits.filter(h => h === '/docs')).toHaveLength(1)
+  })
+
+  it('depth 0 crawls only the entry\'s own page', async () => {
+    seedDeepAnvils()
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10, max_depth: 0 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+    expect((await pagesOf(lib.id)).map(p => p.url)).toEqual([`${site.origin}/docs`])
+    expect(site.hits).not.toContain('/docs/anvils')
+  })
+
+  it('a deeper entry follows links from the pages it finds, to its depth and no further', async () => {
+    seedDeepAnvils()
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10, max_depth: 2 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+    const urls = (await pagesOf(lib.id)).map(p => p.url)
+    expect(urls).toContain(`${site.origin}/docs/anvils/tempering`)
+    expect(urls).not.toContain(`${site.origin}/docs/anvils/tempering/quench`)
+    expect(site.hits).not.toContain('/docs/anvils/tempering/quench')
+    // Still same-path only, robots honoured, and each page fetched once.
+    expect(site.hits).not.toContain('/pricing')
+    expect(site.hits).not.toContain('/docs/secret')
+    expect(site.hits.filter(h => h === '/docs/anvils')).toHaveLength(1)
+  })
+
+  it('max_pages caps a deep crawl, nearest pages first', async () => {
+    seedDeepAnvils()
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    // /docs, anvils, horseshoes fill the cap before tempering (depth 2).
+    await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 3, max_depth: 5 })
+    await waitForSync(opts, lib.id)
+    const urls = (await pagesOf(lib.id)).map(p => p.url)
+    expect(urls).toHaveLength(3)
+    expect(urls).not.toContain(`${site.origin}/docs/anvils/tempering`)
+  })
+
+  it('the depth of an entry can be changed and applies on the next crawl', async () => {
+    seedDeepAnvils()
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    const source = await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10 })
+    await waitForSync(opts, lib.id)
+
+    const updated = await $fetch<{ max_depth: number }>(`/api/helpinator/libraries/${lib.id}/sources/${source.id}`, { method: 'PUT', body: { restrict_to_path: true, max_pages: 10, max_depth: 3 }, ...opts })
+    expect(updated.max_depth).toBe(3)
+    // A PUT without max_depth keeps it.
+    const kept = await $fetch<{ max_depth: number }>(`/api/helpinator/libraries/${lib.id}/sources/${source.id}`, { method: 'PUT', body: { restrict_to_path: true, max_pages: 10 }, ...opts })
+    expect(kept.max_depth).toBe(3)
+    // Only the fields sent change: a depth edit leaves the page cap alone.
+    const partial = await $fetch<{ max_depth: number, max_pages: number, restrict_to_path: boolean }>(`/api/helpinator/libraries/${lib.id}/sources/${source.id}`, { method: 'PUT', body: { max_depth: 3 }, ...opts })
+    expect(partial).toMatchObject({ max_depth: 3, max_pages: 10, restrict_to_path: true })
+    await expect($fetch(`/api/helpinator/libraries/${lib.id}/sources/${source.id}`, { method: 'PUT', body: { restrict_to_path: true, max_pages: 10, max_depth: 6 }, ...opts })).rejects.toMatchObject({ statusCode: 400 })
+
+    await $fetch(`/api/helpinator/libraries/${lib.id}/sources/${source.id}/sync`, { method: 'POST', ...opts })
+    await waitForSync(opts, lib.id)
+    expect((await pagesOf(lib.id)).map(p => p.url)).toContain(`${site.origin}/docs/anvils/tempering/quench`)
+  })
+
+  it('a link that redirects to a page already crawled is not stored again', async () => {
+    // Horseshoes (depth 1) links an old URL that redirects to anvils (depth 1).
+    site.pages.set('/docs/horseshoes', { html: article('Horseshoes', 'horseshoe fitting', '<p><a href="/docs/old-anvils">Old anvils</a></p>') })
+    site.pages.set('/docs/old-anvils', { html: '', redirect: '/docs/anvils' })
+    const { opts } = await createHelpinatorOrgWith(sql)
+    const lib = await createWebsiteLibrary(opts)
+    await addSource(opts, lib.id, `${site.origin}/docs`, { restrict_to_path: true, max_pages: 10, max_depth: 2 })
+    const done = await waitForSync(opts, lib.id)
+    expect(done.sources[0]!.status).toBe('done')
+    expect(site.hits).toContain('/docs/old-anvils')
+    expect((await pagesOf(lib.id)).map(p => p.url)).toEqual([`${site.origin}/docs`, `${site.origin}/docs/anvils`, `${site.origin}/docs/horseshoes`])
   })
 
   it('reports an unreachable start page as an error and never blocks a re-sync', async () => {

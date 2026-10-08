@@ -1,5 +1,6 @@
-// The website-library crawler: discover the pages one hop from a source URL,
-// extract each page's main content as markdown, store it, and embed it.
+// The website-library crawler: discover the pages up to `max_depth` links from
+// a source URL (breadth first, capped at `max_pages`), extract each page's
+// main content as markdown, store it, and embed it.
 //
 // A run is fire-and-forget: the route stamps the source `syncing` with a fresh
 // run token and returns; the run then does its work in short org-scoped
@@ -66,12 +67,6 @@ export async function helpinatorScopeTx<T>(orgId: string | null, fn: (tx: Tx) =>
 
 // --- Discovery ---
 
-export interface HelpinatorCrawlPlan {
-  start: string
-  // Every URL to fetch, start page first, already normalised and capped.
-  urls: string[]
-}
-
 function pathPrefixOf(start: URL): string {
   const p = start.pathname.replace(/\/+$/, '')
   return p || '/'
@@ -82,39 +77,48 @@ function underPrefix(candidate: URL, prefix: string): boolean {
   return candidate.pathname === prefix || candidate.pathname.startsWith(`${prefix}/`)
 }
 
-// Same-host links in `html`, one hop from `start`, optionally restricted to
-// paths under the start path. `base` is where the fetch of `start` ended up
-// after redirects (`/docs` → `/docs/`, `site.com` → `www.site.com`): links
-// resolve against it and its host and path are the ones that count.
-// Pure — exported for tests.
-export function helpinatorDiscoverLinks(html: string, start: string, opts: { restrictToPath: boolean, maxPages: number, base?: string }): HelpinatorCrawlPlan {
-  const baseUrl = new URL(opts.base ?? start)
-  const prefix = pathPrefixOf(baseUrl)
-  const urls: string[] = [start]
-  const seen = new Set<string>([start])
-  const normalizedBase = helpinatorNormalizeUrl(baseUrl.toString())
-  if (normalizedBase) seen.add(normalizedBase)
-  const document = parseDom(html)
+// Which links a crawl may follow: same host as the start page and, when
+// restricted, under its path. Taken from where the fetch of the start page
+// ended up after redirects (`/docs` → `/docs/`, `site.com` → `www.site.com`).
+export interface HelpinatorCrawlScope {
+  hostname: string
+  prefix: string | null
+}
+
+export function helpinatorCrawlScope(base: string, restrictToPath: boolean): HelpinatorCrawlScope {
+  const u = new URL(base)
+  return { hostname: u.hostname, prefix: restrictToPath ? pathPrefixOf(u) : null }
+}
+
+// In-scope links in `document`, resolved against `pageUrl` (the page's final
+// URL after redirects), normalised, in document order, deduplicated.
+function pageLinks(document: DomNode, pageUrl: string, scope: HelpinatorCrawlScope): string[] {
+  const base = new URL(pageUrl)
+  const out: string[] = []
+  const seen = new Set<string>()
   for (const a of Array.from(document.querySelectorAll('a[href]'))) {
-    if (urls.length >= opts.maxPages) break
     const href = a.getAttribute('href') ?? ''
     if (!href || href.startsWith('#') || /^(mailto|tel|javascript):/i.test(href)) continue
     let abs: string | null
     try {
-      abs = helpinatorNormalizeUrl(new URL(href, baseUrl).toString())
+      abs = helpinatorNormalizeUrl(new URL(href, base).toString())
     } catch {
       continue
     }
     if (!abs) continue
     const u = new URL(abs)
-    if (u.hostname !== baseUrl.hostname) continue
+    if (u.hostname !== scope.hostname) continue
     if (SKIP_EXT_RE.test(u.pathname)) continue
-    if (opts.restrictToPath && !underPrefix(u, prefix)) continue
+    if (scope.prefix !== null && !underPrefix(u, scope.prefix)) continue
     if (seen.has(abs)) continue
     seen.add(abs)
-    urls.push(abs)
+    out.push(abs)
   }
-  return { start, urls }
+  return out
+}
+
+function linksOf(html: string, pageUrl: string, scope: HelpinatorCrawlScope): string[] {
+  return pageLinks(parseDom(html), pageUrl, scope)
 }
 
 // --- Extraction ---
@@ -164,7 +168,11 @@ function looksLikeMenu(el: DomNode): boolean {
 // page-wide wrapper, then drops the content blocks because their class says
 // "widget". A pick that is mostly links is treated as a rejection.
 export function helpinatorExtract(html: string, url: string): HelpinatorExtracted {
-  const document = parseDom(html)
+  return extractFrom(parseDom(html), url)
+}
+
+// Strips the document's chrome in place on the fallback path.
+function extractFrom(document: DomDocument, url: string): HelpinatorExtracted {
   const docTitle = (document.querySelector('title')?.textContent ?? '').trim()
   for (const el of Array.from(document.querySelectorAll('time'))) el.remove()
 
@@ -277,34 +285,65 @@ interface RunCounters {
   keep: Set<string>
 }
 
+// What every page of one run shares.
+interface RunContext {
+  orgId: string | null
+  source: HelpinatorSourceRow
+  token: string
+  startedAt: Date
+  embedRun: AiEmbeddingRun | null
+  scope: HelpinatorCrawlScope
+  counters: RunCounters
+  // Final URLs (after redirects) already taken by a page of this run, so a
+  // link that redirects onto another (`/docs/a/` → `/docs/a`) is stored once.
+  claimed: Set<string>
+  // Set by the first worker that hits a superseded token or an unexpected
+  // error; every worker stops at its next URL.
+  stopped: unknown
+}
+
 // Fetch, extract and store one page. Three steps so no tx spans the network:
 // a short tx decides what the page needs, the embedding call runs outside any
 // tx, and a short tx writes (re-checking the run token and URL ownership).
 // With no embedding run (no model configured) pages are stored unindexed;
 // the AI settings re-embed indexes them once a model is set.
-async function processUrl(orgId: string | null, source: HelpinatorSourceRow, token: string, url: string, startedAt: Date, embedRun: AiEmbeddingRun | null, counters: RunCounters): Promise<void> {
-  let fetched: Awaited<ReturnType<typeof fetchHtml>>
+// Returns the page's in-scope links when `wantLinks`, read from the same parse
+// as the content. `prefetched` is the start page, already fetched to vet the
+// source.
+type Fetched = Awaited<ReturnType<typeof fetchHtml>>
+async function processUrl(ctx: RunContext, url: string, wantLinks: boolean, prefetched?: Fetched): Promise<string[]> {
+  const { orgId, source, token, startedAt, embedRun, counters } = ctx
+  let fetched: Fetched
   try {
-    fetched = await fetchHtml(url)
+    fetched = prefetched ?? await fetchHtml(url)
   } catch (err) {
     // Timeouts and network errors are transient: keep the stored copy.
     counters.failed.push(`${url}: ${(err as Error)?.message ?? 'fetch failed'}`)
     counters.keep.add(url)
-    return
+    return []
   }
   if (fetched.status === 429 || fetched.status >= 500) {
     counters.failed.push(`${url}: HTTP ${fetched.status}`)
     counters.keep.add(url)
-    return
+    return []
   }
   if (!fetched.html) {
     counters.skipped++
-    return
+    return []
   }
-  const extracted = helpinatorExtract(fetched.html, url)
+  const finalKey = helpinatorNormalizeUrl(fetched.finalUrl) ?? url
+  if (ctx.claimed.has(finalKey)) {
+    counters.skipped++
+    return []
+  }
+  ctx.claimed.add(finalKey)
+  const document = parseDom(fetched.html)
+  // Before extraction, which strips the menus out of the document.
+  const links = wantLinks ? pageLinks(document, fetched.finalUrl, ctx.scope) : []
+  const extracted = extractFrom(document, url)
   if (!extracted.markdown) {
     counters.skipped++
-    return
+    return links
   }
   const hash = helpinatorContentHash(extracted.title, extracted.markdown)
   const bytes = Buffer.byteLength(extracted.markdown, 'utf8')
@@ -333,12 +372,12 @@ async function processUrl(orgId: string | null, source: HelpinatorSourceRow, tok
   })
   if (plan === 'skip') {
     counters.skipped++
-    return
+    return links
   }
   if (plan === 'kept') {
     counters.pages++
     counters.bytes += bytes
-    return
+    return links
   }
 
   const pieces = chunkPage(extracted.title, extracted.markdown)
@@ -374,25 +413,31 @@ async function processUrl(orgId: string | null, source: HelpinatorSourceRow, tok
   })
   if (!stored) {
     counters.skipped++
-    return
+    return links
   }
   counters.pages++
   counters.bytes += bytes
+  return links
 }
 
-// Progress writes are token-guarded but never throw: a superseded run finds
-// out at its next page write.
+// Progress writes are token-guarded and never throw: a superseded run finds
+// out at its next page write, and a failed write only costs the progress bar.
 // `run_done` is incremented in SQL: the workers' updates commit in any order,
-// so writing each worker's own count let a lower one land last.
+// so writing each worker's own count let a lower one land last. `run_total`
+// is only written between levels, when no worker is running.
 async function setProgress(orgId: string | null, sourceId: string, token: string, patch: { run_total: number } | 'item-done'): Promise<void> {
-  await helpinatorScopeTx(orgId, async (tx) => {
-    await tx
-      .updateTable('helpinator_library_sources')
-      .set({ ...(patch === 'item-done' ? { run_done: sql`run_done + 1` } : patch), run_heartbeat_at: sql`now()` })
-      .where('id', '=', sourceId)
-      .where('run_token', '=', token)
-      .execute()
-  })
+  try {
+    await helpinatorScopeTx(orgId, async (tx) => {
+      await tx
+        .updateTable('helpinator_library_sources')
+        .set({ ...(patch === 'item-done' ? { run_done: sql`run_done + 1` } : patch), run_heartbeat_at: sql`now()` })
+        .where('id', '=', sourceId)
+        .where('run_token', '=', token)
+        .execute()
+    })
+  } catch (err) {
+    console.warn('[helpinator] crawl progress write failed:', err)
+  }
 }
 
 // A queued run (waiting its turn in "Sync all") has no progress to write, so
@@ -419,6 +464,38 @@ async function finish(orgId: string | null, sourceId: string, token: string, pat
   })
 }
 
+// Crawl one level's URLs with bounded concurrency and a short gap between
+// starts. A page's own failure is recorded and the level goes on. Returns
+// each URL's links, in the level's order.
+async function crawlLevel(ctx: RunContext, items: { url: string, prefetched?: Fetched }[], wantLinks: boolean): Promise<string[][]> {
+  const found: string[][] = items.map(() => [])
+  let next = 0
+  const worker = async () => {
+    try {
+      while (!ctx.stopped && next < items.length) {
+        const i = next++
+        const { url, prefetched } = items[i]!
+        try {
+          found[i] = await processUrl(ctx, url, wantLinks, prefetched)
+        } catch (err) {
+          if (err instanceof Superseded) throw err
+          const message = (err as { statusMessage?: string, message?: string })?.statusMessage || (err as Error)?.message || 'failed'
+          console.error(`[helpinator] crawl of ${url} failed:`, err)
+          ctx.counters.failed.push(`${url}: ${message}`)
+          ctx.counters.keep.add(url)
+        }
+        await setProgress(ctx.orgId, ctx.source.id, ctx.token, 'item-done')
+        await sleep(GAP_MS)
+      }
+    } catch (err) {
+      ctx.stopped ??= err
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker))
+  if (ctx.stopped) throw ctx.stopped
+  return found
+}
+
 async function runSource(orgId: string | null, source: HelpinatorSourceRow, token: string): Promise<void> {
   const startedAt = new Date()
   const counters: RunCounters = { pages: 0, bytes: 0, skipped: 0, failed: [], keep: new Set() }
@@ -437,36 +514,43 @@ async function runSource(orgId: string | null, source: HelpinatorSourceRow, toke
     // Resolved once per run, in its own short tx; embeds then run outside any.
     // Null (no embedding model): pages are stored, just not indexed.
     const embedRun = await helpinatorScopeTx(orgId, tx => helpinatorEmbedRun(tx))
-    const plan = helpinatorDiscoverLinks(first.html, source.url, { restrictToPath: source.restrict_to_path, maxPages: source.max_pages, base: first.finalUrl })
-    const queue = plan.urls.filter(u => robots.isAllowed(u))
-    await setProgress(orgId, source.id, token, { run_total: queue.length })
+    const ctx: RunContext = {
+      orgId, source, token, startedAt, embedRun, counters,
+      scope: helpinatorCrawlScope(first.finalUrl, source.restrict_to_path),
+      claimed: new Set(),
+      stopped: null
+    }
 
-    // Bounded concurrency with a short gap between starts. A page's own
-    // failure is recorded and the run goes on; a superseded run stops every
-    // worker at its next URL.
-    let next = 0
-    let stopped: unknown = null
-    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
-      while (next < queue.length && !stopped) {
-        const url = queue[next++]!
-        try {
-          await processUrl(orgId, source, token, url, startedAt, embedRun, counters)
-        } catch (err) {
-          if (err instanceof Superseded) {
-            stopped = err
-            return
-          }
-          const message = (err as { statusMessage?: string, message?: string })?.statusMessage || (err as Error)?.message || 'failed'
-          console.error(`[helpinator] crawl of ${url} failed:`, err)
-          counters.failed.push(`${url}: ${message}`)
-          counters.keep.add(url)
-        }
-        await setProgress(orgId, source.id, token, 'item-done')
-        await sleep(GAP_MS)
+    // Breadth first, one level at a time: the start page is depth 0, the
+    // pages it links to depth 1, and so on to `max_depth`. A level is
+    // finished before the next is queued, in link order, so `max_pages`
+    // keeps the nearest pages.
+    const seen = new Set<string>([source.url])
+    const normalizedFinal = helpinatorNormalizeUrl(first.finalUrl)
+    if (normalizedFinal) seen.add(normalizedFinal)
+    let total = 1
+    const take = (links: string[]): string[] => {
+      const out: string[] = []
+      for (const url of links) {
+        if (total >= source.max_pages) break
+        if (seen.has(url) || ctx.claimed.has(url)) continue
+        seen.add(url)
+        if (!robots.isAllowed(url)) continue
+        out.push(url)
+        total++
       }
-    })
-    await Promise.all(workers)
-    if (stopped) throw stopped
+      return out
+    }
+    // The start page's links are queued up front so the first progress write
+    // has a real total.
+    let level = source.max_depth > 0 ? take(linksOf(first.html, first.finalUrl, ctx.scope)) : []
+    await setProgress(orgId, source.id, token, { run_total: total })
+    await crawlLevel(ctx, [{ url: source.url, prefetched: first }], false)
+    for (let depth = 1; level.length; depth++) {
+      const found = await crawlLevel(ctx, level.map(url => ({ url })), depth < source.max_depth)
+      level = found.flatMap(take)
+      if (level.length) await setProgress(orgId, source.id, token, { run_total: total })
+    }
 
     // Pages of this source not seen this run are gone from the site — except
     // those whose fetch failed transiently, which keep their last good copy.
