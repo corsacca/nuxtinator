@@ -11,7 +11,8 @@ import {
   createAiOrgMember,
   cleanupAiTestData,
   clearAiHostConfig,
-  AI_TEST_MODEL_IDS
+  AI_TEST_MODEL_IDS,
+  AI_TEST_TRANSCRIPTION_MODEL_ID
 } from '../helpers'
 
 interface OrgConfig {
@@ -117,7 +118,7 @@ describe('ai org config', () => {
     const config = await getOrgConfig(opts)
     expect(config.key).toEqual({ status: 'ok', last4: '1234' })
     expect(config.usingOwnKey).toBe(true)
-    expect(config.allowedModels.map(m => m.id).sort()).toEqual([...AI_TEST_MODEL_IDS].sort())
+    expect(config.allowedModels.map(m => m.id).sort()).toEqual([...AI_TEST_MODEL_IDS, AI_TEST_TRANSCRIPTION_MODEL_ID].sort())
     expect(JSON.stringify(config)).not.toContain('sk-or-test')
 
     // At rest: a ciphertext, not the key.

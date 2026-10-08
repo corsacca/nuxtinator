@@ -1,9 +1,9 @@
-// The VITEST stand-in for the OpenRouter network boundary. `complete()` and
-// `generate()` route here whenever `process.env.VITEST` is set, so suites run
-// without a key. Tests script the next answers over the control endpoint
-// (`/api/_test/ai`, see server/routes/api/_test/ai.ts) and read back a log of
-// every call the fake served, including the tool calls it made through the
-// caller's `onToolCall` handler.
+// The VITEST stand-in for the provider network boundary. `complete()`,
+// `generate()` and `transcribe()` route here whenever `process.env.VITEST` is
+// set, so suites run without a key. Tests script the next answers over the
+// control endpoint (`/api/_test/ai`, see server/routes/api/_test/ai.ts) and
+// read back a log of every call the fake served, including the tool calls it
+// made through the caller's `onToolCall` handler.
 //
 // State lives on a global symbol rather than in module scope: Nitro imports
 // routes lazily, so the control route and the client may not share a module
@@ -11,15 +11,19 @@
 import { createHash } from 'node:crypto'
 import { createError } from 'h3'
 import type {
-  AiCompleteOptions,
   AiCompleteResult,
   AiEmbedOptions,
   AiEmbedResult,
-  AiGenerateOptions,
   AiGenerateResult,
   AiToolCallRecord
 } from '#core/ai-fallback/types'
 import { AI_EMBED_DIMENSIONS } from '#core/ai-fallback/vectors'
+import type {
+  AiRichCompleteOptions,
+  AiRichGenerateOptions,
+  AiTranscribeOptions,
+  AiTranscribeResult
+} from '../../types/ai-ext'
 
 export interface AiFakeScript {
   // Text `complete()` returns. Default: `[[stub:<model>]]`.
@@ -41,6 +45,8 @@ export interface AiFakeScript {
   // `complete()` fails with this status (after any tool calls), like a
   // provider error mid-turn.
   failWith?: number
+  // Transcript `transcribe()` returns. Default: `[[transcript:<model>]]`.
+  transcript?: string
 }
 
 export interface AiFakeToolResult extends AiToolCallRecord {
@@ -48,10 +54,10 @@ export interface AiFakeToolResult extends AiToolCallRecord {
 }
 
 export interface AiFakeCall {
-  kind: 'complete' | 'generate' | 'embed'
+  kind: 'complete' | 'generate' | 'embed' | 'transcribe'
   model: string
-  system: AiCompleteOptions['system']
-  messages: AiCompleteOptions['messages']
+  system: AiRichCompleteOptions['system']
+  messages: AiRichCompleteOptions['messages']
   // Names of the tools the caller offered.
   tools: string[]
   toolResults: AiFakeToolResult[]
@@ -59,6 +65,10 @@ export interface AiFakeCall {
   streamed?: boolean
   // For `embed`: the strings embedded.
   input?: string[]
+  // The reasoning level the caller asked for.
+  reasoning?: AiRichCompleteOptions['reasoning']
+  // For `transcribe`: the audio's media type, size and prompt.
+  audio?: { mimeType: string, bytes: number, prompt?: string }
 }
 
 interface AiFakeState {
@@ -98,7 +108,7 @@ function fakeDeltas(text: string): string[] {
 
 // A streaming call sees the same sequence a real one would: any discarded
 // preface, the tool calls, the discard, then the reply word by word.
-export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Promise<AiCompleteResult> {
+export async function aiFakeComplete(opts: AiRichCompleteOptions, model: string): Promise<AiCompleteResult> {
   const state = getState()
   const entry: AiFakeCall = {
     kind: 'complete',
@@ -107,7 +117,8 @@ export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Pr
     messages: opts.messages,
     tools: (opts.tools ?? []).map(t => t.name),
     toolResults: [],
-    streamed: !!opts.onTextDelta
+    streamed: !!opts.onTextDelta,
+    reasoning: opts.reasoning
   }
   const scriptedCalls = opts.onToolCall ? state.script.toolCalls ?? [] : []
   const preface = opts.onTextDelta && scriptedCalls.length ? state.script.discardedText ?? '' : ''
@@ -134,7 +145,7 @@ export async function aiFakeComplete(opts: AiCompleteOptions, model: string): Pr
   return { text, model, finishReason: 'stop', toolCalls }
 }
 
-export function aiFakeGenerate<T>(opts: AiGenerateOptions, model: string): AiGenerateResult<T> {
+export function aiFakeGenerate<T>(opts: AiRichGenerateOptions, model: string): AiGenerateResult<T> {
   const state = getState()
   state.log.push({
     kind: 'generate',
@@ -142,15 +153,31 @@ export function aiFakeGenerate<T>(opts: AiGenerateOptions, model: string): AiGen
     system: opts.system,
     messages: opts.messages,
     tools: [opts.tool.name],
-    toolResults: []
+    toolResults: [],
+    reasoning: opts.reasoning
   })
   const input = (state.script.generateInput ?? stubToolInput(opts)) as T
   return { input, model, finishReason: 'tool_calls' }
 }
 
+export function aiFakeTranscribe(opts: AiTranscribeOptions, model: string): AiTranscribeResult {
+  const state = getState()
+  const bytes = opts.audio instanceof Blob ? opts.audio.size : opts.audio.byteLength
+  state.log.push({
+    kind: 'transcribe',
+    model,
+    system: undefined,
+    messages: [],
+    tools: [],
+    toolResults: [],
+    audio: { mimeType: opts.mimeType, bytes, prompt: opts.prompt }
+  })
+  return { text: state.script.transcript ?? `[[transcript:${model}]]`, model }
+}
+
 // Deterministic schema-shaped stub: fills each declared property with a value
 // of the right JSON type so a consumer's `required` fields are present.
-function stubToolInput(opts: AiGenerateOptions): Record<string, unknown> {
+function stubToolInput(opts: AiRichGenerateOptions): Record<string, unknown> {
   const schema = opts.tool.parameters as { properties?: Record<string, { type?: string }> }
   const props = schema.properties ?? {}
   const out: Record<string, unknown> = {}

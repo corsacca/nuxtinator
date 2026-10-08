@@ -1,10 +1,13 @@
 {
   "name": "@nuxtinator/ai",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./nuxt.config.ts"
+  },
+  "dependencies": {
+    "tinfoil": "^1.2.1"
   },
   "optionalDependencies": {
     "@nuxtinator/core": "*"

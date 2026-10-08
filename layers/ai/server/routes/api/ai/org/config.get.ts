@@ -13,7 +13,8 @@ import {
   AI_SETTING_FEATURE_MODELS,
   AI_SETTING_EMBEDDING_MODEL,
   getHostApiKey,
-  getModelList,
+  isTinfoilConfigured,
+  getAllModels,
   getOrgApiKey,
   getAllowedModels,
   getAiFeatures,
@@ -28,7 +29,7 @@ const ORG_SETTINGS_WRITE = 'org.settings.write' as Permission
 
 export default defineEventHandler(async (event) => {
   return await withOrgPermission(event, ORG_SETTINGS_WRITE, async (tx) => {
-    const list = await getModelList()
+    const list = await getAllModels()
     const key = await getOrgApiKey(tx)
     const [allowedModels, defaultModel, featureModels, effectiveDefaultModel] = await Promise.all([
       getAllowedModels(tx),
@@ -44,6 +45,7 @@ export default defineEventHandler(async (event) => {
         key: f.key,
         label: f.label,
         description: f.description,
+        kind: f.kind ?? 'chat',
         model: featureModels[f.key] ?? '',
         effectiveModel: await resolveFeatureModel(tx, f.key)
       }))
@@ -61,6 +63,7 @@ export default defineEventHandler(async (event) => {
     return {
       key: { status: key.status, last4: key.last4 },
       hostKeyConfigured: !!getHostApiKey(),
+      tinfoilConfigured: isTinfoilConfigured(),
       usingOwnKey: key.status === 'ok',
       modelListAvailable: list.length > 0,
       allowedModels,

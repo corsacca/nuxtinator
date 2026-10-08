@@ -20,3 +20,22 @@ export function getOpenRouterConfig(): OpenRouterConfig {
 export function getHostApiKey(): string {
   return getOpenRouterConfig().apiKey
 }
+
+// Env-derived Tinfoil settings. Tinfoil runs on the host's key only; orgs
+// cannot store their own.
+export interface TinfoilConfig {
+  apiKey: string
+  catalogUrl: string
+}
+
+export function getTinfoilConfig(): TinfoilConfig {
+  const c = useRuntimeConfig()
+  return {
+    apiKey: (c.tinfoilApiKey as string) || process.env.TINFOIL_API_KEY || '',
+    catalogUrl: (c.tinfoilCatalogUrl as string) || 'https://api.tinfoil.sh/api/config/models'
+  }
+}
+
+export function isTinfoilConfigured(): boolean {
+  return !!getTinfoilConfig().apiKey
+}

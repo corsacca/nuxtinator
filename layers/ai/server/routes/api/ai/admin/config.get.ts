@@ -1,6 +1,6 @@
 // GET /api/ai/admin/config
 // Operator-admin view of the host's AI config: the enabled set (with each
-// model's live info, or a placeholder when OpenRouter no longer lists it), the
+// model's live info, or a placeholder when its provider no longer lists it), the
 // host default model, and each registered feature with the host's choice and
 // what it resolves to. Gated by requireOperatorAdmin (model enablement spends
 // the host key). Reads the deployment-global store with no org context — the
@@ -16,7 +16,8 @@ import {
   AI_SETTING_FEATURE_MODELS,
   AI_SETTING_EMBEDDING_MODEL,
   getHostApiKey,
-  getModelList,
+  isTinfoilConfigured,
+  getAllModels,
   isKnownModel,
   modelInfoOrPlaceholder,
   getAiFeatures,
@@ -28,7 +29,7 @@ import {
 export default defineEventHandler(async (event) => {
   await requireOperatorAdmin(event)
 
-  const list = await getModelList()
+  const list = await getAllModels()
   const embeddingList = await getEmbeddingModelList()
   const [enabledIds, defaultModel, featureModels, embeddingModel] = await Promise.all([
     getHostSetting<string[]>(db, AI_SETTINGS_NAMESPACE, AI_SETTING_ENABLED_MODELS),
@@ -51,6 +52,7 @@ export default defineEventHandler(async (event) => {
       key: f.key,
       label: f.label,
       description: f.description,
+      kind: f.kind ?? 'chat',
       model: featureModels[f.key] ?? '',
       effectiveModel: await resolveFeatureModel(db, f.key)
     }))
@@ -64,6 +66,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     hostKeyConfigured: !!getHostApiKey(),
+    tinfoilConfigured: isTinfoilConfigured(),
     modelListAvailable: list.length > 0,
     enabled,
     defaultModel,

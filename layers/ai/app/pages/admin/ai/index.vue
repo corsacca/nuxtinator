@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AiAdminConfig, AiEnabledModel, AiModelInfo, AiEmbeddingModelInfo, AiReindexStatus, AiStaleScope } from '#ai'
+import type { AiAdminConfig, AiEnabledModel, AiModelInfo, AiModelKind, AiEmbeddingModelInfo, AiReindexStatus, AiStaleScope } from '#ai'
 import { modelMeta } from '../../../utils/ai-model-meta'
 
 definePageMeta({
@@ -11,7 +11,7 @@ const toast = useToast()
 
 const { data, pending, refresh } = await useFetch<AiAdminConfig>('/api/ai/admin/config', {
   default: () => ({
-    hostKeyConfigured: false, modelListAvailable: false, enabled: [], defaultModel: '', features: [],
+    hostKeyConfigured: false, tinfoilConfigured: false, modelListAvailable: false, enabled: [], defaultModel: '', features: [],
     embeddingAvailable: false, embeddingModelListAvailable: false, embeddingModel: '', staleScopes: []
   })
 })
@@ -26,7 +26,11 @@ const enabled = computed(() => data.value?.enabled ?? [])
 const features = computed(() => data.value?.features ?? [])
 const enabledIds = computed(() => enabled.value.map(m => m.id))
 
-// Models still addable: everything OpenRouter lists that isn't enabled yet.
+function enabledOfKind(kind: AiModelKind) {
+  return enabled.value.filter((m: AiEnabledModel) => m.kind === kind)
+}
+
+// Models still addable: everything the providers list that isn't enabled yet.
 const addable = computed(() =>
   (list.value?.models ?? []).filter(m => !enabledIds.value.includes(m.id))
 )
@@ -107,7 +111,12 @@ const embeddingItems = computed<AiModelInfo[]>(() => (embeddingList.value?.model
   completionPrice: null,
   contextLength: m.contextLength,
   supportsTemperature: false,
-  supportsCaching: false
+  supportsCaching: false,
+  provider: 'openrouter',
+  kind: 'chat',
+  supportsImages: false,
+  requestPrice: null,
+  reasoning: null
 })))
 const staleScopes = computed<AiStaleScope[]>(() => data.value?.staleScopes ?? [])
 const confirmEmbedding = ref<string | null>(null)
@@ -159,19 +168,20 @@ onBeforeUnmount(() => {
         AI
       </h1>
       <p class="text-sm text-(--ui-text-muted)">
-        Choose which OpenRouter models the host's key may run, the default
-        model, and the model behind each AI feature. Organizations inherit
-        these choices and can override them in their own settings.
+        Choose which models the host's keys may run (OpenRouter, and Tinfoil
+        when its key is set), the default model, and the model behind each AI
+        feature. Organizations inherit these choices and can override them in
+        their own settings.
       </p>
     </header>
 
     <UAlert
-      v-if="!data?.hostKeyConfigured"
+      v-if="!data?.hostKeyConfigured && !data?.tinfoilConfigured"
       color="warning"
       variant="subtle"
       icon="i-lucide-triangle-alert"
       title="No host API key"
-      description="Set OPENROUTER_API_KEY in the environment to give organizations without their own key a fallback. Model choices are saved regardless."
+      description="Set OPENROUTER_API_KEY and/or TINFOIL_API_KEY in the environment to give organizations without their own key a fallback. Model choices are saved regardless."
     />
 
     <UAlert
@@ -180,7 +190,7 @@ onBeforeUnmount(() => {
       variant="subtle"
       icon="i-lucide-cloud-off"
       title="Model list unavailable"
-      description="OpenRouter's model list could not be loaded. Existing choices still work; adding models will be possible once it loads."
+      description="The providers' model lists could not be loaded. Existing choices still work; adding models will be possible once they load."
     />
 
     <section class="space-y-3">
@@ -189,9 +199,10 @@ onBeforeUnmount(() => {
           Enabled models
         </h2>
         <p class="text-sm text-(--ui-text-muted)">
-          The models the host key may spend on. Organizations using the host
-          key pick from this set; organizations with their own key may pick any
-          OpenRouter model.
+          The models the host keys may spend on. Organizations using the host
+          key pick from this set; organizations with their own OpenRouter key
+          may pick any OpenRouter model, plus the Tinfoil models enabled here
+          (Tinfoil always runs on the host's key).
         </p>
       </div>
 
@@ -223,6 +234,24 @@ onBeforeUnmount(() => {
                 icon="i-lucide-database"
               >
                 Prompt caching
+              </UBadge>
+              <UBadge
+                v-if="model.provider === 'tinfoil'"
+                color="success"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-shield-check"
+              >
+                Tinfoil
+              </UBadge>
+              <UBadge
+                v-if="model.kind === 'transcription'"
+                color="info"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-audio-lines"
+              >
+                Transcription
               </UBadge>
             </div>
             <div class="text-xs text-(--ui-text-muted) font-mono">
@@ -271,16 +300,17 @@ onBeforeUnmount(() => {
           Default model
         </h2>
         <p class="text-sm text-(--ui-text-muted)">
-          Used by any feature without its own choice.
+          Used by any chat feature without its own choice. Transcription
+          features need their own choice below.
         </p>
       </div>
       <div class="max-w-md">
         <AiModelSelect
           :model-value="data?.defaultModel ?? ''"
-          :items="enabled"
+          :items="enabledOfKind('chat')"
           clearable
           clear-label="None"
-          :disabled="saving || !enabled.length"
+          :disabled="saving || !enabledOfKind('chat').length"
           @update:model-value="setDefaultModel"
         />
       </div>
@@ -327,10 +357,10 @@ onBeforeUnmount(() => {
           <div class="w-full sm:w-72 shrink-0">
             <AiModelSelect
               :model-value="feature.model"
-              :items="enabled"
+              :items="enabledOfKind(feature.kind)"
               clearable
-              clear-label="Use default"
-              :disabled="saving || !enabled.length"
+              :clear-label="feature.kind === 'chat' ? 'Use default' : 'None'"
+              :disabled="saving || !enabledOfKind(feature.kind).length"
               @update:model-value="(v: string) => setFeatureModel(feature.key, v)"
             />
           </div>

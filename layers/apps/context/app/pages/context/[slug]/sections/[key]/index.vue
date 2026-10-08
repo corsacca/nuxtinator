@@ -42,7 +42,8 @@ const canReview = computed(() => hasPermission('context.suggestion.review'))
 const suggestionLink = computed(() => {
   const visible = data.value?.pending_suggestions.visible ?? []
   if (visible.length === 0) return null
-  return visible.length === 1 ? `/context/suggestions/${visible[0]!.set_id}` : '/context/suggestions'
+  if (visible.length > 1) return '/context/suggestions'
+  return { path: `/context/suggestions/${visible[0]!.set_id}`, query: { return: `/context/${slug.value}/sections/${key.value}` } }
 })
 
 watch(data, (next) => {

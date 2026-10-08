@@ -5,7 +5,8 @@
 // effective key first (see admin/config.put.ts). Every
 // chosen id must be '' (unset, fall back to the host) or one the org may use
 // right now — the host-enabled set on the host's key, any listed model on its
-// own. Gated by org.settings.write.
+// own — and of the right kind (the default is a chat model; a feature's model
+// matches the feature's kind). Gated by org.settings.write.
 import { readBody } from 'h3'
 import { withOrgPermission } from '#tenant/server'
 import { setSetting } from '#core/server/utils/settings-store'
@@ -17,6 +18,8 @@ import {
   AI_SETTING_FEATURE_MODELS,
   AI_SETTING_EMBEDDING_MODEL,
   getAllowedModelIds,
+  getAiFeatureKind,
+  modelFitsKind,
   sanitizeModelId,
   sanitizeFeatureModels,
   getEmbeddingModelList,
@@ -38,6 +41,9 @@ export default defineEventHandler(async (event) => {
       const id = sanitizeModelId(body.default_model)
       if (id && !allowed.has(id)) {
         throw createError({ statusCode: 400, statusMessage: 'That model is not available to this organization.' })
+      }
+      if (id && !modelFitsKind(id, 'chat')) {
+        throw createError({ statusCode: 400, statusMessage: 'The default model must be a chat model.' })
       }
       await setSetting(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_DEFAULT_MODEL, id)
       changed.default_model = id
@@ -62,6 +68,9 @@ export default defineEventHandler(async (event) => {
       for (const [feature, id] of Object.entries(map)) {
         if (!allowed.has(id)) {
           throw createError({ statusCode: 400, statusMessage: `The model for "${feature}" is not available to this organization.` })
+        }
+        if (!modelFitsKind(id, getAiFeatureKind(feature))) {
+          throw createError({ statusCode: 400, statusMessage: `The model for "${feature}" is the wrong kind of model for that feature.` })
         }
       }
       await setSetting(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_FEATURE_MODELS, map)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AiOrgConfig, AiModelInfo, AiEmbeddingModelInfo, AiReindexStatus } from '#ai'
+import type { AiOrgConfig, AiModelInfo, AiModelKind, AiEmbeddingModelInfo, AiReindexStatus } from '#ai'
 
 // Org-level AI settings, rendered inside the tenancy layer's settings shell
 // (registered via core's org-settings-section registry). Lets an org bring its
@@ -20,6 +20,7 @@ const { data, pending, refresh } = await useFetch<AiOrgConfig>('/api/ai/org/conf
   default: (): AiOrgConfig => ({
     key: { status: 'none', last4: '' },
     hostKeyConfigured: false,
+    tinfoilConfigured: false,
     usingOwnKey: false,
     modelListAvailable: false,
     allowedModels: [],
@@ -36,6 +37,10 @@ const { data, pending, refresh } = await useFetch<AiOrgConfig>('/api/ai/org/conf
 })
 
 const allowed = computed(() => data.value?.allowedModels ?? [])
+
+function allowedOfKind(kind: AiModelKind) {
+  return allowed.value.filter((m: AiModelInfo) => m.kind === kind)
+}
 const features = computed(() => data.value?.features ?? [])
 const keyStatus = computed(() => data.value?.key.status ?? 'none')
 
@@ -127,7 +132,12 @@ const embeddingItems = computed<AiModelInfo[]>(() => (data.value?.embeddingModel
   completionPrice: null,
   contextLength: m.contextLength,
   supportsTemperature: false,
-  supportsCaching: false
+  supportsCaching: false,
+  provider: 'openrouter',
+  kind: 'chat',
+  supportsImages: false,
+  requestPrice: null,
+  reasoning: null
 })))
 function embeddingNameOf(id: string): string {
   return embeddingItems.value.find((m: AiModelInfo) => m.id === id)?.name ?? id
@@ -271,6 +281,13 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
+            <p
+              v-if="data?.tinfoilConfigured"
+              class="text-xs text-(--ui-text-muted)"
+            >
+              Tinfoil models (confidential, end-to-end encrypted inference) always run on the host's Tinfoil key; your own key is only used for OpenRouter models.
+            </p>
+
             <form
               v-if="editingKey"
               class="flex items-start gap-2 flex-wrap"
@@ -334,10 +351,10 @@ onBeforeUnmount(() => {
           <div class="max-w-md">
             <AiModelSelect
               :model-value="data?.defaultModel ?? ''"
-              :items="allowed"
+              :items="allowedOfKind('chat')"
               clearable
               clear-label="Use the host's default"
-              :disabled="saving || !allowed.length"
+              :disabled="saving || !allowedOfKind('chat').length"
               @update:model-value="setDefaultModel"
             />
           </div>
@@ -384,10 +401,10 @@ onBeforeUnmount(() => {
               <div class="w-full sm:w-72 shrink-0">
                 <AiModelSelect
                   :model-value="feature.model"
-                  :items="allowed"
+                  :items="allowedOfKind(feature.kind)"
                   clearable
                   clear-label="Use default"
-                  :disabled="saving || !allowed.length"
+                  :disabled="saving || !allowedOfKind(feature.kind).length"
                   @update:model-value="(v: string) => setFeatureModel(feature.key, v)"
                 />
               </div>

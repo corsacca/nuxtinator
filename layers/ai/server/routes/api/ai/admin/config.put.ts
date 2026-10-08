@@ -3,9 +3,10 @@
 // / feature_models / embedding_model is written only when present. A new
 // embedding model is probed with the host key first (one tiny embedding) so a
 // model the key cannot use, or one of the wrong width, is refused rather than
-// stored. The enabled set is narrowed
-// to models OpenRouter lists; the default and every feature choice must be ''
-// (unset) or a member of the enabled set as it stands after this write.
+// stored. The enabled set is narrowed to models their provider lists; the
+// default and every feature choice must be '' (unset) or a member of the
+// enabled set as it stands after this write, of the right kind (the default is
+// a chat model; a feature's model matches the feature's kind).
 // Operator-admin only; writes go to the deployment-global store with no org
 // context.
 import { readBody } from 'h3'
@@ -19,10 +20,12 @@ import {
   AI_SETTING_DEFAULT_MODEL,
   AI_SETTING_FEATURE_MODELS,
   AI_SETTING_EMBEDDING_MODEL,
-  getModelList,
+  getAllModels,
   getEmbeddingModelList,
+  getAiFeatureKind,
   isKnownModel,
   isKnownEmbeddingModel,
+  modelFitsKind,
   sanitizeModelIdList,
   sanitizeModelId,
   sanitizeFeatureModels,
@@ -34,7 +37,7 @@ export default defineEventHandler(async (event) => {
   const { userId } = await requireOperatorAdmin(event)
   const body = (await readBody(event)) ?? {}
 
-  await getModelList()
+  await getAllModels()
 
   // Probe outside the transaction: a network call must not hold a DB tx open.
   let embeddingModel: string | undefined
@@ -65,6 +68,9 @@ export default defineEventHandler(async (event) => {
       if (id && !enabledSet.has(id)) {
         throw createError({ statusCode: 400, statusMessage: 'The default model must be one of the enabled models.' })
       }
+      if (id && !modelFitsKind(id, 'chat')) {
+        throw createError({ statusCode: 400, statusMessage: 'The default model must be a chat model.' })
+      }
       await setHostSetting(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_DEFAULT_MODEL, id)
     }
 
@@ -73,6 +79,9 @@ export default defineEventHandler(async (event) => {
       for (const [feature, id] of Object.entries(map)) {
         if (!enabledSet.has(id)) {
           throw createError({ statusCode: 400, statusMessage: `The model for "${feature}" must be one of the enabled models.` })
+        }
+        if (!modelFitsKind(id, getAiFeatureKind(feature))) {
+          throw createError({ statusCode: 400, statusMessage: `The model for "${feature}" is the wrong kind of model for that feature.` })
         }
       }
       await setHostSetting(tx, AI_SETTINGS_NAMESPACE, AI_SETTING_FEATURE_MODELS, map)
