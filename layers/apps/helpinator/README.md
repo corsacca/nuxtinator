@@ -15,8 +15,9 @@ Requires `@nuxtinator/context` and `@nuxtinator/ai`. `@nuxtinator/inbox`
 - **Libraries.** Managed under `/helpinator/libraries`, shared by every widget
   in the org. Two kinds:
   - **website** — a list of URL entries. Each entry crawls its page plus the
-    same-site pages it links to (one hop, optionally only under the entry's
-    path, capped per entry), extracts the main content with a readability
+    same-site pages it links to, breadth first to a per-entry depth (0–5
+    links, default 1; optionally only under the entry's path, capped per
+    entry), extracts the main content with a readability
     parser, stores it as markdown and indexes it for search. Per-entry
     **Re-crawl**, per-library **Sync all**, a page viewer, and pruning of
     junk pages. Pages are read-only: a re-crawl replaces them (unchanged pages
